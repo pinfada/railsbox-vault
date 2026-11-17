@@ -35,13 +35,22 @@
 // volume `coquille` a reçu une constante distincte : jamais deux volumes sous la même clé et le
 // même identifiant. Le manifeste voisin en reste la source à la lecture (ADR 0016).
 
-import { CODES_REFUS_COQUILLE, messageDeRefus } from "./refus-de-coquille.mjs";
+import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import {
   ADRESSE_DESCRIPTEUR,
   DESCRIPTEUR_VERSION_ATTENDUE,
   formeDuDescripteur,
   lireLeDescripteur,
 } from "./descripteur-applicatif.mjs";
+import { adressesDuRuntime } from "./adresses-du-runtime.mjs";
+import { horsConnexionPublie } from "./hors-connexion.mjs";
+import {
+  constaterPourLaPage,
+  lireEtPreparer,
+  rangementAvantLIntention,
+  refusDeDemarrage,
+  refusDeLArtefactAbsent,
+} from "./preparation-du-demarrage.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "./identites-du-coffre.mjs";
 import { daterLaCreation, openOpfsVolume } from "../vm/opfs-block-backend.mjs";
 import { libererPourLeVolume } from "../vm/magasin-opfs.mjs";
@@ -56,15 +65,11 @@ import {
   revokeVolumeManifest,
   writeVolumeManifest,
 } from "../vm/opfs-volume-open.mjs";
-import { chargerAdressesV86, exigerAdresse } from "../v86-adresses.mjs";
 import { verserFluxDansVolume } from "../vm/versement-de-disque.mjs";
 import {
   codeDuRefusDuGuest,
   avantLeBootDuPaquet,
-  constaterLeDephasage,
-  decisionPubliee,
   miseAJourPubliee,
-  preparerLeDemarrage,
   suivreLeConstat,
 } from "./mise-a-jour-applicative.mjs";
 import { VOLUME_ALGORITHM, createManifest } from "../vm/volume-manifest.mjs";
@@ -81,7 +86,13 @@ import {
  * sont RÉEXPORTÉES ici parce que ce module reste l'entrée du chemin de démarrage, et qu'une épreuve
  * n'a pas à connaître la coupe interne pour exiger un refus.
  */
-export { ADRESSE_DESCRIPTEUR, DESCRIPTEUR_VERSION_ATTENDUE, formeDuDescripteur, lireLeDescripteur };
+export {
+  ADRESSE_DESCRIPTEUR,
+  DESCRIPTEUR_VERSION_ATTENDUE,
+  adressesDuRuntime,
+  formeDuDescripteur,
+  lireLeDescripteur,
+};
 
 /** La signature (#173) et la lecture du manifeste vivent dans `installation-interrompue.mjs` (#250). */
 export { manifesteEstLisible, signatureDInstallationInterrompue };
@@ -116,38 +127,6 @@ export function descripteurDeManifeste(descripteur) {
       version: descripteur.application.version,
       schema: descripteur.application.schema,
     },
-  };
-}
-
-/**
- * Les adresses que le boot doit récupérer : deux artefacts v86 épinglés par empreinte (#123), cinq
- * de l'image de référence servis sous leur nom.
- *
- * @param {object} descripteur
- * @param {{ recuperer?: typeof fetch }} [options]
- */
-export async function adressesDuRuntime(descripteur, { recuperer = globalThis.fetch } = {}) {
-  const { adresses } = await chargerAdressesV86({ fetch: recuperer });
-  const prefixe = descripteur.prefixeDesArtefacts;
-  const morceau = (cle) => ({
-    url: `${prefixe}${descripteur[cle].nom}`,
-    octets: descripteur[cle].octets,
-    sha256: descripteur[cle].sha256,
-    compression: descripteur[cle].compression ?? null,
-    transfertOctets: descripteur[cle].transfertOctets ?? null,
-    // La racine des tranches (#247) : le magasin vérifie contre ELLE, tenue par le descripteur.
-    ...(descripteur[cle].racine ? { racine: descripteur[cle].racine } : {}),
-  });
-  return {
-    lib: exigerAdresse(adresses, "libv86.mjs"),
-    wasm: exigerAdresse(adresses, "v86.wasm"),
-    bios: `${prefixe}${descripteur.boot.bios}`,
-    vgaBios: `${prefixe}${descripteur.boot.vgaBios}`,
-    kernel: `${prefixe}${descripteur.boot.kernel}`,
-    initrd: `${prefixe}${descripteur.boot.initrd}`,
-    // Les DEUX morceaux du disque système, avec leur empreinte : le boot les range aux décalages
-    // du plan (`src/vm/disque-compose.mjs`) et refuse celui dont les octets ne correspondent pas.
-    disqueSysteme: { rootfs: morceau("rootfs"), paquet: morceau("paquet") },
   };
 }
 
@@ -547,6 +526,8 @@ export function compteRenduPublie(rendu) {
     pannes: rendu.failures.length,
     // Ce que le déphasage a décidé et ce que le guest a fait du schéma (#236 T2), à plat.
     miseAJour: miseAJourPubliee(rendu.miseAJourApplicative, rendu.schema),
+    // La date de la dernière vérification de la version démarrée hors connexion, ou `null` (#247, D1g).
+    horsConnexion: valeursSimples(rendu.horsConnexion),
   };
 }
 
@@ -593,22 +574,20 @@ export async function demarrerLaVm({
   bootTimeoutMs = DELAI_BOOT_MS,
   miseAJour = false,
 }) {
-  const lu = await lireLeDescripteur();
-  // Le DÉPHASAGE est décidé ICI, avant toute installation et tout boot (#236 T2, ADR 0042) : le
-  // manifeste du coffre est lu, confronté au descripteur, et un refus rend la main sans qu'un octet
-  // du volume ait été écrit.
-  const prepare = await preparerLeDemarrage({
-    lu,
-    nom: NOM_DU_VOLUME_APPLICATIF,
-    miseAJour,
-    delaiMs: bootTimeoutMs,
-  });
-  if (prepare.sansApplication) return { demarree: false, motif: prepare.motif };
-  if (prepare.refus !== undefined) return refusDeDemarrage(prepare.refus, prepare);
+  const nom = NOM_DU_VOLUME_APPLICATIF;
+  const depart = await lireEtPreparer({ cleDeVolume, nom, miseAJour, delaiMs: bootTimeoutMs });
+  if (depart.rendu !== undefined) return depart.rendu;
+  const { lu, prepare } = depart;
   const descripteur = prepare.descripteur;
   const installation = await installerOuTraduireLeRefus({ descripteur, cleDeVolume });
   if (installation.demarree === false) return installation;
-  const rendu = await booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParInstantane });
+  const rendu = await booterLePaquet({
+    descripteur,
+    prepare,
+    cleDeVolume,
+    reprendreParInstantane,
+    horsConnexion: lu.horsConnexion ?? null,
+  });
   if (rendu.demarree === false) return rendu;
   // Le manifeste SUIT ce que le guest a constaté, après un boot réussi et jamais avant.
   const manifesteSuivi = await suivreLeConstat({
@@ -617,20 +596,21 @@ export async function demarrerLaVm({
     application: descripteur.application,
     constat: rendu.schema ?? null,
   });
-  // `fermer` et `requeteHttp` sont des fonctions : retirées par DESTRUCTURATION, jamais par oubli,
-  // car le compte rendu franchit le canal privilégié et `sansCapacite` les refuserait.
+  // Des fonctions, retirées par DESTRUCTURATION : le compte rendu franchit le canal privilégié.
   const { fermer, requeteHttp, ...compte } = rendu;
   const miseAJourApplicative = {
     ...prepare.dephasage,
     jouee: prepare.miseAJour,
     manifeste: manifesteSuivi,
   };
+  // Hors connexion, la date de la dernière vérification est dite à la personne (#247, D1g).
+  const horsConnexion = horsConnexionPublie(lu);
   return {
     demarree: true,
     installation,
     fermer,
     requeteHttp,
-    compte: { ...compte, miseAJourApplicative },
+    compte: { ...compte, miseAJourApplicative, horsConnexion },
   };
 }
 
@@ -639,27 +619,31 @@ export async function demarrerLaVm({
  * décision publiée, que l'accueil montre — refus, ou bloc « Mettre à jour l'application ». Rien n'est
  * écrit, rien n'est booté ; le démarrage REDÉCIDE de lui-même, la page n'est pas crue.
  */
-export async function dephasagePourLaPage() {
-  const lu = await lireLeDescripteur();
-  const { decision } = await constaterLeDephasage({ lu, nom: NOM_DU_VOLUME_APPLICATIF });
-  return decisionPubliee(decision);
+export function dephasagePourLaPage(options = {}) {
+  return constaterPourLaPage({ nom: NOM_DU_VOLUME_APPLICATIF, ...options });
 }
 
 /**
  * BOOTE le paquet choisi, et traduit le REFUS du guest (#236 T2) en réponse typée plutôt qu'en
  * exception : un guest qui refuse de lancer Rails n'est pas une panne, c'est une décision dite.
  */
-async function booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParInstantane }) {
-  // Importé ICI et non à l'évaluation du Worker : il POSE la boucle d'ordonnancement de v86
-  // (ADR 0013), qu'une coquille qui ne démarre rien n'a pas à porter.
+async function booterLePaquet({
+  descripteur,
+  prepare,
+  cleDeVolume,
+  reprendreParInstantane,
+  horsConnexion = null,
+}) {
+  // Importé ICI : il POSE la boucle d'ordonnancement de v86 (ADR 0013), que le Worker ne porte pas.
   const { bootEtVerifier } = await import("../vm/boot-de-reference.mjs");
+  const runtime = await adressesDuRuntime(descripteur, { horsConnexion });
   try {
     return await bootEtVerifier({
       phase: "coquille",
       volume: NOM_DU_VOLUME_APPLICATIF,
       cmdline: prepare.cmdline,
       memoryBytes: descripteur.boot.memoireOctets,
-      runtime: await adressesDuRuntime(descripteur),
+      runtime,
       manifest: descripteurDeManifeste(descripteur),
       // Aucune ATTENTE d'invariant : la coquille publie le VERDICT de Rails, `tests/e2e/` l'asserte.
       expected: {},
@@ -669,10 +653,19 @@ async function booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParI
       capturerInstantane: true,
       garderLaSessionOuverte: true,
       ouvrirLeVolumeDuGuest: ouvreurSousLEnveloppe({ cleDeVolume }),
-      avantLeBoot: avantLeBootDuPaquet({ nom: NOM_DU_VOLUME_APPLICATIF, prepare }),
+      avantLeBoot: avantLeBootDuPaquet({
+        nom: NOM_DU_VOLUME_APPLICATIF,
+        prepare,
+        avantLIntention: rangementAvantLIntention({
+          horsConnexion,
+          cleDeVolume,
+          descripteur,
+          runtime,
+        }),
+      }),
     });
   } catch (erreur) {
-    const code = codeDuRefusDuGuest(erreur);
+    const code = codeDuRefusDuGuest(erreur) ?? refusDeLArtefactAbsent(erreur);
     if (code !== null) return refusDeDemarrage(code, prepare);
     // Un artefact du boot non acquis sur un volume jamais démarré : installation INACHEVÉE (#250).
     const inachevee = await echecDuPremierBoot(erreur, { nom: NOM_DU_VOLUME_APPLICATIF });
@@ -683,9 +676,4 @@ async function booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParI
     if (refuse !== null) return refuse;
     throw erreur;
   }
-}
-
-/** Un démarrage REFUSÉ par le déphasage, avant ou pendant le boot : son code, son message, la décision. */
-function refusDeDemarrage(code, prepare) {
-  return { demarree: false, code, motif: messageDeRefus(code), dephasage: prepare.dephasage };
 }

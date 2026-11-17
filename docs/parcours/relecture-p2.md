@@ -878,6 +878,16 @@ faire.
   reprendre qu'avec la version visée ou une plus récente, que cette adresse ne sert pas. Rien n'a
   été démarré ni modifié. Rouvrez ce coffre plus tard, ou depuis une adresse qui sert cette version.
   Vous pouvez aussi en faire une sauvegarde : elle se fait sans démarrer l'application.
+- Cette adresse ne répond pas, et aucune version de l'application n'est gardée sur cet appareil pour
+  travailler sans connexion : elle n'a jamais été démarrée ici avec succès, ou la réserve a été
+  vidée. Rien n'a été perdu. Reconnectez-vous, puis rouvrez le coffre.
+- Cette adresse ne répond pas, et la version de l'application gardée sur cet appareil n'a pas pu
+  être vérifiée : elle n'est pas utilisée. Rien n'a été perdu. Reconnectez-vous, puis rouvrez le
+  coffre : la version gardée sera refaite.
+- Cette adresse ne répond pas, et ce coffre n'a encore jamais servi sur cet appareil : sa première
+  ouverture demande une connexion. Rien n'a été perdu. Reconnectez-vous, puis rouvrez le coffre.
+- Cette adresse ne répond pas, et il manque à cet appareil un fichier nécessaire au démarrage : la
+  réserve a été vidée en partie. Rien n'a été perdu. Reconnectez-vous, puis rouvrez le coffre.
 - Une opération longue est déjà en cours (démarrage, sauvegarde ou restauration). Attendez qu'elle
   se termine, puis recommencez.
 - Cette adresse n'a pas pu fournir l'application (téléchargement refusé, interrompu ou altéré). Vos

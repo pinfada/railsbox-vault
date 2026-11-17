@@ -1107,6 +1107,7 @@ test("le compte rendu publié est une liste FERMÉE : ce que le boot rend en plu
     "decomposition",
     "enregistrementObserve",
     "generation",
+    "horsConnexion",
     "instantane",
     "instantaneUtilise",
     "invariantStatut",

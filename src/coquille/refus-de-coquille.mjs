@@ -344,7 +344,11 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * garde pas. La version « déjà migrée dans le volume » n'existe pas, donc aucune garde ne tient.
    */
   horsLigneSansCoffre: "VAULT_COQUILLE_HORS_LIGNE_SANS_COFFRE",
-  /** Un artefact du démarrage manque au magasin, et hors connexion rien ne le télécharge. */
+  /**
+   * Un artefact du démarrage manque au magasin, et hors connexion rien ne le télécharge. Levé côté
+   * `src/vm/` (`artefact-absent-hors-connexion.mjs`), qui en porte la même chaîne : la coquille ne
+   * peut pas l'importer sans publier du code de moteur à l'origine applicative ; une épreuve les égale.
+   */
   horsLigneArtefactAbsent: "VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT",
 });
 

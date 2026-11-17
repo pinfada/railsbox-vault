@@ -7,6 +7,8 @@
 // distinguer « cette adresse n'a pas servi l'application » d'une panne quelconque, et rendait le
 // fourre-tout que le projet a banni ailleurs (#240, #244 ; contrôle QA du 20/09/2026, rootfs en 403).
 
+import { artefactALAdresse, chargerAdressesV86, empreinteSha256Hex } from "../v86-adresses.mjs";
+import { artefactAbsentHorsConnexion } from "./artefact-absent-hors-connexion.mjs";
 import { acquerirLeDisqueSysteme } from "./acquisition-du-disque-systeme.mjs";
 import { admissionSelonLeBudget, ouvrirLeMagasinOpfs } from "./magasin-opfs.mjs";
 import { bindNavigatorStorage, createStorageBudget } from "./storage-budget.mjs";
@@ -36,12 +38,138 @@ export async function marquerLAcquisitionDesArtefacts(acquerir) {
   }
 }
 
-async function fetchBytes(url) {
-  const response = await fetch(url, { cache: "no-store" });
+async function fetchBytes(url, recuperer = globalThis.fetch, options = { cache: "no-store" }) {
+  const response = await recuperer(url, options);
   if (!response.ok) {
     throw new Error(`Artefact ${url} indisponible (${response.status}).`);
   }
   return new Uint8Array(await response.arrayBuffer());
+}
+
+/** Les artefacts du démarrage qui passent par le magasin, dans l'ordre où le boot les attend. */
+export const PETITS_ARTEFACTS = Object.freeze(["wasm", "bios", "vgaBios", "kernel", "initrd"]);
+
+/**
+ * Les ÉPINGLES — empreinte et taille — de ces cinq artefacts : celle du wasm vient du manifeste v86
+ * (`vendor/v86/MANIFEST.json`), les quatre autres du descripteur (`boot.empreintes`, #247 D1g). Une
+ * épingle absente dit « pas vérifiable » : l'artefact n'entre pas au magasin, et hors connexion il manque.
+ *
+ * @param {Record<string, any>} runtime @param {{ artifacts: object[] }} manifeste
+ */
+export function epinglesDuRuntime(runtime, manifeste) {
+  const wasm = artefactALAdresse(manifeste, runtime.wasm);
+  return {
+    wasm: wasm === null ? null : { sha256: wasm.sha256, octets: wasm.bytes },
+    bios: runtime.empreintes?.bios ?? null,
+    vgaBios: runtime.empreintes?.vgaBios ?? null,
+    kernel: runtime.empreintes?.kernel ?? null,
+    initrd: runtime.empreintes?.initrd ?? null,
+  };
+}
+
+/** Un artefact reçu du réseau est confronté à son épingle avant d'être rangé : taille, puis empreinte. */
+async function verifierContreLEpingle(nom, octets, pin) {
+  if (octets.byteLength !== pin.octets) {
+    throw new Error(
+      `Artefact ${nom} refusé : ${octets.byteLength} octets reçus, le descripteur en annonce ${pin.octets}.`,
+    );
+  }
+  const mesure = await empreinteSha256Hex(octets);
+  if (mesure !== pin.sha256) {
+    throw new Error(
+      `Artefact ${nom} refusé : empreinte ${mesure}, le descripteur déclare ${pin.sha256}.`,
+    );
+  }
+}
+
+async function acquerirUnPetit({ nom, url, pin, magasin, recuperer, horsConnexion }) {
+  if (pin !== null && magasin) {
+    const cible = new Uint8Array(pin.octets);
+    const servi = await magasin
+      .servir({ sha256: pin.sha256, octets: pin.octets }, cible)
+      .catch(() => false);
+    if (servi) return { octets: cible, transfere: 0, magasin: "servi" };
+  }
+  if (horsConnexion) {
+    throw artefactAbsentHorsConnexion(
+      nom,
+      pin === null ? "n'a pas d'empreinte épinglée" : "manque à la réserve",
+    );
+  }
+  const octets = await fetchBytes(url, recuperer);
+  if (pin === null) return { octets, transfere: octets.byteLength, magasin: "sans-empreinte" };
+  await verifierContreLEpingle(nom, octets, pin);
+  if (!magasin) return { octets, transfere: octets.byteLength, magasin: "absent" };
+  try {
+    await magasin.admettre({ sha256: pin.sha256, octets });
+    return { octets, transfere: octets.byteLength, magasin: "admis" };
+  } catch (erreur) {
+    return { octets, transfere: octets.byteLength, magasin: erreur?.code ?? "echec" };
+  }
+}
+
+const DANS_LA_RESERVE = new Set(["servi", "admis"]);
+const dansLaReserve = (statut) => DANS_LA_RESERVE.has(statut);
+
+/**
+ * ACQUIERT wasm, BIOS, VGA BIOS, noyau et initrd : servis par le magasin s'ils y sont et vérifiés,
+ * sinon téléchargés, confrontés à leur épingle, puis rangés. Hors connexion, seul le magasin répond :
+ * un manque est un refus typé (`VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT`), jamais un téléchargement.
+ *
+ * `complet` dit si la réserve tient les CINQ : c'est lui — avec le disque système — qui autorise à
+ * ranger le descripteur (`hors-connexion.mjs`).
+ *
+ * @param {{ runtime: Record<string, any>, pins: Record<string, { sha256: string, octets: number } | null>,
+ *           magasin: object | null, recuperer?: typeof fetch, horsConnexion?: boolean }} entrees
+ */
+export async function acquerirLesPetitsArtefacts({
+  runtime,
+  pins,
+  magasin,
+  recuperer = globalThis.fetch,
+  horsConnexion = false,
+}) {
+  // En SÉRIE : un artefact de plusieurs Mio en vol à la fois ne sert à rien sur une origine unique.
+  const octets = {};
+  const statuts = {};
+  let transfereOctets = 0;
+  for (const nom of PETITS_ARTEFACTS) {
+    const acquis = await acquerirUnPetit({
+      nom,
+      url: runtime[nom],
+      pin: pins[nom],
+      magasin,
+      recuperer,
+      horsConnexion,
+    });
+    octets[nom] = acquis.octets;
+    statuts[nom] = acquis.magasin;
+    transfereOctets += acquis.transfere;
+  }
+  return {
+    octets,
+    transfereOctets,
+    magasin: statuts,
+    complet: PETITS_ARTEFACTS.every((nom) => dansLaReserve(statuts[nom])),
+  };
+}
+
+/**
+ * RÉTENTION de la réserve après une acquisition : le rootfs et le paquet courants (et le paquet
+ * précédent), plus les cinq petits artefacts courants, que le démarrage hors connexion lira (#247, D1g).
+ * Le magasin est un cache : la rétention ne fait jamais échouer un boot, et elle est bornée dans le
+ * temps comme `servir` et `admettre` (revue du 04/10/2026, constat 3).
+ */
+async function retenirLaReserve({ magasin, runtime, pins }) {
+  await magasin
+    ?.retenir({
+      rootfs: runtime.disqueSysteme.rootfs.sha256,
+      paquet: runtime.disqueSysteme.paquet.sha256,
+      autres: Object.values(pins)
+        .filter((pin) => pin !== null)
+        .map((pin) => pin.sha256),
+    })
+    .catch(() => {});
 }
 
 /**
@@ -53,27 +181,22 @@ async function fetchBytes(url) {
  * disque composé, que l'empreinte d'image et la liaison d'un instantané nomment.
  */
 async function loadRuntime(runtime) {
-  const [wasm, bios, vgaBios, kernel, initrd] = await Promise.all([
-    fetchBytes(runtime.wasm),
-    fetchBytes(runtime.bios),
-    fetchBytes(runtime.vgaBios),
-    fetchBytes(runtime.kernel),
-    fetchBytes(runtime.initrd),
-  ]);
+  const horsConnexion = runtime.horsConnexion === true;
+  const manifeste = runtime.manifesteV86 ?? (await chargerAdressesV86()).manifeste;
   const magasin = ouvrirLeMagasinOpfs({
     peutAdmettre: admissionSelonLeBudget(
       createStorageBudget(bindNavigatorStorage(globalThis.navigator?.storage)),
     ),
   });
-  const disqueSysteme = await acquerirLeDisqueSysteme({ ...runtime.disqueSysteme, magasin });
-  // Le magasin est un cache : sa rétention ne fait jamais échouer un boot, et elle est bornée dans
-  // le temps comme `servir` et `admettre` (revue du 04/10/2026, constat 3).
-  await magasin
-    ?.retenir({
-      rootfs: runtime.disqueSysteme.rootfs.sha256,
-      paquet: runtime.disqueSysteme.paquet.sha256,
-    })
-    .catch(() => {});
+  const pins = epinglesDuRuntime(runtime, manifeste);
+  const petits = await acquerirLesPetitsArtefacts({ runtime, pins, magasin, horsConnexion });
+  const { wasm, bios, vgaBios, kernel, initrd } = petits.octets;
+  const disqueSysteme = await acquerirLeDisqueSysteme({
+    ...runtime.disqueSysteme,
+    magasin,
+    horsConnexion,
+  });
+  await retenirLaReserve({ magasin, runtime, pins });
   const artifacts = {
     wasm,
     bios,
@@ -86,28 +209,46 @@ async function loadRuntime(runtime) {
     // dans l'empreinte d'image — ses deux morceaux y sont déjà, et la table est calculée.
     disqueSysteme: disqueSysteme.tampon,
   };
-  const transferredBytes =
-    wasm.byteLength +
-    bios.byteLength +
-    vgaBios.byteLength +
-    kernel.byteLength +
-    initrd.byteLength +
-    disqueSysteme.mesures.transfereOctets;
-  const empreintesV86Ms = await verifierEmpreintesV86(runtime, artifacts);
+  const transferredBytes = petits.transfereOctets + disqueSysteme.mesures.transfereOctets;
+  const empreintesV86Ms = await verifierEmpreintesV86(runtime, artifacts, { manifeste });
   return {
     artifacts,
     transferredBytes,
     empreintesV86Ms,
     disqueSysteme: disqueSysteme.mesures,
     empreintesVerifiees: disqueSysteme.empreintesVerifiees,
+    // La réserve tient-elle TOUT ce que le boot a lu ? Seul un oui autorise à ranger le descripteur.
+    reserveComplete:
+      petits.complet && Object.values(disqueSysteme.mesures.magasin).every(dansLaReserve),
+    petitsArtefacts: petits.magasin,
   };
 }
 
-/** Importe la classe V86, ses octets AYANT ÉTÉ confrontés au manifeste (#123). */
-async function importV86(libUrl) {
-  await verifierLeModuleV86(libUrl, fetchBytes);
+/**
+ * Importe la classe V86, ses octets AYANT ÉTÉ confrontés au manifeste (#123).
+ *
+ * `libv86` ne passe PAS par le magasin : un module ES ne s'exécute pas depuis l'OPFS sous la CSP du
+ * Worker (`script-src 'self'`, ni `blob:` ni `unsafe-eval` ; ADR 0013). Il est chargé par `import()`,
+ * donc par le cache HTTP du navigateur — adressé par empreinte et `immutable`, comme tout le code de
+ * la coquille. Hors connexion, il est lu DU CACHE (`force-cache`), vérifié, puis importé ; absent du
+ * cache, c'est le refus typé `VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT` (ADR 0045, limite écrite).
+ */
+async function importV86(libUrl, { horsConnexion, manifeste }) {
+  const lire = horsConnexion ? lireDuCacheHttp : (url) => fetchBytes(url);
+  await verifierLeModuleV86(libUrl, lire, { manifeste });
   const module = await import(libUrl);
   return module.V86;
+}
+
+async function lireDuCacheHttp(url) {
+  try {
+    return await fetchBytes(url, globalThis.fetch, { cache: "force-cache" });
+  } catch (erreur) {
+    throw artefactAbsentHorsConnexion(
+      "libv86",
+      `n'est pas dans le cache du navigateur (${erreur.message})`,
+    );
+  }
 }
 
 /**
@@ -120,9 +261,20 @@ export function acquerirRuntime(runtime) {
 
 async function acquerirLesArtefacts(runtime) {
   await exigerContexteExecutable();
-  const V86 = await importV86(runtime.lib);
-  const { artifacts, transferredBytes, empreintesV86Ms, disqueSysteme, empreintesVerifiees } =
-    await loadRuntime(runtime);
+  const manifeste = runtime.manifesteV86 ?? (await chargerAdressesV86()).manifeste;
+  const V86 = await importV86(runtime.lib, {
+    horsConnexion: runtime.horsConnexion === true,
+    manifeste,
+  });
+  const {
+    artifacts,
+    transferredBytes,
+    empreintesV86Ms,
+    disqueSysteme,
+    empreintesVerifiees,
+    reserveComplete,
+    petitsArtefacts,
+  } = await loadRuntime(runtime);
   // L'EMPREINTE DE L'IMAGE est prise ICI, sur les octets tout juste acquis, et jamais plus tard.
   // Le rootfs est un tampon que le guest ÉCRIT (#65) : le hacher après un boot donnerait l'empreinte
   // d'une session, pas celle d'une image. Le défaut est tombé sur le scénario de bout en bout de
@@ -133,6 +285,8 @@ async function acquerirLesArtefacts(runtime) {
     transferredBytes,
     empreintesV86Ms,
     disqueSysteme,
+    reserveComplete,
+    petitsArtefacts,
     empreinteImage: await empreinteDeLImage(artifacts, empreintesVerifiees),
   };
 }

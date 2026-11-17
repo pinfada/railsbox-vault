@@ -157,11 +157,46 @@ export function formeDuDescripteur(descripteur) {
       return refus(`nom d'artefact refusé : ${cle}`);
     }
   }
+  const empreintes = formeDesEmpreintesDuBoot(descripteur.boot.empreintes);
+  if (empreintes !== null) return refus(empreintes);
   return { valide: true, motif: null };
 }
 
 /** Une EMPREINTE SHA-256, en hexadécimal minuscule. Sans elle, un morceau n'est pas vérifiable. */
 const EMPREINTE = /^[0-9a-f]{64}$/;
+
+/** Plafond d'un artefact du démarrage hors disque (noyau, initrd, BIOS) : large, il ne refuse que l'absurde. */
+const ARTEFACT_DE_BOOT_MAX = 256 * 1024 * 1024;
+
+/**
+ * Les EMPREINTES du noyau, de l'initrd et des deux BIOS (#247, D1g), facultatives et TOUT OU RIEN :
+ * sans elles le descripteur reste lisible mais ces quatre artefacts ne passent pas par le magasin, et
+ * il n'y a pas de démarrage hors connexion. Un champ de plus, ou une URL, est refusé : l'adresse
+ * d'un artefact vient du NOM, jamais d'ici.
+ *
+ * @param {unknown} empreintes @returns {string | null} le motif, ou `null`
+ */
+function formeDesEmpreintesDuBoot(empreintes) {
+  if (empreintes === undefined) return null;
+  const cles = ["kernel", "initrd", "bios", "vgaBios"];
+  if (typeof empreintes !== "object" || empreintes === null || Array.isArray(empreintes)) {
+    return "empreintes du boot illisibles";
+  }
+  if (Object.keys(empreintes).some((cle) => !cles.includes(cle))) {
+    return "empreintes du boot : un artefact inconnu";
+  }
+  for (const cle of cles) {
+    const pin = empreintes[cle];
+    if (typeof pin !== "object" || pin === null) return `empreinte du boot absente : ${cle}`;
+    if (Object.keys(pin).some((champ) => champ !== "sha256" && champ !== "octets")) {
+      return `empreinte du boot : champ inconnu : ${cle}`;
+    }
+    if (!EMPREINTE.test(String(pin.sha256 ?? ""))) return `empreinte du boot mal formée : ${cle}`;
+    if (!entierBorne(pin.octets, ARTEFACT_DE_BOOT_MAX))
+      return `taille du boot hors bornes : ${cle}`;
+  }
+  return null;
+}
 
 /**
  * Le SCHÉMA et la VERSION d'une application servie (#236 T2, ADR 0042) : la décision de déphasage

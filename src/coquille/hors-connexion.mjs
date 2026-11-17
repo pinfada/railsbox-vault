@@ -27,6 +27,8 @@
 // précédent est OUBLIÉ — il décrit des artefacts que la rétention vient de retirer.
 
 import { deriverCleDeScellementDuDescripteur } from "../vm/derivation/cle-du-descripteur-scelle.mjs";
+import { ouvrirLeMagasinOpfs } from "../vm/magasin-opfs.mjs";
+import { lireLeDescripteur } from "./descripteur-applicatif.mjs";
 import {
   DescripteurRangeRefuse,
   ouvrirLeDescripteurScelle,
@@ -137,4 +139,48 @@ export async function rangerLeDescripteur({
     );
     return "echec";
   }
+}
+
+// --- Le câblage du démarrage et du constat de la page --------------------------------------------
+
+/**
+ * LIT le descripteur pour un démarrage ou un constat : l'origine d'abord, et seulement si elle est
+ * INJOIGNABLE (`TypeError` de `fetch`) le descripteur rangé, vérifié sous la clé du coffre.
+ *
+ * @param {{ cleDeVolume: () => Promise<Uint8Array>, recuperer?: typeof fetch, magasin?: object | null }} entrees
+ */
+export function lireLeDescripteurDuDemarrage({
+  cleDeVolume,
+  recuperer = globalThis.fetch,
+  magasin = ouvrirLeMagasinOpfs(),
+}) {
+  return lireLeDescripteur({
+    recuperer,
+    repliHorsConnexion: repliHorsConnexion({ magasin, cleDeVolume }),
+  });
+}
+
+/**
+ * Le code du refus que le repli hors connexion impose AVANT toute décision de déphasage, ou `null` :
+ *  - l'origine est injoignable et le rangé manque ou n'est pas accepté (`lu.code`) ;
+ *  - l'origine est injoignable et le coffre n'a pas de volume : installer demande la graine, que le
+ *    magasin ne garde pas, et la garde « pas antérieur à la version migrée » n'a rien à comparer.
+ *
+ * @param {{ lu: object, manifeste: object | null }} entrees
+ */
+export function refusDuRepli({ lu, manifeste }) {
+  if (lu.horsConnexion === undefined) return null;
+  if (lu.present === false) return lu.code;
+  return manifeste === null ? C.horsLigneSansCoffre : null;
+}
+
+/**
+ * Ce que la page et le compte rendu publient du repli : la date de la dernière vérification et la
+ * version — des valeurs simples —, ou `null` quand l'origine a répondu.
+ *
+ * @param {object} lu
+ */
+export function horsConnexionPublie(lu) {
+  if (lu.horsConnexion === undefined || lu.horsConnexion === true || !lu.present) return null;
+  return { rangeLe: lu.horsConnexion.rangeLe, version: lu.descripteur.application.version };
 }
