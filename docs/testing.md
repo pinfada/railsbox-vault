@@ -2134,6 +2134,16 @@ npm run vm:fetch       # artefacts v86 vérifiés par empreinte
 npm run test:e2e       # scénario complet sous Chromium
 ```
 
+**Docker ≥ 29.4.2 (ubuntu-26.04, #295).** Le constructeur intégré refuse les sockets aux processus
+32 bits (seccomp resserré, moby#52494) : `apt-get` dans l'étage i386 dit « Temporary failure
+resolving » sans que le DNS soit en cause. `npm run image:build` et `fabriquerLePaquet` le sondent
+(`tools/docker-constructeur.mjs`) et basculent seuls sur un constructeur BuildKit isolé, épinglé par
+empreinte (ADR 0045) ; rien à faire à la main. La sonde se rejoue seule :
+
+```sh
+node --test tests/vm/sockets-i386.test.mjs   # ≈ 10 s, sans réseau
+```
+
 #### Le déclencheur, et quand la recette complète est EXIGÉE avant fusion (#200)
 
 Jusqu'au 12 septembre 2026, `reprise.yml` se déclenchait sur `pull_request` **par défaut**, donc à

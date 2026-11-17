@@ -194,6 +194,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0042 — le déphasage de versions : la version et le schéma décident avant le boot](docs/decisions/0042-le-dephasage-de-versions-le-schema-decide-avant-le-boot.md)
 - [ADR 0043 — l'application d'abord : la promesse à l'entrée, l'application plein écran](docs/decisions/0043-l-application-d-abord.md)
 - [ADR 0044 — le magasin d'artefacts : rangé sous l'empreinte, vérifié contre la racine du descripteur, cédant au volume](docs/decisions/0044-le-magasin-d-artefacts.md)
+- [ADR 0045 — un constructeur BuildKit isolé pour les images i386 quand Docker 29.4.2 prive les processus 32 bits de sockets](docs/decisions/0045-le-constructeur-buildkit-isole-pour-les-images-i386.md)
 
 ## Licence
 
