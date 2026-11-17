@@ -148,6 +148,28 @@ export function borneDansLeTemps(magasin, delaiMs = DELAI_DU_MAGASIN_MS) {
         magasinLent("admission"),
       ),
   };
+  // Le descripteur rangé : lu, écrit, oublié — trois gestes, tous bornés (#247, D1g). Lent, il est
+  // « absent » ; écrit trop lentement, son rangement est abandonné par jeton, comme une admission.
+  if (magasin.lireLeDescripteurScelle) {
+    borne.lireLeDescripteurScelle = () =>
+      avantLEcheance(
+        () => magasin.lireLeDescripteurScelle(),
+        delaiMs,
+        () => null,
+      );
+    borne.ecrireLeDescripteurScelle = (octets) =>
+      avantLEcheance(
+        (jeton) => magasin.ecrireLeDescripteurScelle(octets, jeton),
+        delaiMs,
+        magasinLent("rangement du descripteur"),
+      );
+    borne.oublierLeDescripteurScelle = () =>
+      avantLEcheance(
+        () => magasin.oublierLeDescripteurScelle(),
+        delaiMs,
+        magasinLent("oubli du descripteur"),
+      );
+  }
   if (magasin.retenir) {
     borne.retenir = (courants) =>
       avantLEcheance(
@@ -296,7 +318,12 @@ async function lireLeJournal(primitives) {
  * le paquet courant et le paquet PRÉCÉDENT — celui d'avant la dernière mise à jour —, oublie le reste.
  * Un journal altéré ne coûte au pire qu'un téléchargement : il ne sert jamais un octet.
  */
-async function retenir(primitives, magasin, { rootfs, paquet }, jeton = { annule: false }) {
+async function retenir(
+  primitives,
+  magasin,
+  { rootfs, paquet, autres = [] },
+  jeton = { annule: false },
+) {
   const [courant, precedent] = await lireLeJournal(primitives);
   const paquets =
     courant && courant !== paquet ? [paquet, courant] : [paquet, precedent].filter(Boolean);
@@ -310,5 +337,5 @@ async function retenir(primitives, magasin, { rootfs, paquet }, jeton = { annule
     0,
     new TextEncoder().encode(JSON.stringify({ paquets })),
   );
-  return magasin.purger([rootfs, ...paquets, JOURNAL_DE_RETENTION], jeton);
+  return magasin.purger([rootfs, ...paquets, ...autres, JOURNAL_DE_RETENTION], jeton);
 }

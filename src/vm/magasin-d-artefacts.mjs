@@ -27,6 +27,15 @@ import { createSha256Stream } from "./sha256-stream.mjs";
 export const TRANCHE_OCTETS = 8 * 1024 * 1024;
 export const DOSSIER_DU_MAGASIN = "vault-artefacts";
 
+/**
+ * Le nom du DESCRIPTEUR SCELLÉ (#247, D1g ; ADR 0045) : un fichier nommé, pas un artefact. Il ne porte
+ * pas d'empreinte dans son nom, et la rétention le garde par son nom. Ce module n'en lit pas le
+ * contenu : le format et le sceau sont ceux de `src/coquille/descripteur-scelle.mjs`.
+ */
+export const NOM_DU_DESCRIPTEUR_SCELLE = "descripteur.scelle";
+/** Au-delà, ce fichier n'est pas un descripteur (la borne de la charge est de 1 Mio) : il est rendu vide. */
+const TAILLE_MAX_DU_DESCRIPTEUR_RANGE = 1024 * 1024 + 256;
+
 const SUFFIXE_PARTIEL = ".partiel";
 const SUFFIXE_TRANCHES = ".tranches";
 const EMPREINTE = /^[0-9a-f]{64}$/;
@@ -139,13 +148,55 @@ export function creerMagasinDArtefacts({
     admettre: (artefact, jeton) => admettre(contexte, artefact, jeton),
     /** RÉTENTION : oublie toute empreinte hors de `garder` (rootfs courant, paquet courant et précédent). */
     purger: (garder, jeton) => purger(contexte, garder, jeton),
+    /** Le descripteur scellé rangé, tel quel : `null` s'il n'y en a pas. Le jugement est en aval. */
+    lireLeDescripteurScelle: () => lireLeDescripteurScelle(contexte),
+    /**
+     * Range le descripteur scellé : écrit sous un nom provisoire, puis RENOMME — jamais écrit sur place.
+     * Rend `false` (sans toucher au descripteur déjà rangé) si le jeton est annulé.
+     */
+    ecrireLeDescripteurScelle: (octets, jeton) =>
+      ecrireLeDescripteurScelle(contexte, octets, jeton),
+    /** Oublie le descripteur rangé : une promesse que la réserve ne tient plus ne doit pas survivre. */
+    oublierLeDescripteurScelle: () =>
+      oublier(contexte, NOM_DU_DESCRIPTEUR_SCELLE, { nomSeul: true }),
   };
 }
 
-async function oublier({ primitives }, sha256) {
-  for (const nom of [sha256, sha256 + SUFFIXE_TRANCHES, sha256 + SUFFIXE_PARTIEL]) {
+async function oublier({ primitives }, sha256, { nomSeul = false } = {}) {
+  const noms = nomSeul ? [sha256] : [sha256, sha256 + SUFFIXE_TRANCHES];
+  for (const nom of [...noms, sha256 + SUFFIXE_PARTIEL]) {
     await primitives.supprimer(nom);
   }
+}
+
+async function lireLeDescripteurScelle({ primitives }) {
+  const taille = await primitives.taille(NOM_DU_DESCRIPTEUR_SCELLE);
+  if (taille === null) return null;
+  if (taille > TAILLE_MAX_DU_DESCRIPTEUR_RANGE) return new Uint8Array(0);
+  const octets = new Uint8Array(taille);
+  if ((await primitives.lire(NOM_DU_DESCRIPTEUR_SCELLE, 0, octets)) !== taille) {
+    return new Uint8Array(0);
+  }
+  return octets;
+}
+
+/**
+ * Le partiel est écrit ENTIER, puis le nom définitif est remplacé. Les primitives n'ayant pas de
+ * troncature, l'ancien fichier est retiré avant le renommage : une coupure entre les deux laisse
+ * « aucun descripteur » — jamais un fichier à moitié neuf, que le sceau refuserait de toute façon.
+ */
+async function ecrireLeDescripteurScelle({ primitives }, octets, jeton = SANS_ANNULATION) {
+  const partiel = NOM_DU_DESCRIPTEUR_SCELLE + SUFFIXE_PARTIEL;
+  await primitives.supprimer(partiel);
+  if (jeton.annule) return false;
+  await primitives.ecrire(partiel, 0, octets);
+  if (jeton.annule) {
+    await primitives.supprimer(partiel);
+    return false;
+  }
+  await primitives.supprimer(NOM_DU_DESCRIPTEUR_SCELLE);
+  await primitives.renommer(partiel, NOM_DU_DESCRIPTEUR_SCELLE);
+  return true;
 }
 
 async function lireLaListe({ primitives }, sha256, octets) {
@@ -285,7 +336,8 @@ async function admettre(contexte, { sha256, octets, racine }, jeton = SANS_ANNUL
  * (ADR 0044, amendement D1g) : le coût est un téléchargement de plus, jamais un octet servi.
  */
 async function purger(contexte, garder, jeton = SANS_ANNULATION) {
-  const gardees = new Set(garder);
+  // Le descripteur rangé n'est pas un artefact : la rétention des artefacts ne le juge pas.
+  const gardees = new Set([...garder, NOM_DU_DESCRIPTEUR_SCELLE]);
   const oubliees = new Set();
   for (const nom of await contexte.primitives.lister()) {
     if (jeton.annule) break;

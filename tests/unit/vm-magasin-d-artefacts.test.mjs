@@ -340,3 +340,68 @@ test("la purge s'arrête au jeton annulé : plus rien n'est oublié après l'éc
   await magasin.purger([], jeton);
   assert.ok((await primitives.lister()).length >= 1, "l'oubli s'est arrêté après l'annulation");
 });
+
+// --- Le descripteur scellé rangé (#247, D1g) : un fichier nommé, remplacé par renommage -----------
+
+test("le descripteur rangé : absent rend null, rangé se relit à l'octet près", async () => {
+  const magasin = creerMagasinDArtefacts({ primitives: primitivesEnMemoire() });
+  assert.equal(await magasin.lireLeDescripteurScelle(), null);
+  const octets = Uint8Array.from({ length: 300 }, (_, i) => i % 251);
+  await magasin.ecrireLeDescripteurScelle(octets);
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), octets);
+});
+
+test("un descripteur rangé plus court REMPLACE le précédent sans en garder un seul octet", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(500).fill(1));
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(100).fill(2));
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(100).fill(2));
+  assert.ok(![...primitives.fichiers.keys()].some((nom) => nom.endsWith(".partiel")));
+});
+
+test("un rangement abandonné (jeton annulé) ne touche pas au descripteur déjà rangé", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(100).fill(1));
+  const jeton = { annule: false };
+  const ecrire = primitives.ecrire;
+  primitives.ecrire = async (...args) => {
+    await ecrire(...args);
+    jeton.annule = true;
+  };
+  assert.equal(await magasin.ecrireLeDescripteurScelle(new Uint8Array(100).fill(2), jeton), false);
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(100).fill(1));
+  assert.ok(![...primitives.fichiers.keys()].some((nom) => nom.endsWith(".partiel")));
+});
+
+test("un partiel de descripteur n'est jamais lu comme le descripteur rangé", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  primitives.fichiers.set("descripteur.scelle.partiel", new Uint8Array(100).fill(3));
+  assert.equal(await magasin.lireLeDescripteurScelle(), null);
+});
+
+test("un fichier de descripteur démesuré n'est pas chargé : il est rendu vide, donc refusé en aval", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  primitives.fichiers.set("descripteur.scelle", new Uint8Array(2 * 1024 * 1024));
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(0));
+});
+
+test("oublier le descripteur rangé retire le fichier et son partiel", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(10));
+  primitives.fichiers.set("descripteur.scelle.partiel", new Uint8Array(10));
+  await magasin.oublierLeDescripteurScelle();
+  assert.deepEqual(await primitives.lister(), []);
+});
+
+test("la purge ne retire pas le descripteur rangé", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(10));
+  await magasin.purger([]);
+  assert.deepEqual(await primitives.lister(), ["descripteur.scelle"]);
+});

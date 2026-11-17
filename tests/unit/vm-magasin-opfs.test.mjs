@@ -340,3 +340,39 @@ test("budget serré : l'admission est refusée, typée, avant toute écriture", 
   assert.equal(await admissionSelonLeBudget(large)(octets.byteLength), true);
   assert.equal(await admissionSelonLeBudget(createStorageBudget({}))(octets.byteLength), false);
 });
+
+test("le descripteur rangé est borné dans le temps comme le reste : un magasin lent cède", async () => {
+  const jamais = new Promise(() => {});
+  const jetons = [];
+  const lent = borneDansLeTemps(
+    {
+      servir: () => jamais,
+      lireLeDescripteurScelle: () => jamais,
+      ecrireLeDescripteurScelle: (_octets, jeton) => (jetons.push(jeton), jamais),
+      oublierLeDescripteurScelle: () => jamais,
+    },
+    5,
+  );
+  assert.equal(await lent.lireLeDescripteurScelle(), null, "lent : comme absent");
+  await assert.rejects(lent.ecrireLeDescripteurScelle(new Uint8Array(1)), { code: "MAGASIN_LENT" });
+  assert.equal(jetons[0].annule, true, "l'échéance annule le jeton du rangement");
+  await assert.rejects(lent.oublierLeDescripteurScelle(), { code: "MAGASIN_LENT" });
+});
+
+test("la rétention garde le descripteur rangé, et les artefacts nommés en plus", async () => {
+  const { stockage, fichiers } = fauxStockage({ synchrone: true });
+  const magasin = ouvrirLeMagasinOpfs({ stockage });
+  const petit = new Uint8Array(64).fill(5);
+  const autre = new Uint8Array(64).fill(6);
+  await magasin.admettre({ sha256: empreinteDe(petit), octets: petit });
+  await magasin.admettre({ sha256: empreinteDe(autre), octets: autre });
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(20));
+  await magasin.retenir({
+    rootfs: "a".repeat(64),
+    paquet: "b".repeat(64),
+    autres: [empreinteDe(petit)],
+  });
+  assert.ok(fichiers.has(empreinteDe(petit)), "l'artefact nommé en plus survit");
+  assert.ok(!fichiers.has(empreinteDe(autre)), "l'autre est oublié");
+  assert.ok(fichiers.has("descripteur.scelle"), "le descripteur rangé survit");
+});
