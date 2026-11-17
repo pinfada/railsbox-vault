@@ -87,6 +87,34 @@ coupures qu'aucune autre épreuve ne place), en un conteneur, en ≈ 1 s. Les on
 la suite de cette section sont les onze d'avant #236 ; la douzième est celle du paquet applicatif
 (T1).
 
+### Le hors ligne du magasin d'artefacts (#247, lot D1g ; ADR 0044 § 6, ADR 0045)
+
+Deux campagnes tiennent le magasin, rejouées par `tools/rejouer-les-campagnes.mjs` et donc par le
+job requis « Campagnes de mutation » :
+
+- **`magasin`** (`tools/muter-gardes-magasin.mjs`) : le cache. **20 gardes, 20 tuées** — rien servi
+  avant vérification, la racine du descripteur, le budget, la rétention, l'échéance de 20 s, et,
+  depuis D1g, les restes de la revue de #292 : le jeton d'annulation de `retenir` (avant
+  l'effacement et l'écriture du journal, et dans la purge), le jeton testé avant chaque tranche,
+  après la dernière et avant `renommer`, et le `.partiel` retiré à l'abandon ;
+- **`hors-ligne`** (`tools/muter-gardes-hors-ligne.mjs`) : la DÉCISION de démarrer sans l'origine.
+  **53 gardes, 53 tuées** — « injoignable » = un `TypeError` (ni `Error`, ni 5xx, ni portail
+  captif), le sceau et tout ce qu'il couvre (magie, date, longueur, charge), la forme du contenu
+  sous un sceau juste, la clé (non extractible, domaine, identifiant, version dans l'info HKDF)
+  effacée après usage, l'ordre des refus avant tout boot, le rangement après acquisition complète
+  seulement, la réserve « complète » (`reserveTientTout`), les épingles des cinq petits artefacts,
+  le refus de télécharger hors connexion, le remplacement du fichier rangé sans reste, et les bornes
+  dans le temps.
+
+**Les niveaux de preuve du lot.** Unitaire (Node, magasin en mémoire) pour le format, le sceau, la
+classification « injoignable », l'anti-retour par la vraie décision de déphasage et le rangement ;
+**intégration navigateur sur les trois moteurs** (`npm run test:browser`, projets
+`frontiere-descripteur-*`) pour WebCrypto et l'OPFS réels ; **bout en bout**
+(`tests/e2e/hors-ligne.spec.mjs`, lot 3 de `reprise.yml`) pour le démarrage réellement hors ligne et
+les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les contre-épreuves « fabriqué »
+et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en bout en bout
+; le retour arrière, en unitaire.
+
 Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve
 rejouée avant ET après le retrait d'une garde, restauration. Avant #196, rien ne les jouait TOUTES

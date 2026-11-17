@@ -48,10 +48,10 @@ décisions.
 
 ## État au 04/10/2026
 
-Les décisions 1 à 5 sont en service (D1a, D1b, D1c). La décision 6 (hors ligne) est arrêtée mais pas
-encore implémentée : tant qu'elle ne l'est pas, une origine injoignable empêche le démarrage, comme
-avant le magasin. La campagne de mutation `magasin` couvre les gardes 2 à 5 (7 mutants, 7 tués) ;
-celle du hors-ligne viendra avec son implémentation.
+Les décisions 1 à 5 sont en service (D1a, D1b, D1c). La décision 6 (hors ligne) était arrêtée mais
+pas encore implémentée au 04/10 ; elle l'est depuis le lot D1g (amendement ci-dessous). La campagne
+de mutation `magasin` couvre les gardes 2 à 5 (7 mutants, 7 tués) ; celle du hors-ligne viendra avec
+son implémentation.
 
 ## Amendement — Revue de sécurité du 04/10/2026
 
@@ -74,6 +74,24 @@ Constats et correctifs (lot D1f) :
 
 La campagne `magasin` compte désormais 12 gardes (12 tués) : copie après vérification, jeton testé
 avant la copie, échéance qui annule, racine confrontée à l'admission, rétention bornée.
+
+## Amendement — Le hors ligne et les restes de la revue de D1f (lot D1g, 17/11/2026)
+
+La décision 6 est implémentée, et précisée par
+l'[ADR 0045](0045-le-descripteur-scelle-et-le-demarrage-hors-connexion.md) (**proposé**, en attente
+d'accord) : le descripteur rangé est **scellé** (HMAC-SHA-256, clé dérivée de la clé du coffre dans
+un domaine dédié), « injoignable » est **uniquement un `TypeError` de `fetch`**, la version rangée
+n'est jamais antérieure à celle du volume, la date est publiée, et le descripteur n'est rangé
+qu'après une acquisition complète que la réserve tient tout entière. Wasm, BIOS, VGA BIOS, noyau et
+initrd passent désormais par le magasin, épinglés. **`libv86` fait exception** (inexécutable depuis
+l'OPFS sous la CSP) : cache HTTP, limite écrite dans l'ADR 0045.
+
+Les restes de la revue de #292 sont soldés : `retenir` porte un jeton d'annulation testé avant
+chaque geste visible (journal, purge), une admission abandonnée **retire son `.partiel`**, et la
+campagne `magasin` tient les gardes du jeton avant `renommer` (20 gardes, 20 tuées). **Limite
+écrite, inchangée** : la purge retire encore le `.partiel` d'une empreinte non gardée, y compris
+celui d'une admission en cours d'un autre onglet — le coût est un téléchargement de plus, jamais un
+octet servi.
 
 ## Conséquences
 

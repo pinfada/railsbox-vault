@@ -207,7 +207,10 @@ jobs:
           - lot: "3"
             fichiers: >-
               tests/e2e/durabilite-du-commit.spec.mjs tests/e2e/parcours-utilisateur.spec.mjs
-              tests/e2e/parcours-clavier.spec.mjs
+              tests/e2e/parcours-clavier.spec.mjs tests/e2e/hors-ligne.spec.mjs
+          # `hors-ligne.spec.mjs` (#247, lot D1g) a rejoint le lot 3 : quatre démarrages de Rails
+          # (≈ 3 min l'un) et cinq réouvertures du coffre, sans mesure CI avant son premier run. Le lot 3
+          # visait ≈ 29 à 36 min ; la borne de 60 min du job reste inchangée.
           # La MISE À JOUR du paquet (#236 T2) a SON lot : sept ouvertures du coffre, quatre boots de
           # Rails dont un qui migre (Rails chargé deux fois), une sauvegarde et une restauration.
           # `magasin-d-artefacts.spec.mjs` (#247, lot D1e) le rejoint : c'est le lot le moins chargé

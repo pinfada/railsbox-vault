@@ -1532,10 +1532,49 @@ L'[ADR 0044](docs/decisions/0044-le-magasin-d-artefacts.md) range le rootfs et l
 - **Le hors-ligne gèle la version** : quand l'origine est injoignable, le dernier descripteur
   vérifié fait foi. Une révocation publiée pendant la coupure n'est pas vue avant le retour du
   réseau (gel de version au sens de TUF, accepté par l'amendement du 04/10 de l'ADR 0042 tant que
-  les paquets ne sont pas signés).
+  les paquets ne sont pas signés). **Il n'y a aucune durée maximale avant la signature des paquets
+  (jalon 6)** : une date d'expiration non signée ne protège de rien. La date de la dernière
+  vérification est dite à la personne ; elle ne borne rien.
 - **Un adversaire qui écrit dans l'OPFS ET contrôle l'origine** : il peut servir un descripteur dont
   la racine désigne ses propres tranches. Le magasin n'ajoute rien à la confiance faite à l'origine
   (ADR 0042) ; seule la signature du jalon 6 y répondra.
+
+### Le démarrage hors connexion : le descripteur scellé (#247, D1g, ADR 0045)
+
+Quand l'origine est injoignable, le coffre démarre sur le **descripteur rangé au magasin**. L'OPFS
+n'authentifie rien : ce descripteur est donc **scellé** (HMAC-SHA-256) sous une clé qui descend de
+la clé du coffre par HKDF, dans un domaine dédié (`descripteur`), non extractible, jamais la clé du
+coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est là.
+
+**Ce que le scellement protège.**
+
+- Un adversaire qui écrit dans l'OPFS **sans la clé du coffre** ne peut ni fabriquer ni modifier un
+  descripteur accepté : le sceau couvre la magie (donc la version du format), la date, la longueur
+  et la charge. Un descripteur altéré, fabriqué, d'un autre coffre, non scellé ou d'une autre
+  version du format est **refusé**, avec un code typé
+  (`VAULT_COQUILLE_HORS_LIGNE_DESCRIPTEUR_REFUSE`) et sans repli ; le démarrage en ligne suivant le
+  remplace.
+- **« Injoignable » est uniquement un `TypeError` levé par `fetch`.** Un délai, une réponse HTTP
+  (5xx comprise), un descripteur différent ou du HTML de portail captif n'ouvrent PAS le repli :
+  l'origine fait foi (ADR 0042), et le descripteur rangé n'est ni lu ni cru.
+- **Anti-retour** : le descripteur rangé repasse par la décision de déphasage ; une version
+  antérieure à celle déjà migrée dans le volume est refusée (`APPLICATION_ANTERIEURE`). Sans volume,
+  pas de hors ligne (`HORS_LIGNE_SANS_COFFRE`).
+- Le descripteur n'est rangé qu'après une acquisition complète que la réserve tient tout entière ;
+  sinon le précédent est oublié. Wasm, BIOS, VGA BIOS, noyau, initrd, rootfs et paquet sont lus du
+  magasin, chacun vérifié contre son empreinte épinglée ; hors connexion, rien n'est téléchargé.
+
+**Ce que le scellement ne protège pas.**
+
+- **Le gel de version** et l'**absence de durée maximale** (ci-dessus) jusqu'au jalon 6.
+- **Le rejeu d'un ancien descripteur scellé valide** : accepté s'il n'est pas antérieur à la version
+  du volume ; sa date est authentifiée, pas garantie fraîche.
+- **Le retour arrière complet de l'OPFS ET du volume ensemble** : l'anti-retour perd sa référence
+  (l'ancrage monotone est la question n° 3 de l'ADR 0033, #23).
+- **L'origine qui ment de façon cohérente** et **l'adversaire qui détient la clé du coffre**.
+- **`libv86` et le code de la coquille** viennent du cache HTTP du navigateur, non garanti ; la page
+  ne se recharge pas hors connexion (pas de Service Worker). Le démarrage hors connexion exige donc
+  une page déjà chargée et `libv86` encore en cache — sinon refus typé, sans effet sur les données.
 
 ## L'instantané de reprise contient la RAM invitée (#65)
 
