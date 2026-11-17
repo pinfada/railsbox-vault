@@ -3,7 +3,7 @@ import { defineConfig } from "@playwright/test";
 export const ORIGINE_APPARENCE = "http://127.0.0.1:4205";
 // Les étapes 4 prête à 9, `forced-colors` et le mouvement non réduit sont joués sur Chromium seul
 // (revue de la PR #216, constats 2 et 3) : Firefox n'atteint pas l'étape 4, WebKit ne crée aucun coffre.
-const CHROMIUM_SEUL = /parcours-etapes\.spec\.mjs/;
+const CHROMIUM_SEUL = /parcours-(etapes|restes)\.spec\.mjs/;
 
 export default defineConfig({
   testDir: "tests/apparence",
