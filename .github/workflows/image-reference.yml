@@ -65,6 +65,12 @@ jobs:
       - name: Épinglage de la chaîne de construction
         run: node tools/build-reference-image/verify-pinning.mjs
 
+      # Avant vingt minutes de construction : un `RUN` 32 bits peut-il créer une socket ? Sur
+      # ubuntu-26.04 (Docker 29.4.2) le constructeur par défaut répond ENOSYS et `apt-get` dit
+      # « Temporary failure resolving » (#295). Cette sonde donne la cause en quelques secondes.
+      - name: Sonde des sockets 32 bits
+        run: node --test tests/vm/sockets-i386.test.mjs
+
       - name: Suite Minitest de l'application de référence
         run: npm run app:test
 
