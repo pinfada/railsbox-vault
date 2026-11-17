@@ -78,3 +78,28 @@ test("B2-7 : un numéro de feuille qui n'en est pas un se dit au champ, avant le
   await ancre.fill("");
   await expect(ancre).not.toHaveAttribute("aria-invalid", "true");
 });
+
+test("m11 : un refus du parcours est dit à la console par son code, sans la valeur refusée", async ({
+  page,
+}) => {
+  const avertissements = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning") avertissements.push(message.text());
+  });
+  const feuille = await afficherLeCode(page);
+  await eprouverLaFeuille(page, feuille.code);
+  await bouton(page, "Continuer : Verrouiller et rouvrir").click();
+  await verrouillerEtRecharger(page);
+  await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
+  const fausse = "une mauvaise phrase tout autre";
+  await page.getByLabel("Votre phrase", { exact: true }).fill(fausse);
+  await bouton(page, "Ouvrir mon coffre").click();
+  await expect(page.locator("#parcours-refus")).not.toBeEmpty({ timeout: 60_000 });
+  const refus = avertissements.filter((texte) => /VAULT_[A-Z0-9_]+/.test(texte));
+  expect(refus, "le code du refus est à la console").toHaveLength(1);
+  expect(refus[0]).toMatch(/^\[RailsBox Vault\] refus : VAULT_/);
+  for (const texte of avertissements) {
+    expect(texte).not.toContain(fausse);
+    expect(texte).not.toContain(feuille.code);
+  }
+});
