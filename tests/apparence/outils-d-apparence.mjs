@@ -20,6 +20,13 @@ export const PHRASE = "une phrase publique pour les captures du parcours utilita
 export const ORIGINE_A = "http://127.0.0.1:4205";
 export const ORIGINES_SERVIES = Object.freeze([ORIGINE_A, "http://localhost:4206"]);
 
+/**
+ * Règles dont un résultat `incomplete` vaut échec. Axe 4.14 y range une région défilante dont le
+ * contenu n'est focalisable que par programme (`tabindex="-1"`) : dequelabs/axe-core#5364. Ces règles
+ * ne sont pas laissées à `violations` seul, faute de quoi l'exigence s'affaiblirait sans bruit.
+ */
+export const REGLES_INCOMPLETES_BLOQUANTES = Object.freeze(["scrollable-region-focusable"]);
+
 export const titre = (page, nom) => page.getByRole("heading", { level: 2, name: nom, exact: true });
 export const bouton = (page, nom) => page.getByRole("button", { name: nom, exact: true });
 
@@ -50,7 +57,10 @@ export async function verifier(page, testInfo, nom) {
     `${RACINE}/${prefixe}-axe.json`,
     JSON.stringify({ violations: resultats.violations, incomplete: resultats.incomplete }, null, 2),
   );
-  expect(resultats.violations, `accessibilité : ${nom}`).toEqual([]);
+  const incompletesBloquants = resultats.incomplete.filter((regle) =>
+    REGLES_INCOMPLETES_BLOQUANTES.includes(regle.id),
+  );
+  expect([...resultats.violations, ...incompletesBloquants], `accessibilité : ${nom}`).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => innerWidth),
   );
