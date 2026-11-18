@@ -176,3 +176,15 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
   » juste avant que le moteur rende « durable ».
 - **Étendre les codes de diagnostic de #9 pour porter la conduite.** Rejeté : #9 diagnostique, #42
   décide. Mélanger les deux dans un même module brouillerait la frontière que cet ADR trace.
+
+## Note du 18/11/2026 — WebKit rend désormais `denied`, non plus `unsupported` (#231)
+
+Cette note n'amende pas la décision. Elle date un relevé : sous Playwright 1.65.0 (WebKit 27.2),
+`navigator.storage.persist()` existe et rend `false` sans attente, en contexte éphémère comme
+persistant ; sous WebKit 26.5 il était absent. La couche budget (`demanderPersistance`) range déjà
+une réponse `false` sous `denied` et l'absence sous `unsupported` : le produit n'a pas changé, c'est
+le moteur. Les conduites de l'ADR (`denied` et `unsupported` rangés ensemble, `persistent` jamais
+promis) tiennent telles quelles. La table de verdicts attendus des projets de persistance
+(`tests/browser/persistance-attendue.mjs`) passe `persistance-webkit` à `denied` ; elle n'admet pas
+les deux valeurs, pour qu'un retour du moteur à l'ancien état rougisse. Pas d'ADR neuf : aucune
+conduite ni aucun contrat de diagnostic ne change.

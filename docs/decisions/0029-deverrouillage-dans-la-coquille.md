@@ -544,3 +544,35 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
 
 Aucun format, aucun vecteur, aucune empreinte ne bouge : `node tools/verifier-vecteurs.mjs` reste
 vert sans qu'un seul fichier de `tests/vectors/` ait été touché.
+
+## Note du 18/11/2026 — « l'OPFS manque » se constate par un APPEL, non par `typeof` (#231)
+
+Cette note n'amende pas la décision 6 : elle en précise le DÉTECTEUR. L'absence d'OPFS reste un ÉTAT
+(`indisponible`) et le geste reste refusé `VAULT_STORAGE_UNSUPPORTED` ; ce qui change, c'est ce qui
+déclenche l'absence.
+
+**Le fait** (`docs/compatibility.md`, § WebKit 26.6 et suivants). Depuis WebKit 26.6, observé sous
+Playwright 1.65.0 / WebKit 27.2, `navigator.storage.getDirectory` est une fonction mais son appel
+REJETTE (`UnknownError`) dans un contexte éphémère, page comme Worker. Le Worker de confiance ne
+constatait l'absence que par `typeof` : il se croyait capable, l'inventaire levait
+`VAULT_STORAGE_SUPPORT_FAILURE` (un nom d'erreur inconnu n'est pas classé), et la coquille passait
+en `erreur` — 76 épreuves WebKit rouges.
+
+**La décision.** Le Worker appelle `getDirectory()` une fois au démarrage (`opfsAtteignable`) ; un
+rejet pose `indisponible` avant la première réponse d'état, comme la fonction absente le faisait.
+`volumeDirectory` traduit de même le rejet de `getDirectory()` — lui seul — en `unsupported`. La
+table de `opfs-error-mapping.mjs` ne change pas : « un nom inconnu n'est jamais rangé dans l'état
+voisin » reste vrai pour toute erreur sur un handle déjà obtenu.
+
+**Pourquoi une note et non un ADR neuf.** Aucune conduite ne change : l'utilisateur voit le même
+état et le même refus qu'avant sur un moteur sans OPFS. Seul le prédicat s'élargit, et il s'élargit
+vers l'état prudent. Un ADR neuf serait justifié si le produit OUVRAIT un volume dans un contexte où
+il refusait, ou refusait là où il ouvrait.
+
+**Contrainte de construction.** La sonde est une promesse attendue par `exclusiviteConstatee`, pas
+un `await` de module : un `await` de premier niveau dans un Worker module fait perdre ses premiers
+messages sur les trois moteurs (mesure du 18/11/2026).
+
+**Limite écrite.** Aucune mesure sur un vrai Safari (#40). Si Safari de bureau ouvre l'OPFS hors
+navigation privée, le refus du volume est une propriété de la session ; le produit refuse alors
+seulement quand l'appel rejette, ce que cette note tient.
