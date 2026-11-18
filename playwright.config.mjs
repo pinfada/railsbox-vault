@@ -116,9 +116,6 @@ const DEVERROUILLAGE_COQUILLE = [
   // Le PARCOURS GUIDÉ (#193, ADR 0040) : l'ordre attaqué et ce qu'il laisse dans la page, sur le même
   // chemin de produit (revue de la PR #213, constats 1, 2, 3 et 9).
   "**/coquille-parcours.spec.mjs",
-  // La COURSE entre deux onglets au déverrouillage (#311, C5) : même chemin de produit, deux Workers
-  // sur un même OPFS, pause posée par l'épreuve.
-  "**/coquille-course-entre-onglets.spec.mjs",
 ];
 
 /**
@@ -219,6 +216,9 @@ for (const moteur of moteurs) {
 
 export default defineConfig({
   testDir: "tests/browser",
+  // Les COURSES ENTRE ONGLETS (#311, C5) ont leur configuration : elles exigent le serveur à point
+  // d'arrêt (`playwright.course-onglets.config.mjs`) et n'ont aucun sens sur un serveur ordinaire.
+  testIgnore: ["**/coquille-course-*.spec.mjs"],
   fullyParallel: false,
   // Les relevés du spike #35 exécutent dix-neuf sondes dont plusieurs attendent volontairement un
   // silence de l'API (origine opaque) : le délai par défaut de 30 s ne leur suffit pas.
@@ -291,6 +291,7 @@ export default defineConfig({
       name: nom,
       use: { browserName: nom },
       testIgnore: [
+        "**/coquille-course-*.spec.mjs",
         ...FRONTIERE_CSP,
         ...FRONTIERE_HIERARCHIE,
         ...FRONTIERE_DESCRIPTEUR,

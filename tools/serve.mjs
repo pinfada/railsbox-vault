@@ -3,6 +3,7 @@ import { open, realpath } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { readFile } from "node:fs/promises";
 
 import {
   ISOLATION_REQUIRE_CORP,
@@ -12,6 +13,7 @@ import {
   parseServerOptions,
   securityHeaders,
 } from "./serve-headers.mjs";
+import { CHEMIN_INSTRUMENTE, harnaisDemande, instrumenter } from "./harnais-point-d-arret.mjs";
 
 const publicRoot = resolve("public");
 const sourceRoot = resolve("src");
@@ -39,6 +41,13 @@ const options = parseServerOptions(process.argv.slice(2), process.env);
  */
 const FANION_DU_HARNAIS = "--harnais-e2e-hors-ligne";
 const dureeDuCodeEnCache = lireLeHarnais(process.argv.slice(2));
+
+/**
+ * HARNAIS des COURSES ENTRE ONGLETS SEULEMENT (#311, C5 ; `tools/harnais-point-d-arret.mjs`) : sert, pour
+ * UN chemin, une copie de `openOpfsSyncAccess` que l'épreuve peut retenir. Même borne que le harnais
+ * ci-dessus : un ARGUMENT, que seule `playwright.course-onglets.config.mjs` passe — jamais l'environnement.
+ */
+const pointDArret = harnaisDemande(process.argv.slice(2));
 
 /** @returns {number | null} la fraîcheur du code en secondes, ou `null` sans harnais ; arrête le processus si mal posé. */
 function lireLeHarnais(argv) {
@@ -189,7 +198,9 @@ createServer(async (request, response) => {
       ...enTetesDeCacheDuHarnais(pathname),
     });
     if (request.method === "HEAD") response.end();
-    else await pipeline(fichier.createReadStream({ autoClose: false }), response);
+    else if (pointDArret && pathname === CHEMIN_INSTRUMENTE) {
+      response.end(instrumenter(await readFile(cheminReel, "utf8")));
+    } else await pipeline(fichier.createReadStream({ autoClose: false }), response);
   } catch {
     // Une ABSENCE n'est jamais cachable. Sous `/vendor/v86/artefacts/*` le `_headers` publié
     // annonce un an d'`immutable` pour le CHEMIN, et un 404 gardé un an n'aurait aucun geste de
