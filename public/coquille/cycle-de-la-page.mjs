@@ -256,7 +256,7 @@ export function creerCycle({
       rapport,
       publier,
       apresRestauration: () => interfaceDeDeverrouillage.rafraichirLInventaire(),
-      apresRevocation: () => interfaceDeDeverrouillage.rafraichirLInventaire(),
+      apresRevocation: (cause) => interfaceDeDeverrouillage.rafraichirLInventaire(cause),
     });
 
     inscrire("backendPuisVm", ISSUES_DETAPE.differee, "volume-verrouille");

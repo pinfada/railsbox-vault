@@ -67,6 +67,7 @@ const ouvert = (reste) => ({
   moyens: MOYENS_DE_A,
   progression: eprouvee,
   feuilleEprouvee: true,
+  inventaire: "relu", // sans valeur, l'inventaire est « non relu » (relecture de #308)
   ...reste,
 });
 
@@ -422,7 +423,8 @@ test("#239 : la feuille affichée DANS la page se recopie, puis s'éprouve en ve
 test("#239 : aucun écran de travail sans feuille éprouvée ; la récupération permet de l'éprouver", () => {
   const ecransDeTravail = new Set(
     Object.entries(ECRANS)
-      .filter(([id, ecran]) => id !== "recuperer" && ecran.etape !== null && ecran.etape >= 4)
+      // « relire » : l'inventaire n'est pas relu, aucun constat n'est utilisé — ce n'est pas un écran de travail.
+      .filter(([id, e]) => id !== "recuperer" && !id.startsWith("relire") && e.etape >= 4)
       .map(([id]) => id),
   );
   for (const progression of [creee, rendue, eprouvee, PROGRESSION_INITIALE]) {

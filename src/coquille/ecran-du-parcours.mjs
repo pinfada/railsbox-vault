@@ -25,7 +25,7 @@ export function ecranDuParcours({ etat, releve, rapport, texteDesMoyens, moteur 
     nombreDeCodes: releve.nombreDeCodes,
     // Le CONSTAT du Worker, jamais l'indice du fichier : c'est la garde des étapes 4 à 9 (#239).
     feuilleEprouvee: rapport.feuilleEprouvee === true,
-    inventaireRelu: releve.inventaireRelu !== false,
+    inventaire: releve.inventaire, // pas de repli : sans cause, l'inventaire est « non relu »
     progression: etat.progression,
     sousEtatDuCode: etat.sousEtatDuCode,
     revocationFaite: etat.revocationFaite,

@@ -465,6 +465,14 @@ Messages qui peuvent s'afficher sur cet écran :
 
 ### Écran : Votre coffre doit être relu
 
+> Votre coffre n'a pas pu relire ce qu'il contient : cet écran ne peut plus dire quels moyens
+> l'ouvrent, ni si votre feuille est toujours juste.
+>
+> Ce que vous avez à faire : Rouvrez votre coffre : rechargez la page, puis ouvrez-le avec le moyen
+> que vous avez utilisé.
+
+### Écran : Votre coffre doit être relu
+
 > La révocation a été faite. Mais votre coffre n'a pas pu relire ce qu'il contient : cet écran ne
 > peut plus dire quels moyens l'ouvrent encore, ni si votre feuille est toujours juste.
 >

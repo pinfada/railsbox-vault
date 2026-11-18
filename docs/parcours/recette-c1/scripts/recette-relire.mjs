@@ -121,4 +121,74 @@ async function jouer({ largeur, theme }) {
   await navigateur.close();
 }
 
-for (const run of runs) await jouer(run);
+/** Hors de toute révocation : le déverrouillage ordinaire dont la relecture d'inventaire ÉCHOUE. */
+async function jouerLOrdinaire({ largeur, theme }) {
+  const nom = `${largeur}-${theme}`;
+  const navigateur = await chromium.launch();
+  const contexte = await navigateur.newContext({
+    viewport: { width: largeur, height: 900 },
+    colorScheme: theme,
+    reducedMotion: "reduce",
+  });
+  await contexte.addInitScript(() => {
+    const envoyer = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (message, ...suite) {
+      if (globalThis.__echecInventaire && String(message?.type).endsWith("inventaire-prive")) {
+        const reponse = { ...globalThis.__echecInventaire, correlation: message.correlation };
+        setTimeout(() => this.dispatchEvent(new MessageEvent("message", { data: reponse })), 0);
+        return undefined;
+      }
+      return envoyer.call(this, message, ...suite);
+    };
+  });
+  const page = await contexte.newPage();
+  const titre = (t) => page.getByRole("heading", { level: 2, name: t, exact: true });
+  const bouton = (n) => page.getByRole("button", { name: n, exact: true });
+  const long = { timeout: 180_000 };
+  const recharge = async (declencheur) => {
+    const l = page.waitForEvent("load");
+    await declencheur();
+    await l;
+    await page.waitForLoadState("load");
+  };
+  await page.goto(`${origine}/index.html`);
+  await titre("Créer votre coffre").waitFor({ timeout: 60_000 });
+  await bouton("Commencer").click();
+  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+  await bouton("Créer mon coffre").click();
+  await bouton("Afficher mon code de récupération").click({ timeout: 60_000 });
+  await page.locator("#feuille-code").getByText(FORME).waitFor();
+  const code = (await page.locator("#feuille-code").textContent()).trim();
+  await bouton("J'ai recopié mon code").click();
+  await recharge(() => bouton("Verrouiller mon coffre").click());
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton("Ouvrir mon coffre avec le code").click();
+  await titre("Travailler dans l'application").waitFor(long);
+  await bouton("Continuer : Verrouiller et rouvrir").click();
+  await recharge(() => bouton("Verrouiller mon coffre").click());
+  await titre("Rouvrir votre coffre").waitFor(long);
+  await page.evaluate((g) => (globalThis.__echecInventaire = g), gabarit());
+  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+  await bouton("Ouvrir mon coffre").click();
+  await titre("Votre coffre doit être relu").waitFor(long);
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: `${sortie}/relire-ordinaire-${nom}.png`, fullPage: true });
+  await writeFile(
+    `${sortie}/mesures-relire-ordinaire-${nom}.json`,
+    JSON.stringify({ texte: await page.locator("#parcours").innerText() }, null, 2) + "\n",
+  );
+  await navigateur.close();
+}
+
+function gabarit() {
+  return enveloppePrivilegiee(TYPES_PRIVILEGIES.refus, {
+    code: "VAULT_RECETTE",
+    message: "refus de la recette",
+    correlation: "x",
+  });
+}
+
+for (const run of runs) {
+  await jouer(run);
+  await jouerLOrdinaire(run);
+}

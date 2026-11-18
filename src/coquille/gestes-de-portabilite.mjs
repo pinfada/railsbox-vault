@@ -15,6 +15,7 @@
 
 import { brancherUneConfirmation } from "./confirmation-en-deux-temps.mjs";
 import { REVOCATION } from "./etat-de-la-revocation.mjs";
+import { ETAT_DE_L_INVENTAIRE } from "./etat-de-l-inventaire.mjs";
 import { AVERTISSEMENT_SANS_RECUPERATION } from "./feuille-de-recuperation.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
@@ -252,7 +253,7 @@ async function revoquerEnUrgence(contexte) {
  */
 async function relireApresLaRevocation(contexte) {
   try {
-    await contexte.apresRevocation?.();
+    await contexte.apresRevocation?.(ETAT_DE_L_INVENTAIRE.apresRevocation);
   } catch {
     contexte.rapport.feuilleEprouvee = false;
     contexte.dire("parcours-incertitude", MESSAGES.relectureEchouee);

@@ -163,5 +163,17 @@ de l'enveloppe, de `src/vm/` ni des codes de refus.**
   faite, mais l'affichage des moyens n'a pas pu être mis à jour. Rouvrez votre coffre pour le
   relire. » La reprise est la réouverture ; une relecture qui réussit ensuite rend l'inventaire
   relu.
+- **Relecture de #308 (REFUSÉ `bdff381`), la CAUSE de l'invalidation.** L'invalidation d'une
+  relecture d'inventaire échouée s'appliquait à tout échec — un déverrouillage ordinaire compris —
+  et l'écran « relire » disait alors « La révocation a été faite » alors qu'aucune n'avait eu lieu.
+  La cause est désormais PORTÉE par le relevé (`releve.inventaire`,
+  `src/coquille/etat-de-l-inventaire.mjs`) : `relu`, `apres-revocation` (une révocation ACQUITTÉE
+  par le Worker, puis la relecture a échoué) ou `autre`. Deux écrans : « relire », qui ne parle
+  jamais de révocation, et « relire-apres-revocation », qui le dit. La valeur par défaut de
+  `ecranCourant` (`inventaireRelu = true`, qui réactivait les constats périmés quand la page ne
+  transmettait rien) est SUPPRIMÉE : l'absence de cause vaut « non relu ». La construction de
+  l'observation du parcours vit dans `src/coquille/ecran-du-parcours.mjs`, comme `montrerLesBlocs`,
+  pour que la campagne de mutation en mute chaque transmission. _Limite_ : le passage de la cause
+  par `cycle-de-la-page.mjs` (une flèche) n'est pas muté, les deux moitiés qu'il relie le sont.
 - **Non prouvé.** L'annonce par un vrai lecteur d'écran (seules la description et le nom accessibles
   sont éprouvés, sous Chromium) ; le parcours clavier E2E sur Rails réel (il tourne en CI).

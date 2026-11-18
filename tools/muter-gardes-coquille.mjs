@@ -76,6 +76,8 @@ const MOYENS_NOMMES = "src/coquille/moyens-nommes.mjs";
 const CONFIRMEE = "src/coquille/confirmation-de-la-revocation.mjs";
 const BLOCS_MONTRES = "src/coquille/blocs-montres.mjs";
 const SORTIE = "src/coquille/sortie-de-la-revocation.mjs";
+const ECRAN_DU_PARCOURS = "src/coquille/ecran-du-parcours.mjs";
+const EPREUVE_ORDINAIRE = "tests/unit/coquille-relecture-ordinaire.test.mjs";
 const EPREUVE_NOUVELLE = "tests/unit/coquille-revocation-incertaine-nouvelle.test.mjs";
 const EPREUVE_RELECTURE = "tests/unit/coquille-relecture-echouee.test.mjs";
 const ETAT_REVOCATION = "src/coquille/etat-de-la-revocation.mjs";
@@ -1710,7 +1712,7 @@ export const MUTATIONS = Object.freeze([
     nom: "la révocation relit l'inventaire après son succès (#308)",
     garde: "relireApresLaRevocation — l'appel",
     fichier: GESTES_PORTABILITE,
-    avant: "    await contexte.apresRevocation?.();\n",
+    avant: "    await contexte.apresRevocation?.(ETAT_DE_L_INVENTAIRE.apresRevocation);\n",
     apres: "",
     epreuves: [EPREUVE_RELECTURE],
   },
@@ -1718,7 +1720,7 @@ export const MUTATIONS = Object.freeze([
     nom: "une relecture d'inventaire échouée invalide ce que l'interface savait — l'APPEL (#308)",
     garde: "rafraichirLInventaire — `invaliderLInventaire`",
     fichier: INTERFACE,
-    avant: "    invaliderLInventaire(contexte);\n",
+    avant: "    invaliderLInventaire(contexte, cause);\n",
     apres: "",
     epreuves: [EPREUVE_RELECTURE],
   },
@@ -1726,9 +1728,9 @@ export const MUTATIONS = Object.freeze([
     nom: "l'invalidation dit que l'inventaire n'est pas relu (#308)",
     garde: "invaliderLInventaire — `inventaireRelu`",
     fichier: INTERFACE,
-    avant: "  releve.inventaireRelu = false;\n",
-    apres: "",
-    epreuves: [EPREUVE_RELECTURE],
+    avant: "  releve.inventaire =\n    cause === ETAT_DE_L_INVENTAIRE.apresRevocation\n",
+    apres: "  releve.inventaire =\n    false\n",
+    epreuves: [EPREUVE_RELECTURE, EPREUVE_ORDINAIRE],
   },
   {
     nom: "l'invalidation oublie les moyens d'avant (#308)",
@@ -1750,7 +1752,7 @@ export const MUTATIONS = Object.freeze([
     nom: "une relecture réussie rend l'inventaire relu (#308)",
     garde: "rafraichirLInventaire — `inventaireRelu = true`",
     fichier: INTERFACE,
-    avant: "  releve.inventaireRelu = true;\n",
+    avant: "  releve.inventaire = ETAT_DE_L_INVENTAIRE.relu;\n",
     apres: "",
     epreuves: [EPREUVE_RELECTURE],
   },
@@ -1758,9 +1760,58 @@ export const MUTATIONS = Object.freeze([
     nom: "le parcours n'utilise aucun constat périmé quand la relecture a échoué (#308)",
     garde: "ecranCourant — `inventaireRelu`",
     fichier: PARCOURS,
-    avant: '    if (!inventaireRelu) return "relire";\n',
-    apres: "",
+    avant: "    if (inventaire !== ETAT_DE_L_INVENTAIRE.relu) {\n",
+    apres: "    if (inventaire === ETAT_DE_L_INVENTAIRE.autre) {\n",
     epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "la relecture qui suit une révocation acquittée en porte la CAUSE (#308)",
+    garde: "relireApresLaRevocation — la cause transmise",
+    fichier: GESTES_PORTABILITE,
+    avant: "    await contexte.apresRevocation?.(ETAT_DE_L_INVENTAIRE.apresRevocation);\n",
+    apres: "    await contexte.apresRevocation?.();\n",
+    epreuves: [EPREUVE_ORDINAIRE],
+  },
+  {
+    nom: "l'invalidation garde la cause « après révocation » (#308)",
+    garde: "invaliderLInventaire — la cause transmise à l'invalidation",
+    fichier: INTERFACE,
+    avant: "    invaliderLInventaire(contexte, cause);\n",
+    apres: "    invaliderLInventaire(contexte);\n",
+    epreuves: [EPREUVE_ORDINAIRE],
+  },
+  {
+    nom: "l'invalidation distingue une révocation acquittée d'un autre échec (#308)",
+    garde: "invaliderLInventaire — la cause",
+    fichier: INTERFACE,
+    avant: "  releve.inventaire =\n    cause === ETAT_DE_L_INVENTAIRE.apresRevocation\n",
+    apres: "  releve.inventaire =\n    true\n",
+    epreuves: [EPREUVE_ORDINAIRE],
+  },
+  {
+    nom: "l'absence de cause vaut « non relu », jamais « relu » (#308)",
+    garde: "ecranCourant — pas de valeur par défaut dangereuse",
+    fichier: PARCOURS,
+    avant: "    if (inventaire !== ETAT_DE_L_INVENTAIRE.relu) {\n",
+    apres: "    if (inventaire === ETAT_DE_L_INVENTAIRE.autre) {\n",
+    epreuves: [EPREUVE_ORDINAIRE],
+  },
+  {
+    nom: "après une révocation acquittée, l'écran le dit (#308)",
+    garde: "ecranCourant — l'écran « relire-apres-revocation »",
+    fichier: PARCOURS,
+    avant: "      return inventaire === ETAT_DE_L_INVENTAIRE.apresRevocation\n",
+    apres: "      return false\n",
+    epreuves: [EPREUVE_ORDINAIRE],
+  },
+  {
+    nom: "le branchement TRANSMET la cause de l'inventaire au parcours (#308)",
+    garde: "ecranDuParcours — `inventaire`",
+    fichier: ECRAN_DU_PARCOURS,
+    avant:
+      "    inventaire: releve.inventaire, // pas de repli : sans cause, l'inventaire est « non relu »\n",
+    apres: '    inventaire: "relu",\n',
+    epreuves: [EPREUVE_ORDINAIRE],
   },
   {
     nom: "un code du chemin rend SA conduite, jamais la phrase générique",

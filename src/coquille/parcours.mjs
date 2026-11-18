@@ -41,6 +41,7 @@
 // et chaque écran des étapes 5 à 9 offre d'y revenir. La VISITE (neuf étapes, une fois, vers
 // l'avant) n'est pas l'USAGE (ouvrir, travailler, verrouiller, chaque jour).
 
+import { ETAT_DE_L_INVENTAIRE } from "./etat-de-l-inventaire.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { GROUPES } from "./saisie-du-code.mjs";
 import { ECRANS, ETAPES, MESSAGES } from "./textes-du-parcours.mjs";
@@ -340,7 +341,7 @@ export function etapeDeLURL(texte) {
  * l'indice de `parcours.json` n'y entre pas.
  *
  * @param {{ pointeur: number | null, coffre: string, moyens?: string[], nombreDeCodes?: number,
- *           feuilleEprouvee?: boolean, inventaireRelu?: boolean, progression?: object, sousEtatDuCode?: string,
+ *           feuilleEprouvee?: boolean, inventaire?: string, progression?: object, sousEtatDuCode?: string,
  *           revocationFaite?: boolean, sansRevoquer?: boolean, phrasePerdue?: boolean,
  *           nouveauCodeDemande?: boolean, refus?: string | null, moteur?: string }} observation
  * @returns {string} une clé de `ECRANS`
@@ -351,7 +352,7 @@ export function ecranCourant({
   moyens = [],
   nombreDeCodes = moyens.includes("recuperation") ? 1 : 0,
   feuilleEprouvee = false,
-  inventaireRelu = true,
+  inventaire, // SANS valeur par défaut : l'absence vaut « non relu », jamais « relu »
   progression = PROGRESSION_INITIALE,
   sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce,
   revocationFaite = false,
@@ -371,7 +372,11 @@ export function ecranCourant({
   if (coffre === COFFRE.ouvert) {
     // Une relecture d'inventaire échouée : ni les moyens ni le constat de feuille ne sont connus, et
     // aucun ne sert de garde. L'écran dit de rouvrir le coffre (relecture de #308).
-    if (!inventaireRelu) return "relire";
+    if (inventaire !== ETAT_DE_L_INVENTAIRE.relu) {
+      return inventaire === ETAT_DE_L_INVENTAIRE.apresRevocation
+        ? "relire-apres-revocation"
+        : "relire";
+    }
     return ecranOuvert({
       pointeur,
       nombreDeCodes,

@@ -43,6 +43,7 @@ import {
   feuilleDeRecuperation,
   versionANoter,
 } from "./feuille-de-recuperation.mjs";
+import { ETAT_DE_L_INVENTAIRE } from "./etat-de-l-inventaire.mjs";
 import { REFUS_SANS_CODE } from "./conduites-du-parcours.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
 import {
@@ -189,8 +190,8 @@ export function monterLInterface({
       moyensProposes: [],
       nombreDeCodes: 0,
       typesInconnus: [],
-      // Faux quand la dernière relecture de l'inventaire a ÉCHOUÉ : les trois champs ci-dessus sont alors inconnus.
-      inventaireRelu: true,
+      // `relu`, ou la CAUSE d'une relecture ÉCHOUÉE : les trois champs ci-dessus sont alors inconnus.
+      inventaire: ETAT_DE_L_INVENTAIRE.relu,
       attenteAnnoncee: null,
       codeRendu: false,
       versionExigee: null,
@@ -204,17 +205,21 @@ export function monterLInterface({
   relireLaSaisieDuCode(contexte);
   publier(contexte);
   return Object.freeze({
-    rafraichirLInventaire: () => rafraichirLInventaire(contexte),
+    rafraichirLInventaire: (cause) => rafraichirLInventaire(contexte, cause),
     releve: contexte.releve,
   });
 }
 
 /** Ce que la page savait du coffre n'est plus connu : moyens, compte de feuilles, types inconnus. */
-function invaliderLInventaire(contexte) {
+function invaliderLInventaire(contexte, cause) {
   const { releve } = contexte;
   contexte.inventaire = { present: false, versionEnveloppe: null, emplacements: [] };
   contexte.propose = moyensProposes({ emplacements: [], versionEnveloppe: null });
-  releve.inventaireRelu = false;
+  // La CAUSE : une révocation acquittée, ou tout autre échec. Une cause inconnue vaut « autre ».
+  releve.inventaire =
+    cause === ETAT_DE_L_INVENTAIRE.apresRevocation
+      ? ETAT_DE_L_INVENTAIRE.apresRevocation
+      : ETAT_DE_L_INVENTAIRE.autre;
   releve.moyensProposes = null;
   releve.nombreDeCodes = null;
   releve.typesInconnus = [];
@@ -249,17 +254,17 @@ function brancherLesGestes(contexte) {
  * Appelé au montage et après chaque geste qui change l'enveloppe : ce que la coquille propose suit
  * ce que le fichier contient, et non ce qu'elle a affiché la fois d'avant.
  */
-async function rafraichirLInventaire(contexte) {
+async function rafraichirLInventaire(contexte, cause = ETAT_DE_L_INVENTAIRE.autre) {
   const { noeuds, releve } = contexte;
   try {
     contexte.inventaire = await contexte.demander("inventaire", {});
   } catch (erreur) {
     // Une relecture échouée n'est pas un inventaire d'avant qui reste vrai : tout ce qui en dépend est
     // INVALIDÉ, et le relevé le dit (`inventaireRelu`) — le parcours ne s'en sert plus comme garde.
-    invaliderLInventaire(contexte);
+    invaliderLInventaire(contexte, cause);
     throw erreur;
   }
-  releve.inventaireRelu = true;
+  releve.inventaire = ETAT_DE_L_INVENTAIRE.relu;
   relireLaPhrase(contexte);
   contexte.propose = moyensProposes(contexte.inventaire);
   const propose = contexte.propose;

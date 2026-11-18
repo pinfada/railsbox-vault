@@ -8,6 +8,7 @@
 //
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
+import { ECRANS_DE_RELECTURE } from "./textes-de-relecture.mjs";
 import { TEXTES_DE_LA_REVOCATION } from "./textes-de-la-revocation.mjs";
 import { enMegaoctets } from "./taille-en-clair.mjs";
 import {
@@ -302,17 +303,9 @@ export const ECRANS = Object.freeze({
     attente: DEMARRAGE_SUIVANT,
     blocs: ["application", "verrouiller", "espace-de-travail", "sauvegarde", "revocation"],
   }),
-  // Une révocation confirmée, puis une relecture de l'inventaire ÉCHOUÉE : ni les moyens ni le constat
-  // de feuille ne sont connus, et aucun ne sert de garde (relecture de #308).
-  relire: ecran(4, {
-    titre: "Votre coffre doit être relu",
-    ceQuiVaSePasser:
-      "La révocation a été faite. Mais votre coffre n'a pas pu relire ce qu'il contient : cet écran ne " +
-      "peut plus dire quels moyens l'ouvrent encore, ni si votre feuille est toujours juste.",
-    attendu:
-      "Rouvrez votre coffre : rechargez la page, puis ouvrez-le avec le moyen que vous avez utilisé.",
-    blocs: [],
-  }),
+  // Les deux écrans d'une relecture d'inventaire ÉCHOUÉE (relecture de #308).
+  relire: ecran(4, ECRANS_DE_RELECTURE.relire),
+  "relire-apres-revocation": ecran(4, ECRANS_DE_RELECTURE.apresRevocation),
   "travailler-sans-application": ecran(4, {
     titre: "Travailler dans l'application",
     ceQuiVaSePasser: LIMITE_DE_FIREFOX,
