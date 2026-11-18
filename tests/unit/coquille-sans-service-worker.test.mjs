@@ -287,6 +287,8 @@ test("la LISTE BLANCHE est exacte : chaque fichier nommé existe, est publié pa
 test("UN SEUL appelant d'enregistrement : `.register(` n'apparaît, dans ce que la coquille publie, que dans le portail", async () => {
   const appelants = [];
   for (const chemin of await fichiersPublies()) {
+    // L'émulateur v86 est un artefact TIERS, épinglé par empreinte (ADR 0003) : il n'est pas du code du produit.
+    if (chemin.startsWith("vendor/v86/artefacts/")) continue;
     const contenu = await readFile(path.join(REPO_ROOT, chemin), "utf8");
     if (contenu.split("\n").some((ligne) => /\.register\(/.test(ligne) && estUnAppel(ligne))) {
       appelants.push(chemin);

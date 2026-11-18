@@ -33,6 +33,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { LONGUEUR_EMPREINTE_DANS_LADRESSE, PREFIXE_ADRESSES_V86 } from "../src/v86-adresses.mjs";
 import { PREFIXE_DE_CACHE as PREFIXE, URL_DU_SW } from "../src/coquille/reserve-identite.mjs";
 import { analyserHeaders, enTetesPour } from "./publier-en-tetes.mjs";
 
@@ -85,7 +86,9 @@ function passageNommeDuManifeste() {
       const point = nom.lastIndexOf(".");
       const base = nom.slice(0, point).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const extension = nom.slice(point).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      return new RegExp(`^/vendor/v86/artefacts/${base}-[0-9a-f]{16}${extension}$`);
+      return new RegExp(
+        `^${PREFIXE_ADRESSES_V86}${base}-[0-9a-f]{${LONGUEUR_EMPREINTE_DANS_LADRESSE}}${extension}$`,
+      );
     });
 }
 export const PASSAGE_NOMME = Object.freeze(passageNommeDuManifeste());

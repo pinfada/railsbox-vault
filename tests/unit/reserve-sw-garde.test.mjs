@@ -10,6 +10,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { PREFIXE_ADRESSES_V86 } from "../../src/v86-adresses.mjs";
 import { FICHIERS, ORIGINE, installe } from "./support-sw-reserve.mjs";
 
 const DESTINATIONS_EXECUTABLES = [
@@ -191,7 +192,7 @@ test("une réponse de type script, wasm, HTML, XML ou CSS sous `/artifacts/` est
 });
 
 test("le PASSAGE NOMMÉ de `v86.wasm` admet application/wasm en `fetch` de données, et refuse une destination exécutable", async () => {
-  const wasm = "/vendor/v86/artefacts/v86-0123456789abcdef.wasm";
+  const wasm = `${PREFIXE_ADRESSES_V86}v86-0123456789abcdef.wasm`;
   const sw = await installe(
     FICHIERS,
     {},

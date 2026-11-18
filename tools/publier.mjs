@@ -37,6 +37,7 @@
 // avec « construit depuis un disque non versionné » — la première est une atteinte à l'intégrité,
 // la seconde une lacune de PROVENANCE — et refuserait au passage tout arbre de développement.
 
+import { execFileSync } from "node:child_process";
 import { mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -250,6 +251,32 @@ function lireOption(argv, nom, defaut = null) {
     throw new Error(`L'option --${nom} attend une valeur.`);
   }
   return valeur;
+}
+
+/**
+ * La séquence de publication par DÉFAUT : le nombre de commits de l'historique de la référence — monotone sur
+ * `main`, déterministe pour un commit donné. Un dépôt superficiel (`--depth`) ne le sait pas : la séquence
+ * vaut alors 1, et une publication de PRODUCTION le dit (l'exploitant passe `--sequence <n>`). Une séquence
+ * trop basse ferait annoncer « version différente ou plus ancienne » à chaque version suivante (ADR 0048 § 8).
+ */
+function sequenceDepuisLHistorique(reference, banc) {
+  try {
+    const git = (...arguments_) =>
+      execFileSync("git", arguments_, { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim();
+    if (git("rev-parse", "--is-shallow-repository") === "false") {
+      const compte = Number(git("rev-list", "--count", reference));
+      if (Number.isInteger(compte) && compte >= 1) return compte;
+    }
+  } catch {
+    /* historique illisible : séquence 1, dite ci-dessous */
+  }
+  if (!banc) {
+    process.stderr.write(
+      "AVERTISSEMENT : séquence de publication par défaut = 1 (historique git indisponible ou superficiel). " +
+        "Passez --sequence <n> : elle est monotone, et une valeur trop basse est annoncée « plus ancienne ».\n",
+    );
+  }
+  return 1;
 }
 
 /** Une option entière positive ou nulle, ou `null` si elle est absente. */
@@ -623,15 +650,9 @@ async function principal(argv) {
     ORIGINE_APPLICATION_PAR_DEFAUT,
   );
   const banc = estUnBanc({ origineCoquille, origineApplication });
-  // Une publication de PRODUCTION porte une séquence que l'exploitant a choisie : la mettre à 1 par défaut
-  // ferait annoncer « différente ou plus ancienne » à chaque version suivante (ADR 0048 § 8).
-  if (sequence === null && !banc) {
-    throw new Error(
-      "--sequence <n> est obligatoire pour une publication de production (origine https) : la séquence est monotone.",
-    );
-  }
+  const retenue = sequence ?? sequenceDepuisLHistorique(reference ?? "HEAD", banc);
   return construire({
-    sequence: sequence ?? 1,
+    sequence: retenue,
     plancher,
     sortie,
     reference,
