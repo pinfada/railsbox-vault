@@ -29,7 +29,13 @@ concurrency:
 jobs:
   vm:
     name: Barrière de durabilité du guest
-    runs-on: ubuntu-latest
+    # PROVISOIRE (#295) : ubuntu-24.04 et non ubuntu-latest, qui bascule vers ubuntu-26.04 (déploiement progressif du
+    # 19/10 au 19/11/2026, runner-images#14748 ; premier rouge observé ici le 29/10/2026).
+    # Sur 26.04, Docker 29.4.2 donne ENOSYS à `socket` aux processus 32 bits des étapes `RUN` (l'étage
+    # i386 de `guest.Dockerfile` ne résout plus deb.debian.org), et le WebKit de Playwright y manque de
+    # libicu74 et libxml2.so.2. À lever par l'issue de suite 26.04. Date de retrait d'ubuntu-24.04 par
+    # GitHub : non annoncée au 18/11/2026. Cliquet : tests/unit/workflows-image-sur-ubuntu-24-04.test.mjs.
+    runs-on: ubuntu-24.04
     # Budget mesuré : la suite VM dure 19 à 22 min et le protocole de mesure 7 min ; les
     # dépendances peuvent en coûter 7 sans cache. À 30 min, le protocole était tué (SIGTERM,
     # code 143) alors que les épreuves avaient réussi. 45 laisse la marge d'un run sans cache.

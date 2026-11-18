@@ -31,7 +31,13 @@ concurrency:
 jobs:
   mesure:
     name: Reprise par instantané sur 4 cœurs et 16 Gio
-    runs-on: ubuntu-latest
+    # PROVISOIRE (#295) : ubuntu-24.04 et non ubuntu-latest, qui bascule vers ubuntu-26.04 (déploiement progressif du
+    # 19/10 au 19/11/2026, runner-images#14748 ; premier rouge observé ici le 29/10/2026).
+    # Sur 26.04, Docker 29.4.2 donne ENOSYS à `socket` aux processus 32 bits des étapes `RUN` (l'étage
+    # i386 de `guest.Dockerfile` ne résout plus deb.debian.org), et le WebKit de Playwright y manque de
+    # libicu74 et libxml2.so.2. À lever par l'issue de suite 26.04. Date de retrait d'ubuntu-24.04 par
+    # GitHub : non annoncée au 18/11/2026. Cliquet : tests/unit/workflows-image-sur-ubuntu-24-04.test.mjs.
+    runs-on: ubuntu-24.04
     # Image ≈ 20 min sans cache ; chaque essai enchaîne un boot à froid (≈ 90 s ici), une capture et
     # une reprise, soit ≈ 2 min ; onze essais ≈ 25 min. La marge couvre un exécutant lent.
     timeout-minutes: 120

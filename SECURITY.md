@@ -1642,7 +1642,8 @@ request qui l'introduit.
 Les constats de **bibliothèque vulnérable** ne sont jamais écartés de cette façon : ils se corrigent
 par une montée de version dans `Gemfile`/`Gemfile.lock` ou `package.json`/`package-lock.json`. C'est
 ce qui a été fait pour Puma, monté de 6.6.1 à 8.0.2 (CVE-2026-47736 et CVE-2026-47737, analyseur
-PROXY protocol v1).
+PROXY protocol v1), puis à 8.0.3 (sept avis relevés par l'audit du verrou Ruby le 17/11/2026, voir
+le commentaire du `Gemfile`), et pour msgpack, monté de 1.8.5 à 1.8.7 (CVE-2026-126366).
 
 ## Signaler une vulnérabilité
 
