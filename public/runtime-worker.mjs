@@ -83,6 +83,8 @@ import { TYPES_KEK } from "/src/vm/enveloppe/identite-enveloppe.mjs";
 import { octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "/src/vm/storage-errors.mjs";
 import { supportEnveloppeOpfs } from "/src/vm/ouverture-par-enveloppe.mjs";
+// DERNIER import : l'annonce de séquence ne part qu'une fois tout le graphe évalué (#299, ADR 0048 § 6).
+import "./coquille/reserve-annonce-du-worker.mjs";
 
 /** Nom du volume que la coquille de produit ouvre. Un seul, tant qu'une seule application existe. */
 const VOLUME = "coquille";

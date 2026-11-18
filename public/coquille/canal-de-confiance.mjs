@@ -83,8 +83,10 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
    */
   const relais = new MessageChannel();
 
-  worker.addEventListener("error", () => pont.cycle.constaterLaMort(CAUSES_DE_MORT.erreur));
-  worker.addEventListener("messageerror", () => pont.cycle.constaterLaMort(CAUSES_DE_MORT.erreur));
+  // `pont.cycle?.` : le portail de la réserve (#299) crée ce Worker AVANT que le cycle existe ; une erreur de
+  // chargement y est constatée par le portail lui-même (re-vérification), pas par la mort du Worker.
+  worker.addEventListener("error", () => pont.cycle?.constaterLaMort(CAUSES_DE_MORT.erreur));
+  worker.addEventListener("messageerror", () => pont.cycle?.constaterLaMort(CAUSES_DE_MORT.erreur));
 
   /**
    * Les demandes EN VOL vers le Worker, APPARIÉES par leur identifiant de corrélation (#166).
