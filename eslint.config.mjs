@@ -152,4 +152,10 @@ export default [
     files: PLAYWRIGHT_FILES,
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
+  {
+    // Le Service Worker de la coquille (#299, ADR 0048 § 1) : UN script CLASSIQUE, sans import, que la
+    // publication instancie. `.js` et non `.mjs` : il n'est pas un module, et le lint le dit.
+    files: ["tools/reserve/sw-coquille.js"],
+    languageOptions: { sourceType: "script", globals: globals.serviceworker },
+  },
 ];
