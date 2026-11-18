@@ -194,6 +194,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0042 — le déphasage de versions : la version et le schéma décident avant le boot](docs/decisions/0042-le-dephasage-de-versions-le-schema-decide-avant-le-boot.md)
 - [ADR 0043 — l'application d'abord : la promesse à l'entrée, l'application plein écran](docs/decisions/0043-l-application-d-abord.md)
 - [ADR 0044 — le magasin d'artefacts : rangé sous l'empreinte, vérifié contre la racine du descripteur, cédant au volume](docs/decisions/0044-le-magasin-d-artefacts.md)
+- [ADR 0045 — les workflows de l'image et des épreuves VM restent sur ubuntu-24.04, à titre provisoire](docs/decisions/0045-les-workflows-d-image-restent-sur-ubuntu-24-04.md)
 
 ## Licence
 

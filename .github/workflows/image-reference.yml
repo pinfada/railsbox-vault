@@ -39,7 +39,12 @@ concurrency:
 jobs:
   image:
     name: Construction et boot de l'image de référence
-    runs-on: ubuntu-latest
+    # PROVISOIRE (#295) : ubuntu-24.04 et non ubuntu-latest, qui est ubuntu-26.04 depuis le 29/10/2026.
+    # Sur 26.04, Docker 29.4.2 donne ENOSYS à `socket` aux processus 32 bits des étapes `RUN` (l'étage
+    # i386 de `guest.Dockerfile` ne résout plus deb.debian.org), et le WebKit de Playwright y manque de
+    # libicu74 et libxml2.so.2. À lever par l'issue de suite 26.04. Date de retrait d'ubuntu-24.04 par
+    # GitHub : non annoncée au 18/11/2026. Cliquet : tests/unit/workflows-image-sur-ubuntu-24-04.test.mjs.
+    runs-on: ubuntu-24.04
     # Mesures locales du 2026-08-23 : construction environ 20 min sans cache,
     # boot à froid de l'ordre de la dizaine de minutes. La marge couvre un
     # exécutant GitHub plus lent que la machine de développement.
