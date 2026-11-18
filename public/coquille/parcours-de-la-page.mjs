@@ -17,11 +17,11 @@
 // (scission du 19/09/2026, #250) ; ce module garde l'écran, la progression et les gestes.
 
 import { relierLesChamps } from "./refus-du-champ.mjs";
-import { suivreLaConfirmationDeRevocation } from "./confirmation-de-la-revocation.mjs";
 import { ecrireLaPromesse } from "./promesse-de-l-entree.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
 import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
+import { suivreLaConfirmationDeRevocation } from "/src/coquille/confirmation-de-la-revocation.mjs";
 import { refusJugeLaValeur } from "/src/coquille/refus-qui-jugent-une-valeur.mjs";
 import {
   COFFRE,

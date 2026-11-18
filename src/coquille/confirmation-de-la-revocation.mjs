@@ -1,11 +1,12 @@
-// La CONFIRMATION de la révocation d'urgence, côté page du parcours (#265).
+// La CONFIRMATION de la révocation d'urgence, côté page du parcours (#265). Dans `src/coquille/` et
+// non dans `public/` : Node l'éprouve (la campagne de mutation `coquille` ne rejoue que Node).
 //
 // Le geste lui-même — ouvrir, annuler, confirmer — est branché par `gestes-de-portabilite.mjs`
 // (`src/coquille/confirmation-en-deux-temps.mjs`). Ce module écrit ce que la confirmation DIT, avec
 // ce que la page sait du coffre, et ferme une demande dont le geste a disparu de l'écran.
 
-import { oublierLaConfirmation } from "/src/coquille/confirmation-en-deux-temps.mjs";
-import { MESSAGES } from "/src/coquille/textes-du-parcours.mjs";
+import { oublierLaConfirmation } from "./confirmation-en-deux-temps.mjs";
+import { MESSAGES } from "./textes-du-parcours.mjs";
 
 /**
  * Appelé à chaque rendu, APRÈS que les blocs ont été montrés ou cachés. La confirmation redit ce que
