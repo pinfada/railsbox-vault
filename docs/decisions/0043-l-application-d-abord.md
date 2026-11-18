@@ -140,7 +140,9 @@ de l'enveloppe, de `src/vm/` ni des codes de refus.**
   Worker n'atteste pas la phase : une attestation permettrait de dire « refusée » ; c'est un
   changement du Worker, hors de ce lot « page seule », non fait. _Limite_ : l'état est celui du
   document ; rechargé, il n'est pas persisté (la personne a été invitée à rouvrir son coffre pour
-  vérifier).
+  vérifier). **Écart à accepter par le propriétaire** : cette non-persistance n'est pas acceptée à
+  ce jour (voir la PR #308), pas plus que l'absence du repli « Sécurité » à l'accueil et de la liste
+  exacte des moyens retirés.
 - **Relecture de #308 (REFUSÉ `aefe2d1`), deux points.** (1) _Annuler une NOUVELLE confirmation
   contredisait une révocation incertaine_ (« Rien n'a été révoqué » à côté d'un « a peut-être eu
   lieu »). Choix, le plus sûr : pendant l'état `incertaine`, **aucune nouvelle révocation n'est
