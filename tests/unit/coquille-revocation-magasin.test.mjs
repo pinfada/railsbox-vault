@@ -110,7 +110,7 @@ test("[I19] une lecture qui ÉCHOUE ferme : rejet, exception synchrone, réponse
   for (const [nom, f, evenement] of [
     ["rejet", rejet, "relecture-echouee"],
     ["synchrone", sync, "relecture-echouee"],
-    ["hors contrat", horsContrat, "relecture-echouee"],
+    ["hors contrat", horsContrat, "normalisation-echouee"],
   ]) {
     assert.equal(f.magasin.etat().phase, "FE", nom);
     assert.equal(lirePublic(f.magasin.etat()), null, `${nom} : porte ouverte`);
@@ -380,11 +380,12 @@ test("[M-a] succès acquitté puis `masquer` en échec : `noter` et `relire` son
 test("[M-b] `noter` en échec : RL reste, la relecture est lancée, l'échec est consigné (« indice non écrit »)", async () => {
   const f = fabriquer({ noter: () => Promise.reject(new Error("écriture")) });
   await amener(f, "V");
+  const lecturesAvant = f.noms("relire").length;
   f.envois[0].resoudre({ ...SUCCES });
   await tourner();
   assert.equal(f.magasin.etat().phase, "RL");
   assert.equal(f.magasin.etat().indice, false);
-  assert.equal(f.noms("relire").length, 1);
+  assert.equal(f.noms("relire").length, lecturesAvant + 1, "la relecture n'est pas partie");
   assert.ok(f.magasin.echecs().entrees.some((e) => e.effet === "noter"));
 });
 
@@ -604,13 +605,12 @@ test("[E3g/I20′] `consigner` qui échoue : UN appel par arête, aucune récurs
   assert.equal(f.noms("consigner").length, 1, "consigner a été rappelé pour son propre échec");
   assert.equal(f.magasin.etat().phase, "SE");
   assert.ok(f.magasin.echecs().entrees.some((e) => e.effet === "consigner"));
-  for (let i = 0; i < 100; i += 1) f.magasin.definirLIndice(i % 2 === 0);
   const g = fabriquer({
     vueARendre: () => {
       throw new Error("v");
     },
   });
-  for (let i = 0; i < 100; i += 1) g.magasin.definirLIndice(i % 2 === 1);
+  for (let i = 0; i < 100; i += 1) g.magasin.definirLIndice(i % 2 === 0);
   const { entrees, perdus } = g.magasin.echecs();
   assert.equal(entrees.length, 64, "journal non borné");
   assert.equal(perdus, 36, "compteur de pertes");

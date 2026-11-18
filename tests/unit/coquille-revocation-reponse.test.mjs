@@ -416,3 +416,26 @@ test("[N12] `ouvert` vient de la PHASE : un non-booléen est une erreur de progr
   assert.throws(() => normaliserLInventaire(reponseDInventaire()), TypeError);
   assert.throws(() => normaliserLInventaire(reponseDInventaire(), { ouvert: "oui" }), TypeError);
 });
+
+test("[L8] `delai-depasse` n'est JAMAIS produit par la classification : le canal rend `workerMort` pour le silence", () => {
+  const sorties = new Set();
+  for (const resultat of [
+    { ok: true, valeur: succes() },
+    { ok: true, valeur: {} },
+    { ok: false, erreur: Object.assign(new Error("x"), { code: CODES_REFUS_COQUILLE.workerMort }) },
+    { ok: false, erreur: Object.assign(new Error("x"), { code: CODES_REFUS_COQUILLE.gesteRompu }) },
+    { ok: false, erreur: Object.assign(new Error("x"), { code: "VAULT_AUTRE" }) },
+    { ok: false, erreur: new Error("x") },
+    null,
+  ]) {
+    sorties.add(evenementDeLaReponse(resultat));
+  }
+  assert.deepEqual([...sorties].sort(), [
+    "erreur-sans-code",
+    "refus-type",
+    "reponse-de-succes",
+    "reponse-malformee",
+    "worker-mort",
+    "worker-rompu",
+  ]);
+});

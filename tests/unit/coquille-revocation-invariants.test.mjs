@@ -625,3 +625,42 @@ test("[I13] une lecture réussie sans instantané valide, ou au constat incohér
     "constat absent coffre ouvert",
   );
 });
+
+test("[e22] l'annonce d'une bascule dit ce qui n'est PAS parti : « envoi » → seance, « modification » → non-lancee", () => {
+  const c = etatDeLaPhase("C");
+  const envoi = transiter(c, { type: "masquage-impossible", action: "envoi" });
+  const modification = transiter(c, { type: "masquage-impossible", action: "modification" });
+  assert.equal(envoi.annonce, "envoi-annule-affichage");
+  assert.equal(modification.annonce, "lancement-annule-affichage");
+  assert.equal(CLES_DE_TEXTE[envoi.annonce].affirme, "seance");
+  assert.equal(CLES_DE_TEXTE[modification.annonce].affirme, "non-lancee");
+  assert.ok(
+    envoi.effets.every((e) => e.nom !== "masquer"),
+    "e22 ne rejoue pas le masquage qui vient d'échouer",
+  );
+  assert.equal(envoi.etat.phase, "SE");
+  assert.equal(affirmationsDe(envoi.etat).aucunGesteDansCetteSeance, true);
+});
+
+test("[session] `coffre-ouvert` pose le moyen d'ouverture (validé) ; la vue ne le donne que dans P, C, K", () => {
+  const ouvert = transiter(etatDeLaPhase("FC"), { type: "coffre-ouvert", moyen: "phrase" }).etat;
+  assert.equal(ouvert.session.moyen, "phrase");
+  assert.equal(vueDe(ouvert).moyenDOuverture, null, "SL ne connaît pas encore ses données");
+  for (const phase of LISTE_DES_PHASES) {
+    const moyen = vueDe(etatDeLaPhase(phase, { moyen: "webauthn-prf" })).moyenDOuverture;
+    assert.equal(
+      moyen,
+      ["P", "C", "K"].includes(phase) ? "webauthn-prf" : null,
+      `[session] ${phase}`,
+    );
+  }
+  assert.equal(transiter(etatDeLaPhase("FC"), { type: "coffre-ouvert" }).etat.session.moyen, null);
+  assert.throws(
+    () => transiter(etatDeLaPhase("FC"), { type: "coffre-ouvert", moyen: 3 }),
+    TypeError,
+  );
+  assert.throws(
+    () => transiter(etatDeLaPhase("FC"), { type: "coffre-ouvert", moyen: "" }),
+    TypeError,
+  );
+});

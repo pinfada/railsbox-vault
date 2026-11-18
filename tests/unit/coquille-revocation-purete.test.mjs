@@ -80,7 +80,9 @@ test("[I12] le modèle n'exporte aucun texte final : les seules chaînes sont de
     "le catalogue contient une phrase",
   );
   for (const nom of MODULES) {
-    const brut = source(nom);
+    const brut = source(nom)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/.*$/gm, "$1");
     assert.doesNotMatch(
       brut,
       /« révoqué|rien n'a été révoqué|tous vos moyens/i,
