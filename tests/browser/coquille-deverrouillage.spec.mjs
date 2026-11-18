@@ -377,7 +377,14 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
     // WebKit : l'état DIT l'absence — l'OPFS synchrone manque au Worker —, et le geste n'est pas
     // compté comme un échec de phrase. L'annonce a tout de même été faite, ci-dessus : la coquille
     // ne sait pas d'avance que ce moteur répondra vite.
-    expect(rapport.mesures.annonceApresLeGesteMs).not.toBeNull();
+    // La mesure est posée APRÈS la peinture de l'annonce (`surMesure("annonce")` suit `await
+    // peindre()`), et l'état `indisponible` revient plus vite que cette peinture sur un exécutant
+    // chargé : lire le rapport au premier changement d'état était une COURSE (#217, quatre
+    // occurrences du 15 au 17/09/2026). L'épreuve ATTEND la mesure, bornée par `DELAI` ; elle ne
+    // l'exige pas moins.
+    await expect
+      .poll(async () => (await releve(page)).mesures.annonceApresLeGesteMs, { timeout: DELAI })
+      .not.toBeNull();
     return;
   }
   expect(rapport.etat).toBe(ETATS_DU_VOLUME.ouvert);
