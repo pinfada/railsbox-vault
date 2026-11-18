@@ -22,6 +22,9 @@ import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
 import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
 import { montrerLesBlocs } from "/src/coquille/blocs-montres.mjs";
+import { REVOCATION } from "/src/coquille/etat-de-la-revocation.mjs";
+import { brancherUnGesteDuParcours } from "/src/coquille/geste-du-parcours.mjs";
+import { effacerLesMessagesDeGeste } from "/src/coquille/messages-de-geste.mjs";
 import { refusJugeLaValeur } from "/src/coquille/refus-qui-jugent-une-valeur.mjs";
 import {
   COFFRE,
@@ -590,12 +593,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
 
   // --- Les gestes PROPRES au parcours : aucun ne parle au Worker -------------------------------------
 
-  function geste(id, faire) {
-    noeud(id)?.addEventListener("click", () => {
-      faire();
-      rendre();
-    });
-  }
+  const geste = (id, faire) =>
+    brancherUnGesteDuParcours({ noeud, id, faire, rendre, revocation: REVOCATION });
 
   geste("parcours-commencer", () => allerA(etapeApres("creer", "commencer", etat.pointeur)));
   geste("parcours-j-ai-une-sauvegarde", () =>
@@ -667,8 +666,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       const id = event.target.closest("button").id;
       etat.idDuGeste = id;
       etat.boutonDuGeste = GESTES_LONGS.includes(id) ? id : null;
-      dire("parcours-refus", "");
-      dire("parcours-reussite", "");
+      effacerLesMessagesDeGeste(dire);
     },
     { capture: true },
   );
