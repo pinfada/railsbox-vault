@@ -7,10 +7,9 @@
 // La règle : à la CRÉATION, chaque exécuteur est copié dans un objet privé gelé par UNE lecture du
 // descripteur de propriété PROPRE ; un accesseur, une propriété héritée ou une valeur non fonction est une
 // TypeError ; l'objet de l'appelant n'est plus jamais relu. Les lanceurs reçoivent la fonction déjà
-// résolue, et la garde est relue juste avant l'appel.
+// résolue.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { creerLaRevocation } from "../../src/coquille/magasin-de-la-revocation.mjs";
@@ -136,27 +135,6 @@ test("[Proxy] un Proxy dont le descripteur est un ACCESSEUR est refusé à la cr
     },
   });
   assert.throws(() => creerLaRevocation({ executeurs: piege, indice: false }), TypeError);
-});
-
-test("[ordre] la garde « transition intacte » est relue en DERNIER : fonction résolue, garde, appel", () => {
-  const source = readFileSync(
-    new URL("../../src/coquille/magasin-de-la-revocation.mjs", import.meta.url),
-    "utf8",
-  );
-  const debut = source.indexOf("function executerLesEffets(");
-  const corps = source.slice(debut, source.indexOf("\n}\n", debut));
-  const resolue = corps.indexOf("fonctionDe(");
-  const garde = corps.indexOf("transitionIntacte(");
-  const appel = corps.indexOf("(ctx, effet, fonction)");
-  assert.ok(resolue >= 0 && garde >= 0 && appel >= 0, "executerLesEffets a changé de forme");
-  assert.ok(resolue < garde, "la fonction doit être RÉSOLUE avant la garde");
-  assert.ok(garde < appel, "la garde doit précéder l'appel");
-  const entre = corps.slice(garde, appel);
-  assert.doesNotMatch(
-    entre,
-    /executeurs|\[|fonctionDe\(/,
-    "une lecture a lieu entre la garde et l'appel",
-  );
 });
 
 // --- UN SEUL contrat de récepteur : tous les exécuteurs sont appelés SANS récepteur ---------------------

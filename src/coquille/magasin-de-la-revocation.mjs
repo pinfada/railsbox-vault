@@ -120,10 +120,15 @@ function journaliser(ctx, effet, erreur) {
   }
 }
 
-/** Appelle un exécuteur ; toute défaillance (synchrone ou rejet) est consignée, jamais propagée. */
+/**
+ * Appelle un exécuteur SANS récepteur (`this === undefined`), comme tous les autres : un seul contrat, que
+ * l'appelant tient avec des fonctions liées ou des fermetures. Toute défaillance (synchrone ou rejet) est
+ * consignée, jamais propagée.
+ */
 function appeler(ctx, nom, ...arguments_) {
   try {
-    const rendu = ctx.executeurs[EXECUTEUR_DE[nom] ?? nom](...arguments_);
+    const fonction = ctx.executeurs[EXECUTEUR_DE[nom] ?? nom];
+    const rendu = fonction(...arguments_);
     if (rendu !== null && typeof rendu === "object" && typeof rendu.then === "function") {
       rendu.then(undefined, (erreur) => journaliser(ctx, nom, erreur));
     }
@@ -297,7 +302,8 @@ function executerLesEffets(ctx, effets, cible, dejaMasque) {
  */
 function masquerVerifie(ctx) {
   try {
-    const rendu = ctx.executeurs.masquer();
+    const fonction = ctx.executeurs.masquer;
+    const rendu = fonction();
     if (rendu === true && !ctx.violation && !ctx.termine) return true;
     journaliser(ctx, "masquer", "masquage non établi");
   } catch (erreur) {

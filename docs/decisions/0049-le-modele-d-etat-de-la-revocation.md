@@ -88,9 +88,13 @@ l'appel), une propriété héritée ou une valeur qui n'est pas une fonction est
 de ce que l'appelant fait ensuite à son objet (remplacer, supprimer, ajouter, redéfinir en
 accesseur) n'atteint le magasin ; un `Proxy` n'est lu que par son descripteur, jamais par `get`. Les
 lanceurs reçoivent la fonction déjà résolue ; l'ordre est : fonction résolue, garde « transition
-intacte » relue, appel — sans aucune lecture de propriété entre les deux (épreuve statique de
-l'ordre). Les exécuteurs sont appelés avec l'objet privé pour `this` : un exécuteur qui dépend de
-son `this` d'origine doit être lié par l'appelant.
+intacte » relue, appel. Cet ordre est une précaution, pas une garde que l'on puisse muter : la
+fonction se lit sur un objet privé gelé de propriétés de données (ou dans `ctx.lanceur`, que seul
+`modifier` écrit avant la transition), aucune lecture n'exécute de code de l'appelant, donc aucune
+ne peut changer la garde qui suit — un mutant qui la déplacerait est équivalent et n'est pas compté.
+**Un seul contrat de récepteur** : TOUS les exécuteurs — effets ordinaires comme lanceurs
+(`envoyer`, `relire`, `noter`, `lancer`) — sont appelés SANS récepteur (`this === undefined`) ;
+l'appelant fournit des fonctions liées ou des fermetures. Éprouvé pour chaque catégorie.
 
 **Aucun ensemble exporté.** Les ensembles de phases ne sont jamais exportés :
 `Object.freeze(new Set(...))` n'empêche ni `add`, ni `delete`, ni `clear`, et un appelant faisait
@@ -171,7 +175,8 @@ règle (`masquer`, `consigner`, `vue-a-rendre`) ne sont pas répétés ici : ils
   (N1′-N12), la totalité.
 - `tests/unit/coquille-revocation-executeurs.test.mjs` : accesseur, propriété héritée, valeur non
   fonction (10 exécuteurs chacun), propriété remplacée, supprimée ou ajoutée après la création,
-  `Proxy` dont `get` viole, ordre fonction résolue → garde → appel.
+  `Proxy` dont `get` viole, et le contrat « aucun récepteur » pour les dix exécuteurs et le lanceur
+  de `modifier`.
 - `tests/unit/coquille-revocation-purete.test.mjs` : aucun DOM, aucune horloge, aucun état de
   module.
 - `tools/mutants-de-la-revocation.mjs`, dans la campagne `coquille` : un mutant par cellule gardée

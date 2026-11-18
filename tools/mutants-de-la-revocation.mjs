@@ -9,7 +9,10 @@
 // `!ctx.termine` de `masquerVerifie`, le test `ctx.termine` de `renoncer` et la renonciation de `envoyer`
 // (la réentrance étant refusée, `terminer()` ne s'exécute jamais pendant une transition et aucun exécuteur
 // ne s'exécute entre l'affectation de V et `envoyer`) ; la garde `etat.lecture !== null` de `classeDeLaLecture` (un identifiant entier
-// n'égale jamais `null`) ; la garde `descripteur === undefined` de `resoudreLesExecuteurs` (lire `.value` d'`undefined`
+// n'égale jamais `null`) ; l'ORDRE « fonction résolue, puis garde » de `executerLesEffets` (déplacer
+// `fonctionDe` après la garde ne change aucun résultat : la fonction se lit sur un objet privé GELÉ de
+// propriétés de DONNÉES, ou dans `ctx.lanceur`, que seul `modifierPublic` écrit AVANT `traiter` ; aucune
+// lecture n'exécute de code de l'appelant, donc aucune ne peut changer la garde qui suit) ; la garde `descripteur === undefined` de `resoudreLesExecuteurs` (lire `.value` d'`undefined`
 // lève la même TypeError) ; les cellules « lecture courante » des phases sans lecture (inatteignables).
 
 const SRC = "src/coquille/";
@@ -1959,6 +1962,30 @@ const AUTRES = [
   ],
   [
     MAGASIN,
+    "    const fonction = ctx.executeurs[EXECUTEUR_DE[nom] ?? nom];\n    const rendu = fonction(...arguments_);",
+    "    const rendu = ctx.executeurs[EXECUTEUR_DE[nom] ?? nom](...arguments_);",
+    "un effet ordinaire est appelé AVEC un récepteur (this = l'objet privé des exécuteurs)",
+    "appeler — un seul contrat : aucun récepteur",
+    [EXEC],
+  ],
+  [
+    MAGASIN,
+    "    const fonction = ctx.executeurs.masquer;\n    const rendu = fonction();",
+    "    const rendu = ctx.executeurs.masquer();",
+    "`masquer` est appelé AVEC un récepteur",
+    "masquerVerifie — aucun récepteur",
+    [EXEC],
+  ],
+  [
+    MAGASIN,
+    "    return Promise.resolve(fonction(...arguments_));",
+    "    return Promise.resolve(fonction.call({}, ...arguments_));",
+    "un lanceur (envoyer, relire, noter, lancer) est appelé AVEC un récepteur",
+    "demarrer — aucun récepteur",
+    [EXEC],
+  ],
+  [
+    MAGASIN,
     "  return Object.freeze(prives);",
     "  return executeurs;",
     "la copie des exécuteurs est retirée : l'objet de l'appelant est relu à chaque appel (#315)",
@@ -1971,14 +1998,6 @@ const AUTRES = [
     "    const descripteur = { value: executeurs[nom] };",
     "les exécuteurs sont lus par `get` (accesseurs exécutés, propriétés héritées acceptées) au lieu du descripteur",
     "resoudreLesExecuteurs — lecture du descripteur propre",
-    [EXEC],
-  ],
-  [
-    MAGASIN,
-    "    const fonction = fonctionDe(ctx, effet);\n    if (LANCEURS_D_ENVELOPPE.includes(effet.nom) && !transitionIntacte(ctx, cible)) {\n      renoncer(ctx, effet);\n      continue;\n    }",
-    "    if (LANCEURS_D_ENVELOPPE.includes(effet.nom) && !transitionIntacte(ctx, cible)) {\n      renoncer(ctx, effet);\n      continue;\n    }\n    const fonction = fonctionDe(ctx, effet);",
-    "la fonction du lanceur est résolue APRÈS la garde (une lecture entre la garde et l'appel)",
-    "executerLesEffets — fonction résolue, garde, appel",
     [EXEC],
   ],
   [
