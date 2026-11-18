@@ -116,6 +116,12 @@ const DEVERROUILLAGE_COQUILLE = [
   // Le PARCOURS GUIDÉ (#193, ADR 0040) : l'ordre attaqué et ce qu'il laisse dans la page, sur le même
   // chemin de produit (revue de la PR #213, constats 1, 2, 3 et 9).
   "**/coquille-parcours.spec.mjs",
+  // L'AFFICHAGE de la révocation (#265, ADR 0049 § C2) : le masquage vérifié, la publication d'un seul
+  // geste et la règle CSS « masqué sans estampille » se mesurent sur le DOM réel des trois moteurs.
+  "**/coquille-affichage-dom.spec.mjs",
+  // La RÉVOCATION D'URGENCE câblée sur la coquille réelle (#265, C2) : la confirmation en deux temps, le
+  // pré-vol, la vue autoritaire, sur le vrai Worker de confiance.
+  "**/coquille-revocation-page.spec.mjs",
 ];
 
 /**
