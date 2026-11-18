@@ -96,6 +96,11 @@ export class Epreuve {
     await jusqua(() => page.evaluate(() => document.documentElement.dataset.banc === "pret"));
     return page;
   }
+  /** Arrête TOUTES les origines démarrées par cette épreuve (coquille et application) et les oublie. */
+  async nettoyerLesOrigines() {
+    for (const origine of this.origines.splice(0)) await origine.arreter().catch(() => {});
+    this.origine = null;
+  }
   async nettoyer() {
     for (const contexte of this.contextes) await contexte.close().catch(() => {});
     for (const origine of this.origines) await origine.arreter().catch(() => {});

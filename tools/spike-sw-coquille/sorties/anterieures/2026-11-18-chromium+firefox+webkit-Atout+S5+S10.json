@@ -1,0 +1,830 @@
+{
+  "contrat": "spike-sw-coquille-d1h/1",
+  "horodatage": "2026-11-18T07:56:00.602Z",
+  "machine": {
+    "plateforme": "linux arm64",
+    "noyau": "7.0.0-1011-aws",
+    "node": "v22.23.5"
+  },
+  "moteurs": {
+    "chromium": "151.0.7922.34",
+    "firefox": "153.0",
+    "webkit": "26.5"
+  },
+  "filtre": ["A*", "S5", "S10"],
+  "total": 18,
+  "ok": 18,
+  "resultats": [
+    {
+      "id": "S5",
+      "titre": "Entrée du Cache altérée par un écrivain de même origine : refus 503 ; entrée supprimée : refus ; `verifier` les nomme",
+      "moteur": "chromium",
+      "ok": true,
+      "ms": 686,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "le SW s'installe et s'active (état: actif)"
+        },
+        {
+          "ok": true,
+          "message": "la page de banc est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "entrée altérée → 503 RESERVE_ALTEREE"
+        },
+        {
+          "ok": true,
+          "message": "entrée supprimée → 503 RESERVE_INCOMPLETE"
+        },
+        {
+          "ok": true,
+          "message": "le Worker dont l'import statique est refusé ne se charge pas (événement `error` ou silence selon le moteur)"
+        },
+        {
+          "ok": true,
+          "message": "le message `verifier` nomme l'altérée et la manquante"
+        }
+      ],
+      "mesures": {
+        "refus": {
+          "alteree": [503, "RESERVE_ALTEREE"],
+          "supprimee": [503, "RESERVE_INCOMPLETE"],
+          "bonjour": {
+            "erreur": "chargement"
+          },
+          "v": {
+            "id": null,
+            "version": "pub-0001",
+            "sequence": 1,
+            "plancher": 0,
+            "retrait": false,
+            "entrees": 217,
+            "ok": false,
+            "manquants": ["/spike/lib.mjs"],
+            "alteres": ["/spike/lib-tardive.mjs"]
+          }
+        }
+      },
+      "notes": [
+        "Un Worker dont le graphe de modules est refusé : Chromium et WebKit émettent `error`, Firefox n'émet RIEN (délai) — le portail ne peut pas s'appuyer sur l'événement."
+      ]
+    },
+    {
+      "id": "S10",
+      "titre": "Navigations successives : le script du SW est redemandé SANS passer par le SW — mais pas à chaque navigation (on ne s'y fie pas)",
+      "moteur": "chromium",
+      "ok": true,
+      "ms": 15546,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "le SW s'installe et s'active (état: actif)"
+        },
+        {
+          "ok": true,
+          "message": "la page de banc est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "au moins une navigation redemande le script (destination serviceworker, ou absente sous WebKit), hors SW"
+        }
+      ],
+      "mesures": {
+        "requetesDuScriptParNavigation": [
+          ["serviceworker", "serviceworker"],
+          [],
+          ["serviceworker"],
+          ["serviceworker"]
+        ]
+      },
+      "notes": [
+        "Garantie NON acquise : sur Chromium 151 certaines navigations ne redemandent rien (voir requetesDuScriptParNavigation). La DoR impose donc un update() explicite à chaque démarrage."
+      ]
+    },
+    {
+      "id": "A1",
+      "titre": "PROTOCOLE : deux onglets, mise à jour publiée, import tardif → aucun mélange ; la v2 ne s'applique qu'après la fermeture de TOUS les clients",
+      "moteur": "chromium",
+      "ok": true,
+      "ms": 2746,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "onglet 1 : portail franchi, session ouverte avec une clé non extractible"
+        },
+        {
+          "ok": true,
+          "message": "la v2 est installée et attend"
+        },
+        {
+          "ok": true,
+          "message": "aucun controllerchange dans aucun onglet"
+        },
+        {
+          "ok": true,
+          "message": "onglet 1 : import tardif en v1, clé de session intacte, Worker neuf en v1"
+        },
+        {
+          "ok": true,
+          "message": "onglet 2 (navigation neuve APRÈS la publication) : toujours v1, cohérent"
+        },
+        {
+          "ok": true,
+          "message": "tant qu'UN client de la v1 vit, la v2 reste en attente (règle : tous les clients)"
+        },
+        {
+          "ok": true,
+          "message": "après la fermeture de tous les clients : la page ET le contrôleur sont en v2"
+        },
+        {
+          "ok": true,
+          "message": "le cache de la v1 est supprimé à l'activation de la v2"
+        }
+      ],
+      "mesures": {
+        "avecAttente": {
+          "onglet1": {
+            "pageSeq": 1,
+            "ctrlSeq": 1,
+            "tardif": {
+              "type": "import-tardif",
+              "ok": true,
+              "lib": "tardive-v1",
+              "sequence": 1
+            },
+            "cleOk": true,
+            "workerNeuf": 1,
+            "changements": 0
+          },
+          "onglet2": {
+            "pageSeq": 1,
+            "ctrlSeq": 1,
+            "tardif": null,
+            "workerNeuf": 1,
+            "changements": 0
+          }
+        },
+        "ongletFerme": {
+          "seq": 1,
+          "ctrl": 1,
+          "insc": {
+            "installing": null,
+            "waiting": "installed",
+            "active": "activated"
+          }
+        },
+        "toutesFermees": {
+          "seq": 2,
+          "ctrl": 2,
+          "insc": {
+            "installing": null,
+            "waiting": null,
+            "active": "activated"
+          }
+        },
+        "cachesApres": ["reserve-pub-0002"]
+      },
+      "notes": []
+    },
+    {
+      "id": "A2",
+      "titre": "MUTANT skipWaiting : le même scénario MÉLANGE les versions dans l'onglet 1 (l'épreuve A1 le tue)",
+      "moteur": "chromium",
+      "ok": true,
+      "ms": 2142,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "onglet 1 : portail franchi, session ouverte avec une clé non extractible"
+        },
+        {
+          "ok": true,
+          "message": "MÉLANGE : l'onglet 1 (page v1, clé ouverte) voit un contrôleur ou un Worker d'une autre version"
+        },
+        {
+          "ok": true,
+          "message": "le mélange est précédé d'un controllerchange (observable par la page)"
+        }
+      ],
+      "mesures": {
+        "avecSkipWaiting": {
+          "pageSeq": 1,
+          "ctrlSeq": 2,
+          "tardif": {
+            "type": "import-tardif",
+            "ok": true,
+            "lib": "tardive-v2",
+            "sequence": 1
+          },
+          "cleOk": true,
+          "workerNeuf": 2,
+          "changements": 1
+        }
+      },
+      "notes": []
+    },
+    {
+      "id": "A3",
+      "titre": "Pas de claim : la page qui enregistre le SW n'est PAS contrôlée ; MUTANT claim : elle l'est, en cours de vie",
+      "moteur": "chromium",
+      "ok": true,
+      "ms": 2090,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "sans claim, la page qui enregistre reste NON contrôlée (premier contrôle = navigation suivante)"
+        },
+        {
+          "ok": true,
+          "message": "MUTANT : avec claim, la page non contrôlée le devient en cours de vie"
+        }
+      ],
+      "mesures": {
+        "controleeApresEnregistrement-nominal": false,
+        "controleeApresEnregistrement-mutant-claim": true
+      },
+      "notes": []
+    },
+    {
+      "id": "A4",
+      "titre": "Un seul onglet : navigation vers autre chose puis retour — le contrôleur et la page restent d'accord",
+      "moteur": "chromium",
+      "ok": true,
+      "ms": 1016,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "rechargement : page et contrôleur de même version (1/1)"
+        },
+        {
+          "ok": true,
+          "message": "aller-retour via about:blank : page et contrôleur de même version (1/1)"
+        }
+      ],
+      "mesures": {
+        "navigations": [
+          {
+            "nom": "rechargement",
+            "page": 1,
+            "ctrl": 1
+          },
+          {
+            "nom": "aller-retour via about:blank",
+            "page": 1,
+            "ctrl": 1
+          }
+        ]
+      },
+      "notes": [
+        "Selon le moteur, quitter la page peut laisser le client « en vie » (v1 conservée) ou le libérer (v2 appliquée) : l'invariant tient dans les deux cas ; la RÈGLE écrite est « tous les clients fermés », pas « une navigation »."
+      ]
+    },
+    {
+      "id": "S5",
+      "titre": "Entrée du Cache altérée par un écrivain de même origine : refus 503 ; entrée supprimée : refus ; `verifier` les nomme",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 8376,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "le SW s'installe et s'active (état: actif)"
+        },
+        {
+          "ok": true,
+          "message": "la page de banc est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "entrée altérée → 503 RESERVE_ALTEREE"
+        },
+        {
+          "ok": true,
+          "message": "entrée supprimée → 503 RESERVE_INCOMPLETE"
+        },
+        {
+          "ok": true,
+          "message": "le Worker dont l'import statique est refusé ne se charge pas (événement `error` ou silence selon le moteur)"
+        },
+        {
+          "ok": true,
+          "message": "le message `verifier` nomme l'altérée et la manquante"
+        }
+      ],
+      "mesures": {
+        "refus": {
+          "alteree": [503, "RESERVE_ALTEREE"],
+          "supprimee": [503, "RESERVE_INCOMPLETE"],
+          "bonjour": {
+            "delai": true
+          },
+          "v": {
+            "id": null,
+            "version": "pub-0001",
+            "sequence": 1,
+            "plancher": 0,
+            "retrait": false,
+            "entrees": 217,
+            "ok": false,
+            "manquants": ["/spike/lib.mjs"],
+            "alteres": ["/spike/lib-tardive.mjs"]
+          }
+        }
+      },
+      "notes": [
+        "Un Worker dont le graphe de modules est refusé : Chromium et WebKit émettent `error`, Firefox n'émet RIEN (délai) — le portail ne peut pas s'appuyer sur l'événement."
+      ]
+    },
+    {
+      "id": "S10",
+      "titre": "Navigations successives : le script du SW est redemandé SANS passer par le SW — mais pas à chaque navigation (on ne s'y fie pas)",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 18900,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "le SW s'installe et s'active (état: actif)"
+        },
+        {
+          "ok": true,
+          "message": "la page de banc est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "au moins une navigation redemande le script (destination serviceworker, ou absente sous WebKit), hors SW"
+        }
+      ],
+      "mesures": {
+        "requetesDuScriptParNavigation": [
+          ["serviceworker"],
+          ["serviceworker"],
+          ["serviceworker"],
+          ["serviceworker"]
+        ]
+      },
+      "notes": [
+        "Garantie NON acquise : sur Chromium 151 certaines navigations ne redemandent rien (voir requetesDuScriptParNavigation). La DoR impose donc un update() explicite à chaque démarrage."
+      ]
+    },
+    {
+      "id": "A1",
+      "titre": "PROTOCOLE : deux onglets, mise à jour publiée, import tardif → aucun mélange ; la v2 ne s'applique qu'après la fermeture de TOUS les clients",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 8545,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "onglet 1 : portail franchi, session ouverte avec une clé non extractible"
+        },
+        {
+          "ok": true,
+          "message": "la v2 est installée et attend"
+        },
+        {
+          "ok": true,
+          "message": "aucun controllerchange dans aucun onglet"
+        },
+        {
+          "ok": true,
+          "message": "onglet 1 : import tardif en v1, clé de session intacte, Worker neuf en v1"
+        },
+        {
+          "ok": true,
+          "message": "onglet 2 (navigation neuve APRÈS la publication) : toujours v1, cohérent"
+        },
+        {
+          "ok": true,
+          "message": "tant qu'UN client de la v1 vit, la v2 reste en attente (règle : tous les clients)"
+        },
+        {
+          "ok": true,
+          "message": "après la fermeture de tous les clients : la page ET le contrôleur sont en v2"
+        },
+        {
+          "ok": true,
+          "message": "le cache de la v1 est supprimé à l'activation de la v2"
+        }
+      ],
+      "mesures": {
+        "avecAttente": {
+          "onglet1": {
+            "pageSeq": 1,
+            "ctrlSeq": 1,
+            "tardif": {
+              "type": "import-tardif",
+              "ok": true,
+              "lib": "tardive-v1",
+              "sequence": 1
+            },
+            "cleOk": true,
+            "workerNeuf": 1,
+            "changements": 0
+          },
+          "onglet2": {
+            "pageSeq": 1,
+            "ctrlSeq": 1,
+            "tardif": null,
+            "workerNeuf": 1,
+            "changements": 0
+          }
+        },
+        "ongletFerme": {
+          "seq": 1,
+          "ctrl": 1,
+          "insc": {
+            "installing": null,
+            "waiting": "installed",
+            "active": "activated"
+          }
+        },
+        "toutesFermees": {
+          "seq": 2,
+          "ctrl": 2,
+          "insc": {
+            "installing": null,
+            "waiting": null,
+            "active": "activated"
+          }
+        },
+        "cachesApres": ["reserve-pub-0002"]
+      },
+      "notes": []
+    },
+    {
+      "id": "A2",
+      "titre": "MUTANT skipWaiting : le même scénario MÉLANGE les versions dans l'onglet 1 (l'épreuve A1 le tue)",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 7724,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "onglet 1 : portail franchi, session ouverte avec une clé non extractible"
+        },
+        {
+          "ok": true,
+          "message": "MÉLANGE : l'onglet 1 (page v1, clé ouverte) voit un contrôleur ou un Worker d'une autre version"
+        },
+        {
+          "ok": true,
+          "message": "le mélange est précédé d'un controllerchange (observable par la page)"
+        }
+      ],
+      "mesures": {
+        "avecSkipWaiting": {
+          "pageSeq": 1,
+          "ctrlSeq": 2,
+          "tardif": {
+            "type": "import-tardif",
+            "ok": true,
+            "lib": "tardive-v2",
+            "sequence": 1
+          },
+          "cleOk": true,
+          "workerNeuf": 2,
+          "changements": 1
+        }
+      },
+      "notes": []
+    },
+    {
+      "id": "A3",
+      "titre": "Pas de claim : la page qui enregistre le SW n'est PAS contrôlée ; MUTANT claim : elle l'est, en cours de vie",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 6194,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "sans claim, la page qui enregistre reste NON contrôlée (premier contrôle = navigation suivante)"
+        },
+        {
+          "ok": true,
+          "message": "MUTANT : avec claim, la page non contrôlée le devient en cours de vie"
+        }
+      ],
+      "mesures": {
+        "controleeApresEnregistrement-nominal": false,
+        "controleeApresEnregistrement-mutant-claim": true
+      },
+      "notes": []
+    },
+    {
+      "id": "A4",
+      "titre": "Un seul onglet : navigation vers autre chose puis retour — le contrôleur et la page restent d'accord",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 6103,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "rechargement : page et contrôleur de même version (1/1)"
+        },
+        {
+          "ok": true,
+          "message": "aller-retour via about:blank : page et contrôleur de même version (2/2)"
+        }
+      ],
+      "mesures": {
+        "navigations": [
+          {
+            "nom": "rechargement",
+            "page": 1,
+            "ctrl": 1
+          },
+          {
+            "nom": "aller-retour via about:blank",
+            "page": 2,
+            "ctrl": 2
+          }
+        ]
+      },
+      "notes": [
+        "Selon le moteur, quitter la page peut laisser le client « en vie » (v1 conservée) ou le libérer (v2 appliquée) : l'invariant tient dans les deux cas ; la RÈGLE écrite est « tous les clients fermés », pas « une navigation »."
+      ]
+    },
+    {
+      "id": "S5",
+      "titre": "Entrée du Cache altérée par un écrivain de même origine : refus 503 ; entrée supprimée : refus ; `verifier` les nomme",
+      "moteur": "webkit",
+      "ok": true,
+      "ms": 1637,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "le SW s'installe et s'active (état: actif)"
+        },
+        {
+          "ok": true,
+          "message": "la page de banc est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "entrée altérée → 503 RESERVE_ALTEREE"
+        },
+        {
+          "ok": true,
+          "message": "entrée supprimée → 503 RESERVE_INCOMPLETE"
+        },
+        {
+          "ok": true,
+          "message": "le Worker dont l'import statique est refusé ne se charge pas (événement `error` ou silence selon le moteur)"
+        },
+        {
+          "ok": true,
+          "message": "le message `verifier` nomme l'altérée et la manquante"
+        }
+      ],
+      "mesures": {
+        "refus": {
+          "alteree": [503, "RESERVE_ALTEREE"],
+          "supprimee": [503, "RESERVE_INCOMPLETE"],
+          "bonjour": {
+            "erreur": "chargement"
+          },
+          "v": {
+            "id": null,
+            "version": "pub-0001",
+            "sequence": 1,
+            "plancher": 0,
+            "retrait": false,
+            "entrees": 217,
+            "ok": false,
+            "manquants": ["/spike/lib.mjs"],
+            "alteres": ["/spike/lib-tardive.mjs"]
+          }
+        }
+      },
+      "notes": [
+        "Un Worker dont le graphe de modules est refusé : Chromium et WebKit émettent `error`, Firefox n'émet RIEN (délai) — le portail ne peut pas s'appuyer sur l'événement."
+      ]
+    },
+    {
+      "id": "S10",
+      "titre": "Navigations successives : le script du SW est redemandé SANS passer par le SW — mais pas à chaque navigation (on ne s'y fie pas)",
+      "moteur": "webkit",
+      "ok": true,
+      "ms": 19137,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "le SW s'installe et s'active (état: actif)"
+        },
+        {
+          "ok": true,
+          "message": "la page de banc est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "au moins une navigation redemande le script (destination serviceworker, ou absente sous WebKit), hors SW"
+        }
+      ],
+      "mesures": {
+        "requetesDuScriptParNavigation": [[null], [null], [null], [null]]
+      },
+      "notes": [
+        "Garantie NON acquise : sur Chromium 151 certaines navigations ne redemandent rien (voir requetesDuScriptParNavigation). La DoR impose donc un update() explicite à chaque démarrage."
+      ]
+    },
+    {
+      "id": "A1",
+      "titre": "PROTOCOLE : deux onglets, mise à jour publiée, import tardif → aucun mélange ; la v2 ne s'applique qu'après la fermeture de TOUS les clients",
+      "moteur": "webkit",
+      "ok": true,
+      "ms": 4441,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "onglet 1 : portail franchi, session ouverte avec une clé non extractible"
+        },
+        {
+          "ok": true,
+          "message": "la v2 est installée et attend"
+        },
+        {
+          "ok": true,
+          "message": "aucun controllerchange dans aucun onglet"
+        },
+        {
+          "ok": true,
+          "message": "onglet 1 : import tardif en v1, clé de session intacte, Worker neuf en v1"
+        },
+        {
+          "ok": true,
+          "message": "onglet 2 (navigation neuve APRÈS la publication) : toujours v1, cohérent"
+        },
+        {
+          "ok": true,
+          "message": "tant qu'UN client de la v1 vit, la v2 reste en attente (règle : tous les clients)"
+        },
+        {
+          "ok": true,
+          "message": "après la fermeture de tous les clients : la page ET le contrôleur sont en v2"
+        },
+        {
+          "ok": true,
+          "message": "le cache de la v1 est supprimé à l'activation de la v2"
+        }
+      ],
+      "mesures": {
+        "avecAttente": {
+          "onglet1": {
+            "pageSeq": 1,
+            "ctrlSeq": 1,
+            "tardif": {
+              "type": "import-tardif",
+              "ok": true,
+              "lib": "tardive-v1",
+              "sequence": 1
+            },
+            "cleOk": true,
+            "workerNeuf": 1,
+            "changements": 0
+          },
+          "onglet2": {
+            "pageSeq": 1,
+            "ctrlSeq": 1,
+            "tardif": null,
+            "workerNeuf": 1,
+            "changements": 0
+          }
+        },
+        "ongletFerme": {
+          "seq": 1,
+          "ctrl": 1,
+          "insc": {
+            "installing": null,
+            "waiting": "installed",
+            "active": "activated"
+          }
+        },
+        "toutesFermees": {
+          "seq": 2,
+          "ctrl": 2,
+          "insc": {
+            "installing": null,
+            "waiting": null,
+            "active": "activated"
+          }
+        },
+        "cachesApres": ["reserve-pub-0002"]
+      },
+      "notes": []
+    },
+    {
+      "id": "A2",
+      "titre": "MUTANT skipWaiting : le même scénario MÉLANGE les versions dans l'onglet 1 (l'épreuve A1 le tue)",
+      "moteur": "webkit",
+      "ok": true,
+      "ms": 3047,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "onglet 1 : portail franchi, session ouverte avec une clé non extractible"
+        },
+        {
+          "ok": true,
+          "message": "MÉLANGE : l'onglet 1 (page v1, clé ouverte) voit un contrôleur ou un Worker d'une autre version"
+        },
+        {
+          "ok": true,
+          "message": "le mélange est précédé d'un controllerchange (observable par la page)"
+        }
+      ],
+      "mesures": {
+        "avecSkipWaiting": {
+          "pageSeq": 1,
+          "ctrlSeq": 2,
+          "tardif": {
+            "type": "import-tardif",
+            "ok": true,
+            "lib": "tardive-v2",
+            "sequence": 1
+          },
+          "cleOk": true,
+          "workerNeuf": 2,
+          "changements": 1
+        }
+      },
+      "notes": []
+    },
+    {
+      "id": "A3",
+      "titre": "Pas de claim : la page qui enregistre le SW n'est PAS contrôlée ; MUTANT claim : elle l'est, en cours de vie",
+      "moteur": "webkit",
+      "ok": true,
+      "ms": 2970,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "sans claim, la page qui enregistre reste NON contrôlée (premier contrôle = navigation suivante)"
+        },
+        {
+          "ok": true,
+          "message": "MUTANT : avec claim, la page non contrôlée le devient en cours de vie"
+        }
+      ],
+      "mesures": {
+        "controleeApresEnregistrement-nominal": false,
+        "controleeApresEnregistrement-mutant-claim": true
+      },
+      "notes": []
+    },
+    {
+      "id": "A4",
+      "titre": "Un seul onglet : navigation vers autre chose puis retour — le contrôleur et la page restent d'accord",
+      "moteur": "webkit",
+      "ok": true,
+      "ms": 1938,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "rechargement : page et contrôleur de même version (1/1)"
+        },
+        {
+          "ok": true,
+          "message": "aller-retour via about:blank : page et contrôleur de même version (2/2)"
+        }
+      ],
+      "mesures": {
+        "navigations": [
+          {
+            "nom": "rechargement",
+            "page": 1,
+            "ctrl": 1
+          },
+          {
+            "nom": "aller-retour via about:blank",
+            "page": 2,
+            "ctrl": 2
+          }
+        ]
+      },
+      "notes": [
+        "Selon le moteur, quitter la page peut laisser le client « en vie » (v1 conservée) ou le libérer (v2 appliquée) : l'invariant tient dans les deux cas ; la RÈGLE écrite est « tous les clients fermés », pas « une navigation »."
+      ]
+    }
+  ]
+}

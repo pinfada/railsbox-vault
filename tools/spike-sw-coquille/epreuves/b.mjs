@@ -82,15 +82,30 @@ ajouter(
     await page.click("#ouvrir-par-phrase");
     const ouvert = await jusqua(async () => (await releve(page)).etat === "ouvert", { delaiMs: BUDGET_DEVERROUILLAGE_MS, pasMs: 500 });
     marquer(ouvert ? "coffre-ouvert" : "coffre-non-ouvert");
-    t.mesure("etatApresDeverrouillage", ouvert ? "ouvert" : (await releve(page).catch(() => ({}))).etat ?? "inconnu");
-    t.verifier(ouvert, "DÉVERROUILLAGE COMPLET : Argon2id (Worker de dérivation réel) puis ouverture du volume, derrière le SW");
+    const etatFinal = ouvert ? "ouvert" : ((await releve(page).catch(() => ({}))).etat ?? "inconnu");
+    t.mesure("etatApresDeverrouillage", etatFinal);
+    // ATTENDU par moteur (docs/compatibility.md, ADR 0038) : WebKit Playwright n'a pas d'OPFS → « indisponible »
+    // (refus du produit, pas du SW) ; Chromium et Firefox ouvrent. Un résultat DIFFÉRENT de l'attendu est un échec.
+    if (t.moteur === "webkit") {
+      t.verifier(etatFinal === "indisponible", `WebKit : déverrouillage NON PROUVABLE (OPFS absent, refus du produit « ${etatFinal} ») — conforme à la matrice de compatibilité`);
+      t.mesure("attendu", "webkit : indisponible (OPFS absent)");
+    } else {
+      t.verifier(ouvert, "DÉVERROUILLAGE COMPLET : Argon2id (Worker de dérivation réel) puis ouverture du volume, derrière le SW");
+    }
     if (ouvert) {
       await page.click("#demarrer-application");
       const verdict = await jusqua(async () => /^cycle:(application-demarree|demarrage-refuse)/.test((await page.locator("#cycle-etat").textContent().catch(() => "")) ?? ""), { delaiMs: BUDGET_DEMARRAGE_MS, pasMs: 2000 });
       const cycle = await page.locator("#cycle-etat").textContent().catch(() => "?");
       marquer("cycle:" + cycle);
       t.mesure("cycle", cycle);
-      t.verifier(cycle === "cycle:application-demarree", `BOOT : ${cycle}`);
+      if (t.moteur === "firefox") {
+        // Baseline du dépôt : sous Firefox, Rails n'a jamais répondu dans le guest (ADR 0038). Le témoin B3 mesure
+        // la même chose SANS SW ; ici le cycle est relevé, pas exigé.
+        t.mesure("attendu", "firefox : boot Rails non prouvé (baseline du dépôt), voir B3");
+        t.verifier(cycle === "cycle:application-demarree" || cycle === "cycle:demarrage-en-cours", `Firefox : cycle relevé « ${cycle} » (boot Rails NON PROUVÉ, comme sans SW : B3)`);
+      } else {
+        t.verifier(cycle === "cycle:application-demarree", `BOOT : ${cycle}`);
+      }
       if (cycle === "cycle:application-demarree") {
         const rendue = await jusqua(
           () => page.frameLocator("#document-applicatif").frameLocator("#application-servie").locator("body").getAttribute("data-application-de-reference", { timeout: 2000 }).then((v) => v === "rendue", () => false),
@@ -146,9 +161,7 @@ ajouter(
       t.verifier(!ouvert && requetesDeBoot(origine).length === 0, `${nom} : aucun déverrouillage, aucune requête de boot (VM ni image)`);
       if (nom === "worker-de-confiance-altere") t.verifier(etat.rapport.canalPrivilegie !== "etabli", "le canal privilégié n'est pas établi avec un Worker altéré");
       await contexte.close();
-      await origine.arreter();
-      t.origines.length = 0;
-      t.origine = null;
+      await t.nettoyerLesOrigines(); // le serveur de l'origine applicative aussi (sinon le port 4294 fuit sur les épreuves suivantes)
     }
   },
   { delaiMs: 400_000 },

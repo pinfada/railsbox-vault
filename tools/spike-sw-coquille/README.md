@@ -26,7 +26,10 @@ SPIKE_BUDGET_DEMARRAGE_MS=420000 node tools/spike-sw-coquille/rejouer.mjs --epre
 
 Un navigateur neuf par épreuve (Firefox garde un état de connexion après un serveur arrêté : mesuré).
 Chaque exécution écrit `sorties/AAAA-MM-JJ-<moteurs>-<filtre>.json` : **versions de moteur**, assertions,
-mesures brutes. Les sorties conservées dans ce dossier sont celles citées dans le commentaire de #299.
+mesures brutes. Les sorties conservées dans ce dossier sont celles citées dans le commentaire de #299 ;
+`sorties/anterieures/` garde une exécution antérieure du même banc (S10 sur Chromium y donne [2,1,0,1] :
+la redemande du script du SW à la navigation n'est pas déterministe). `node tools/spike-sw-coquille/synthese.mjs`
+rend la table épreuve × moteur à partir de `sorties/`.
 
 ## Carte des épreuves
 

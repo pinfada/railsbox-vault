@@ -1,0 +1,203 @@
+{
+  "contrat": "spike-sw-coquille-d1h/1",
+  "horodatage": "2026-11-18T09:43:21.595Z",
+  "machine": {
+    "plateforme": "linux arm64",
+    "noyau": "7.0.0-1011-aws",
+    "node": "v22.23.5"
+  },
+  "moteurs": {
+    "chromium": "151.0.7922.34",
+    "firefox": "153.0",
+    "webkit": "26.5"
+  },
+  "filtre": ["B1", "B3"],
+  "total": 4,
+  "ok": 2,
+  "resultats": [
+    {
+      "id": "B1",
+      "titre": "E2E : la vraie coquille publiée derrière le SW (origine hostile après l'installation) déverrouille par la phrase et démarre la vraie application Rails ; tout le code vient du SW",
+      "moteur": "chromium",
+      "ok": true,
+      "ms": 159719,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "la coquille réelle est prête, contrôlée par le SW, l'origine répondant MAUVAIS à tout code"
+        },
+        {
+          "ok": true,
+          "message": "la page produit est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "le Worker de confiance est démarré (octets du SW)"
+        },
+        {
+          "ok": true,
+          "message": "DÉVERROUILLAGE COMPLET : Argon2id (Worker de dérivation réel) puis ouverture du volume, derrière le SW"
+        },
+        {
+          "ok": true,
+          "message": "BOOT : cycle:application-demarree"
+        },
+        {
+          "ok": true,
+          "message": "la page de l'application Rails de référence est RENDUE dans le cadre imbriqué"
+        },
+        {
+          "ok": true,
+          "message": "AUCUNE requête de code n'a atteint l'origine : chaque octet exécuté vient du SW"
+        }
+      ],
+      "mesures": {
+        "etatApresDeverrouillage": "ouvert",
+        "cycle": "cycle:application-demarree",
+        "etapes": [
+          ["coquille-prete", 1794993801],
+          ["coffre-ouvert", 1794993802],
+          ["cycle:cycle:application-demarree", 1794993958],
+          ["rails-rendue", 1794993960]
+        ],
+        "refusDuSW": {
+          "refus": [],
+          "messagesRefuses": 0,
+          "horsOrigine": 0
+        },
+        "journalDePage": [
+          "console.error Failed to load resource: the server responded with a status of 503 ()",
+          "console.error Failed to load resource: the server responded with a status of 503 ()",
+          "console.error Failed to load resource: the server responded with a status of 503 ()"
+        ],
+        "requetesDeCodeAuReseau": []
+      },
+      "notes": []
+    },
+    {
+      "id": "B1",
+      "titre": "E2E : la vraie coquille publiée derrière le SW (origine hostile après l'installation) déverrouille par la phrase et démarre la vraie application Rails ; tout le code vient du SW",
+      "moteur": "firefox",
+      "ok": false,
+      "ms": 429601,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "la coquille réelle est prête, contrôlée par le SW, l'origine répondant MAUVAIS à tout code"
+        },
+        {
+          "ok": true,
+          "message": "la page produit est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "le Worker de confiance est démarré (octets du SW)"
+        },
+        {
+          "ok": true,
+          "message": "DÉVERROUILLAGE COMPLET : Argon2id (Worker de dérivation réel) puis ouverture du volume, derrière le SW"
+        },
+        {
+          "ok": false,
+          "message": "BOOT : cycle:demarrage-en-cours"
+        },
+        {
+          "ok": true,
+          "message": "AUCUNE requête de code n'a atteint l'origine : chaque octet exécuté vient du SW"
+        }
+      ],
+      "mesures": {
+        "etatApresDeverrouillage": "ouvert",
+        "cycle": "cycle:demarrage-en-cours",
+        "etapes": [
+          ["coquille-prete", 1794993964],
+          ["coffre-ouvert", 1794993969],
+          ["cycle:cycle:demarrage-en-cours", 1794994390]
+        ],
+        "refusDuSW": {
+          "refus": [],
+          "messagesRefuses": 0,
+          "horsOrigine": 0
+        },
+        "journalDePage": [],
+        "requetesDeCodeAuReseau": []
+      },
+      "notes": []
+    },
+    {
+      "id": "B3",
+      "titre": "TÉMOIN sans SW (Firefox) : la même coquille, servie par le réseau, déverrouille puis démarre-t-elle ? — sépare ce qui tient au SW de ce qui tient au moteur",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 428478,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "coquille prête (sans SW)"
+        },
+        {
+          "ok": true,
+          "message": "déverrouillage sans SW (référence pour B1)"
+        }
+      ],
+      "mesures": {
+        "ouvertSansSW": true,
+        "cycleSansSW": "cycle:demarrage-en-cours"
+      },
+      "notes": [
+        "Épreuve-témoin : son verdict est une MESURE (cycleSansSW), pas une exigence. Si le cycle reste « demarrage-en-cours » sans SW sur ce moteur, le blocage de B1 n'est pas imputable au SW."
+      ]
+    },
+    {
+      "id": "B1",
+      "titre": "E2E : la vraie coquille publiée derrière le SW (origine hostile après l'installation) déverrouille par la phrase et démarre la vraie application Rails ; tout le code vient du SW",
+      "moteur": "webkit",
+      "ok": false,
+      "ms": 181622,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "la coquille réelle est prête, contrôlée par le SW, l'origine répondant MAUVAIS à tout code"
+        },
+        {
+          "ok": true,
+          "message": "la page produit est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "le Worker de confiance est démarré (octets du SW)"
+        },
+        {
+          "ok": false,
+          "message": "DÉVERROUILLAGE COMPLET : Argon2id (Worker de dérivation réel) puis ouverture du volume, derrière le SW"
+        },
+        {
+          "ok": true,
+          "message": "AUCUNE requête de code n'a atteint l'origine : chaque octet exécuté vient du SW"
+        }
+      ],
+      "mesures": {
+        "etatApresDeverrouillage": "indisponible",
+        "etapes": [
+          ["coquille-prete", 1794994821],
+          ["coffre-non-ouvert", 1794995002]
+        ],
+        "refusDuSW": {
+          "refus": [],
+          "messagesRefuses": 0,
+          "horsOrigine": 0
+        },
+        "journalDePage": [
+          "console.error Failed to load resource: the server responded with a status of 503 ()",
+          "console.error Failed to load resource: the server responded with a status of 503 ()"
+        ],
+        "requetesDeCodeAuReseau": []
+      },
+      "notes": []
+    }
+  ]
+}
