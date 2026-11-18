@@ -232,29 +232,33 @@ const ECHECS_DE_L_ENVOI = Object.freeze([
     "rejet avec code",
     () => Promise.reject(Object.assign(new Error("x"), { code: "VAULT_REFUS" })),
     "refus-type",
+    "VAULT_REFUS",
   ],
-  ["rejet sans code", () => Promise.reject(new Error("x")), "erreur-sans-code"],
+  ["rejet sans code", () => Promise.reject(new Error("x")), "erreur-sans-code", null],
   [
     "Worker mort",
     () => Promise.reject(Object.assign(new Error("x"), { code: CODES_REFUS_COQUILLE.workerMort })),
     "worker-mort",
+    CODES_REFUS_COQUILLE.workerMort,
   ],
   [
     "Worker rompu",
     () => Promise.reject(Object.assign(new Error("x"), { code: CODES_REFUS_COQUILLE.gesteRompu })),
     "worker-rompu",
+    CODES_REFUS_COQUILLE.gesteRompu,
   ],
-  ["réponse malformée", () => Promise.resolve({ type: "autre" }), "reponse-malformee"],
+  ["réponse malformée", () => Promise.resolve({ type: "autre" }), "reponse-malformee", null],
   [
     "exception synchrone",
     () => {
       throw new Error("synchrone");
     },
     "erreur-sans-code",
+    null,
   ],
 ]);
 
-for (const [nom, envoyer, evenement] of ECHECS_DE_L_ENVOI) {
+for (const [nom, envoyer, evenement, codeAttendu] of ECHECS_DE_L_ENVOI) {
   test(`[E3a] échec d'envoi (${nom}) → I, un SEUL appel, jamais P ni C, diagnostic au rapport`, async () => {
     const f = fabriquer({ envoyer });
     await amener(f, "C");
@@ -263,6 +267,7 @@ for (const [nom, envoyer, evenement] of ECHECS_DE_L_ENVOI) {
     assert.equal(f.magasin.etat().phase, "I");
     assert.equal(f.noms("envoyer").length, 1, "l'envoi a été rejoué");
     assert.equal(f.consignes.at(-1).evenement, evenement);
+    assert.equal(f.consignes.at(-1).code, codeAttendu, "le code du Worker est perdu");
     assert.equal(f.magasin.projection().affirmations.peutEtreRevoque, true);
     assert.equal(
       f.magasin.accepte("demander-la-revocation"),
@@ -411,6 +416,17 @@ test("[M-d] la remise à zéro PUIS `noter` : l'indice final est vrai", async ()
   assert.equal(f.magasin.etat().indice, true);
 });
 
+test("[M-c] une demande invalide de `definirLIndice` ne touche pas au rang : `noter` en vol reste valide", async () => {
+  const f = fabriquer();
+  await amener(f, "V");
+  f.envois[0].resoudre({ ...SUCCES });
+  await tourner();
+  assert.throws(() => f.magasin.definirLIndice("oui"), TypeError);
+  f.notes[0].resoudre();
+  await tourner();
+  assert.equal(f.magasin.etat().indice, true, "un appel invalide a invalidé le `noter` en vol");
+});
+
 test("[e21] `definirLIndice` : booléen obligatoire ; en P il masque et notifie, ailleurs il notifie seulement", async () => {
   const f = fabriquer();
   await amener(f, "P");
@@ -555,6 +571,13 @@ test("[e20] la modification : toute issue relance la lecture ; une MORT du Worke
 
 test("[R-c] les événements de RÉPONSE ne sont pas appelables de l'extérieur : succès, lectures, fin de modification, e21, e22, montage", () => {
   const f = fabriquer();
+  // Charges utiles VALIDES : sans la liste blanche, ces événements seraient simplement traités.
+  const charges = {
+    "relecture-reussie": { lecture: 1, donnees: {} },
+    "relecture-echouee": { lecture: 1 },
+    "indice-change": { valeur: true },
+    "masquage-impossible": { action: "envoi" },
+  };
   for (const type of [
     "reponse-de-succes",
     "refus-type",
@@ -570,7 +593,7 @@ test("[R-c] les événements de RÉPONSE ne sont pas appelables de l'extérieur 
     "montage",
     "inconnu",
   ]) {
-    assert.throws(() => f.magasin.appliquer({ type }), TypeError, type);
+    assert.throws(() => f.magasin.appliquer({ type, ...charges[type] }), TypeError, type);
   }
   assert.throws(() => f.magasin.appliquer(null), TypeError);
   assert.throws(() => f.magasin.modifier("pas une fonction"), TypeError);
@@ -614,10 +637,12 @@ test("[E3g/I20′] `consigner` qui échoue : UN appel par arête, aucune récurs
   const { entrees, perdus } = g.magasin.echecs();
   assert.equal(entrees.length, 64, "journal non borné");
   assert.equal(perdus, 36, "compteur de pertes");
-  assert.deepEqual(
-    entrees.map((e) => e.rang),
-    [...entrees.map((e) => e.rang)].sort((a, b) => a - b),
+  const rangs = entrees.map((e) => e.rang);
+  assert.ok(
+    rangs.every((rang, i) => i === 0 || rang === rangs[i - 1] + 1),
+    "rangs du journal non consécutifs",
   );
+  assert.equal(rangs.at(-1), 100, "le dernier rang doit compter toutes les défaillances");
 });
 
 test("[I22′] chaque transition acceptée qui change l'occurrence appelle `vueARendre` EXACTEMENT une fois", async () => {

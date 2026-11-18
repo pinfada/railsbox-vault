@@ -300,11 +300,42 @@ const MALFORMEES = Object.freeze([
   ["emplacement non objet", (r) => ({ ...r, emplacements: [null] })],
 ]);
 
+/** Ces deux malformations n'en sont pas coffre FERMÉ : il n'a aucun constat à fournir (N8). */
+const SEULEMENT_OUVERT = new Set([
+  "constat absent coffre ouvert",
+  "constat non booléen coffre ouvert",
+]);
+
 for (const [nom, deformer] of MALFORMEES) {
   test(`[N1′-N9] réponse hors contrat → { ok: false } : ${nom}`, () => {
-    assert.deepEqual(normaliser(deformer(reponseDInventaire())), { ok: false });
+    assert.deepEqual(
+      normaliser(deformer(reponseDInventaire()), true),
+      { ok: false },
+      "coffre ouvert",
+    );
+    if (SEULEMENT_OUVERT.has(nom)) return;
+    assert.deepEqual(
+      normaliser(deformer(reponseDInventaire()), false),
+      { ok: false },
+      "coffre fermé",
+    );
   });
 }
+
+test("[R8.6] un détail de bilan à plus de huit noms est refusé SANS parcourir ses valeurs", () => {
+  let lectures = 0;
+  const restants = new Proxy(
+    Object.fromEntries(Array.from({ length: 50 }, (_, rang) => [`m${rang}`, 1])),
+    {
+      get(cible, cle) {
+        if (typeof cle === "string" && cle.startsWith("m")) lectures += 1;
+        return cible[cle];
+      },
+    },
+  );
+  assert.equal(evenementDeLaReponse(ok(succes({ restants }))), "reponse-malformee");
+  assert.equal(lectures, 0, `${lectures} valeurs lues : la borne des clés n'a pas coupé la boucle`);
+});
 
 test("[N8] le constat : booléen OBLIGATOIRE coffre ouvert ; IGNORÉ (nul) coffre fermé, même si la réponse dit vrai", () => {
   assert.deepEqual(normaliser(reponseDInventaire({ feuille: false }), true).donnees.constat, {
@@ -329,15 +360,40 @@ test("[N9] un coffre OUVERT dont l'enveloppe est absente ou refusée est incohé
     versionEnveloppe: null,
   };
   assert.equal(normaliser(vide, true).ok, false);
+  const videAvecConstat = { ...vide, feuilleEprouvee: true };
+  assert.equal(
+    normaliser(videAvecConstat, true).ok,
+    false,
+    "un constat n'existe pas sans enveloppe",
+  );
+  const videAvecVersion = { ...vide, versionEnveloppe: 3 };
+  assert.equal(
+    normaliser(videAvecVersion, false).donnees.public.versionEnveloppe,
+    null,
+    "version d'un coffre absent",
+  );
   assert.deepEqual(normaliser(vide, false).donnees.public.moyens, []);
   assert.equal(normaliser(vide, false).donnees.public.present, false);
+  assert.equal(normaliser(vide, false).donnees.public.versionEnveloppe, null);
+  assert.ok(profondementGele(normaliser(vide, false).donnees));
   const refuse = {
     ...vide,
     refus: { code: "VAULT_COQUILLE_RESTAURATION_INTERROMPUE", message: "texte du Worker" },
   };
   assert.equal(normaliser(refuse, true).ok, false);
+  assert.equal(
+    normaliser({ ...refuse, feuilleEprouvee: true }, true).ok,
+    false,
+    "constat d'un coffre refusé",
+  );
+  assert.equal(
+    normaliser({ ...refuse, versionEnveloppe: 3 }, false).donnees.public.versionEnveloppe,
+    null,
+  );
   const donnees = normaliser(refuse, false).donnees;
   assert.deepEqual(donnees.public.refus, { code: "VAULT_COQUILLE_RESTAURATION_INTERROMPUE" });
+  assert.equal(donnees.public.versionEnveloppe, null);
+  assert.ok(profondementGele(donnees), "le refus n'est pas gelé");
   assert.ok(
     !JSON.stringify(donnees).includes("texte du Worker"),
     "le message du Worker est propagé",

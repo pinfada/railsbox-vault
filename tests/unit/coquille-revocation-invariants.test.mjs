@@ -15,7 +15,11 @@ import {
   accepte,
   transiter,
 } from "../../src/coquille/modele-de-la-revocation.mjs";
-import { creerEtat, etatInitial } from "../../src/coquille/phases-de-la-revocation.mjs";
+import {
+  creerEtat,
+  etatInitial,
+  exigerUnEtat,
+} from "../../src/coquille/phases-de-la-revocation.mjs";
 import { projeter } from "../../src/coquille/projection-de-la-revocation.mjs";
 import {
   affirmationsDe,
@@ -663,4 +667,185 @@ test("[session] `coffre-ouvert` pose le moyen d'ouverture (validé) ; la vue ne 
     () => transiter(etatDeLaPhase("FC"), { type: "coffre-ouvert", moyen: "" }),
     TypeError,
   );
+});
+
+test("[creerEtat] un état incohérent est une erreur de programmation : chaque règle de forme est éprouvée", () => {
+  const donnees = etatDeLaPhase("P").donnees;
+  const base = {
+    phase: "P",
+    lecture: null,
+    sequence: 3,
+    donnees,
+    session: Object.freeze({ moyen: null }),
+    indice: false,
+    occurrence: 1,
+  };
+  assert.ok(creerEtat(base), "l'état de référence doit être valide");
+  const invalides = [
+    ["phase inconnue", { phase: "Z", donnees: null }],
+    ["indice non booléen", { indice: 0 }],
+    ["séquence négative", { sequence: -1 }],
+    ["séquence non entière", { sequence: 1.5 }],
+    ["occurrence négative", { occurrence: -1 }],
+    ["occurrence non entière", { occurrence: 0.5 }],
+    ["lecture en vol hors d'une phase de lecture", { lecture: 1 }],
+    ["phase de lecture sans lecture", { phase: "SL", donnees: null }],
+    ["lecture au-delà de la séquence", { phase: "SL", donnees: null, lecture: 9 }],
+    ["lecture nulle", { phase: "SL", donnees: null, lecture: 0 }],
+    ["données dans une phase inconnue", { phase: "SE" }],
+    ["phase connue sans données", { donnees: null }],
+    ["données non gelées", { donnees: { ...donnees } }],
+    [
+      "données sans partie publique",
+      { donnees: Object.freeze({ constat: donnees.constat, lecture: 3 }) },
+    ],
+    [
+      "données sans identifiant de lecture",
+      { donnees: Object.freeze({ public: donnees.public, constat: donnees.constat }) },
+    ],
+    [
+      "constat absent coffre ouvert",
+      { donnees: Object.freeze({ public: donnees.public, constat: null, lecture: 3 }) },
+    ],
+    [
+      "constat non booléen",
+      {
+        donnees: Object.freeze({
+          public: donnees.public,
+          constat: Object.freeze({ feuilleEprouvee: "oui" }),
+          lecture: 3,
+        }),
+      },
+    ],
+    ["constat présent coffre fermé", { phase: "FC" }],
+    ["session non gelée", { session: { moyen: null } }],
+    ["session sans moyen", { session: Object.freeze({}) }],
+    ["moyen de session non textuel", { session: Object.freeze({ moyen: 3 }) }],
+  ];
+  for (const [nom, surcharge] of invalides) {
+    assert.throws(() => creerEtat({ ...base, ...surcharge }), TypeError, nom);
+  }
+  assert.throws(
+    () => exigerUnEtat({ ...creerEtat(base) }),
+    TypeError,
+    "un état non gelé est refusé",
+  );
+  assert.throws(
+    () => exigerUnEtat(Object.freeze({ phase: "P" })),
+    TypeError,
+    "un état incomplet est refusé",
+  );
+  assert.throws(
+    () => exigerUnEtat(Object.freeze({ ...creerEtat(base), en_trop: 1 })),
+    TypeError,
+    "clé en trop",
+  );
+  assert.throws(() => exigerUnEtat(null), TypeError);
+  assert.throws(
+    () => exigerUnEtat(Object.freeze({ ...creerEtat(base), indice: "oui" })),
+    TypeError,
+  );
+});
+
+test("[annonces] un geste REFUSÉ dit pourquoi, sans rien affirmer de faux ; un geste accepté ne dit que ce qui est vrai", () => {
+  const refus = (phase, type) => transiter(etatDeLaPhase(phase), { type });
+  for (const type of [
+    "oui",
+    "annuler",
+    "demander-la-revocation",
+    "terminer-sans-revoquer",
+    "verrouiller",
+  ]) {
+    if (type === "verrouiller") {
+      assert.equal(refus("V", type).annonce, "demande-refusee-en-cours");
+      continue;
+    }
+    assert.equal(refus("V", type).annonce, "demande-refusee-en-cours", `V × ${type}`);
+    assert.equal(refus("I", type).annonce, "demande-refusee-a-verifier", `I × ${type}`);
+  }
+  assert.equal(refus("K", "demander-la-revocation").annonce, "demande-refusee-deja-faite");
+  assert.equal(refus("K", "oui").annonce, "geste-refuse");
+  for (const phase of ["F0", "FL", "FE", "FM", "SL", "SE", "SM", "RL", "RE", "RM"]) {
+    assert.equal(
+      refus(phase, "oui").annonce,
+      "demande-refusee-donnees-inconnues",
+      `${phase} × oui`,
+    );
+  }
+  assert.equal(refus("FC", "oui").annonce, "geste-refuse", "FC connaît ses données publiques");
+  assert.equal(refus("P", "oui").annonce, "geste-refuse");
+  assert.equal(refus("P", "annuler").annonce, "geste-refuse");
+  assert.equal(
+    refus("P", "worker-rompu").annonce,
+    null,
+    "un fait n'est pas un geste : aucune annonce",
+  );
+  assert.equal(transiter(etatDeLaPhase("C"), { type: "annuler" }).annonce, "annulee");
+  assert.equal(
+    transiter(etatDeLaPhase("P"), { type: "terminer-sans-revoquer" }).annonce,
+    "termine-sans-revoquer",
+  );
+  assert.equal(transiter(etatDeLaPhase("P"), { type: "demander-la-revocation" }).annonce, null);
+  assert.equal(transiter(etatDeLaPhase("P"), { type: "revenir-a-l-application" }).annonce, null);
+});
+
+test("[I5′] `connu` : les données publiques en FC, P, C, K ; le constat en P, C, K seulement", () => {
+  for (const phase of LISTE_DES_PHASES) {
+    const { connu } = projeter(etatDeLaPhase(phase));
+    assert.equal(connu.public, CONNUES.includes(phase), `[I5′] connu.public en ${phase}`);
+    assert.equal(connu.constat, ["P", "C", "K"].includes(phase), `[I5′] connu.constat en ${phase}`);
+  }
+});
+
+test("[relecture] la lecture acceptée porte son identifiant : `donnees.lecture` ; le constat suit la phase d'arrivée", () => {
+  for (const phase of EN_LECTURE) {
+    const avant = etatDeLaPhase(phase);
+    const evenement = tousLesEvenements(avant).find(
+      (e) => e.type === "relecture-reussie" && e.lecture === avant.lecture,
+    );
+    const apres = transiter(avant, evenement).etat;
+    assert.equal(apres.donnees.lecture, avant.lecture, `[relecture] ${phase}`);
+    assert.equal(
+      apres.donnees.constat === null,
+      phase === "FL",
+      `[relecture] constat en ${apres.phase}`,
+    );
+    assert.equal(apres.lecture, null, `[relecture] ${phase} : la lecture n'est pas libérée`);
+  }
+});
+
+test("[vue] le CONTENU de la vue : moyens, codes, constat, moyen d'ouverture, confirmation — connus, ou nuls", () => {
+  for (const phase of LISTE_DES_PHASES) {
+    const etat = etatDeLaPhase(phase, { jeu: { codes: 2, feuille: false } });
+    const vue = vueDe(etat);
+    const connue = CONNUES.includes(phase);
+    assert.deepEqual(
+      vue.moyens,
+      connue ? ["phrase", "recuperation"] : null,
+      `[vue] moyens en ${phase}`,
+    );
+    assert.equal(vue.nombreDeCodes, connue ? 2 : null, `[vue] nombreDeCodes en ${phase}`);
+    const constat = ["P", "C", "K"].includes(phase);
+    assert.equal(vue.feuilleEprouvee, constat ? false : null, `[vue] feuilleEprouvee en ${phase}`);
+    assert.equal(
+      vue.moyenDOuverture,
+      constat ? "phrase" : null,
+      `[vue] moyenDOuverture en ${phase}`,
+    );
+    assert.deepEqual(
+      vue.confirmation,
+      phase === "C" ? { ouverte: true } : null,
+      `[vue] confirmation en ${phase}`,
+    );
+    assert.deepEqual(
+      lirePublic(etat)?.moyens ?? null,
+      vue.moyens,
+      `[vue] la porte publique diffère de la vue en ${phase}`,
+    );
+    assert.equal(
+      lireLeConstat(etat)?.feuilleEprouvee ?? null,
+      vue.feuilleEprouvee,
+      `[vue] la porte du constat diffère en ${phase}`,
+    );
+  }
 });

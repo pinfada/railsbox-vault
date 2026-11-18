@@ -118,7 +118,6 @@ function appeler(ctx, nom, ...arguments_) {
 
 /** Un événement INTERNE (issue d'une promesse) : en file si on applique, sinon traité tout de suite. */
 function enfiler(ctx, evenement) {
-  if (ctx.termine) return;
   ctx.file.push(evenement);
   if (!ctx.enApplication) vider(ctx);
 }
@@ -191,7 +190,6 @@ function lancerRelire(ctx, effet) {
 /** La MODIFICATION : toute issue relance la lecture (e20) ; une mort du Worker est e7. */
 function lancerModification(ctx) {
   const lanceur = ctx.lanceur;
-  ctx.lanceur = null;
   const fin = (erreur) =>
     codeDeLErreur(erreur) === CODES_REFUS_COQUILLE.workerMort
       ? evenementDEchec("worker-mort", erreur)
@@ -272,10 +270,7 @@ function traiter(ctx, evenement) {
   const resultat = transiter(ctx.etat, evenement);
   if (!resultat.accepte) return resultat;
   const garde = resultat.effets.some((effet) => LANCEURS_D_ENVELOPPE.includes(effet.nom));
-  if (garde && !masquerVerifie(ctx)) {
-    ctx.lanceur = null;
-    return basculer(ctx, evenement);
-  }
+  if (garde && !masquerVerifie(ctx)) return basculer(ctx, evenement);
   ctx.etat = resultat.etat;
   executerLesEffets(ctx, resultat.effets, garde);
   return resultat;
@@ -359,7 +354,6 @@ export function creerLaRevocation({ executeurs, indice } = {}) {
     definirLIndice: (valeur) => definirLIndice(ctx, valeur),
     terminer: () => {
       ctx.termine = true;
-      ctx.file.length = 0;
     },
     echecs: () => Object.freeze({ entrees: Object.freeze([...ctx.journal]), perdus: ctx.perdus }),
   });

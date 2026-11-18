@@ -1717,6 +1717,47 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
   harnais qui donne une fraîcheur au code ; la condition « code disponible sans réseau » sera
   fournie par D1h (#299, ADR 0046 § 6).
 
+## Le modèle d'état de la révocation d'urgence : ce qu'il garantit, ce qu'il ne garantit pas (#310, ADR 0049)
+
+La révocation d'urgence (« retirer tout sauf l'emplacement qui vient d'ouvrir », ADR 0026) est
+irréversible. Son **état** — repos, confirmation ouverte, demande partie, acquittée, incertaine, à
+relire — était implicite, réparti entre la page, le composant de confirmation et le parcours ; la PR
+#308 en a trouvé quatorze cas limites en six relectures. Il est désormais une **machine d'état
+explicite et pure** (`src/coquille/*-de-la-revocation.mjs`), dont la table de 384 cellules est dans
+l'[ADR 0049](docs/decisions/0049-le-modele-d-etat-de-la-revocation.md) et rejouée cellule par
+cellule. Cette tranche (C1) ne câble aucune page : les garanties ci-dessous sont celles du MODÈLE.
+
+**Ce que le modèle garantit** (éprouvé, mutants tués) : un seul envoi par instance ; l'état est posé
+avant l'envoi ; aucune MODIFICATION D'ENVELOPPE (révocation, ajout de moyen, restauration, retrait
+de code) n'est lancée si le masquage de l'affichage n'est pas vérifié ; « révoqué » n'est dicible
+que dans cette instance et après l'acquit du Worker, jamais d'après l'indice persisté ; aucune
+affirmation négative après un envoi ; aucune donnée (moyens, nombre de codes, constat de feuille)
+n'est lisible hors des états où elle a été relue, et les portes ne prennent aucune source ; un
+succès dont la forme ne respecte pas le contrat du Worker (un seul emplacement conservé, comptes
+cohérents) laisse la révocation INCERTAINE ; un échec de lecture ne défait pas un succès acquitté et
+ne l'invente pas.
+
+**Ce que le modèle ne garantit pas** (limites écrites, ADR 0049) :
+
+- **Le doute n'est pas persisté.** Rechargement, verrouillage ou mort de l'onglet pendant ou après
+  l'envoi perdent l'état « en cours » ou « incertaine ». L'écran ne ment pas (il ne dit jamais «
+  rien n'a été révoqué »), et l'inventaire relu montre les moyens réels.
+- **L'indice persisté n'est pas une preuve.** `parcours.json` est réécrit en entier ; l'ordre
+  d'écriture entre deux documents n'est pas maîtrisé et une écriture tardive peut réinstaller tous
+  ses champs. Il ne ferme ni n'ouvre aucun geste de récupération (VULN-04).
+- **Une session « ouverte » ne prouve pas que sa clé est encore valable** : un appel qui a lu
+  l'enveloppe avant la barrière de la révocation peut finir après elle et ouvrir le volume (course
+  démontrée par un spike, pas au naturel : 0 sur 164 ; tranche C5, #311). Cela n'ajoute rien à qui
+  détenait déjà la clé de volume (limite 12 : révoquer ne rechiffre pas). **« Clé révoquée = clé
+  inconnue » vaut à l'ouverture de l'enveloppe, après la barrière de publication — pas au-delà.**
+- **Rien de l'affichage n'est prouvé** par cette tranche : la tenue du CSS, le focus, les lecteurs
+  d'écran, les trois moteurs, et le fait que toute écriture d'enveloppe passe par le pré-vol
+  relèvent de C2, qui en a les critères bloquants.
+- **La confirmation reste une aide à la personne, pas une garde de sécurité** : un script de même
+  origine envoie le message sans elle (ADR 0039 § 5, ADR 0043).
+- **Un navigateur gravement défaillant peut laisser un nœud visible** : ce n'est jamais une
+  autorisation d'envoyer ni de modifier l'enveloppe.
+
 ## L'instantané de reprise contient la RAM invitée (#65)
 
 L'[ADR 0024](docs/decisions/0024-instantane-de-reprise.md) ajoute un sixième voisin de volume,
