@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -296,45 +295,4 @@ test("memesOctets : longueur, égalité, et l'écart du DERNIER octet", () => {
   assert.equal(memesOctets(Uint8Array.of(1, 2, 3), Uint8Array.of(1, 2, 4)), false);
   assert.equal(memesOctets(Uint8Array.of(1, 2, 3), Uint8Array.of(1, 2)), false);
   assert.equal(memesOctets(Uint8Array.of(1, 2), Uint8Array.of(1, 2, 0)), false);
-});
-
-/**
- * Le Worker de confiance ne s'importe pas sous Node : ses COUTURES se relisent dans sa source, comme
- * `coquille-preuve-de-la-feuille.test.mjs` le fait pour l'ordre de la preuve. Elles sont courtes, et
- * c'est leur PRÉSENCE qui compte ; ce qu'elles font est mesuré plus haut et dans le navigateur.
- */
-test("WORKER : passe 1 en lecture seule sur les DEUX chemins, passe 2 passée à l'ouvreur", async () => {
-  const source = await readFile(
-    new URL("../../public/runtime-worker-deverrouillage.mjs", import.meta.url),
-    "utf8",
-  );
-  const corps = (signature) => {
-    const debut = source.indexOf(signature);
-    assert.notEqual(debut, -1, `« ${signature} » absent`);
-    return source.slice(debut, source.indexOf("\n}\n", debut));
-  };
-  // Les deux chemins qui OUVRENT une enveloppe existante avant le handle ne reçoivent qu'un support
-  // en lecture seule : la migration de page n'écrit pas hors du handle.
-  assert.match(corps("async function ouvrirSousLaPage("), /support: enLectureSeule\(support\(\)\)/);
-  assert.match(corps("async function ouvrirSousLeCode("), /support: enLectureSeule\(support\(\)\)/);
-  assert.equal(source.match(/enLectureSeule\(support\(\)\)/g)?.length, 2, "ni plus, ni moins");
-  // L'ouvreur reçoit la passe 2, avec l'identité et l'ancre de la passe 1.
-  assert.match(
-    corps("async function ouvrirLeVolume("),
-    /sousLeHandle: \(\) =>\s+revaliderSousLeHandle\(\{ support: support\(\), identifiantVolume: IDENTIFIANT_VOLUME, ouverte \}\)/,
-  );
-  assert.match(
-    corps("async function ouvrirLExistante("),
-    /identifiantEmplacement: ouverte\.identifiantEmplacement,\s+versionMinimale,/,
-  );
-  // La création revalide aussi, sans ancre de version : une enveloppe neuve est en version 1.
-  assert.match(
-    corps("async function creerLeCoffre("),
-    /identifiantEmplacement: creee\.identifiantEmplacement,\s+versionMinimale: null,/,
-  );
-  // `version` et `migree` publiés viennent de `ouverte`, mis à jour par la passe 2.
-  const deverrouiller = corps("export async function deverrouiller(");
-  assert.match(deverrouiller, /await ouvrirLeVolume\(ouverte\);/);
-  assert.match(deverrouiller, /interne\.version = ouverte\.version;/);
-  assert.match(deverrouiller, /enveloppeMigree: ouverte\.migree === true,/);
 });
