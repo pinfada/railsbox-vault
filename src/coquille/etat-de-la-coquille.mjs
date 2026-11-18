@@ -11,9 +11,10 @@
 // `GESTES_ECARTES`) ; le reste n'a jamais été demandé par personne.
 
 /**
- * Les quatre états, et rien entre eux. `indisponible` n'est pas `verrouille` : l'un dit « il faut
+ * Les cinq états, et rien entre eux. `indisponible` n'est pas `verrouille` : l'un dit « il faut
  * un geste », l'autre dit « ce moteur ne sait pas », et les confondre ferait promettre à
- * l'utilisateur un déverrouillage qui n'ouvrirait rien.
+ * l'utilisateur un déverrouillage qui n'ouvrirait rien. `indetermine` n'est pas `indisponible` : il
+ * n'affirme AUCUNE absence (#231).
  */
 export const ETATS_DU_VOLUME = Object.freeze({
   /** La coquille a démarré ; le Worker de confiance n'a pas encore répondu. */
@@ -24,6 +25,15 @@ export const ETATS_DU_VOLUME = Object.freeze({
   ouvert: "ouvert",
   /** Le moteur ne fournit pas ce qu'il faut pour ouvrir un volume (OPFS, accès synchrone). */
   indisponible: "indisponible",
+  /**
+   * Le stockage du navigateur est INACCESSIBLE POUR L'INSTANT, et la cause n'est pas établie : la
+   * sonde a essuyé, de façon répétée, un rejet que le moteur dit lui-même transitoire (`UnknownError`
+   * de `getDirectory()`, WebKit ≥ 26.6 en contexte éphémère). Différent de `indisponible` — « ce moteur
+   * ne sait pas », durable, qui conseille d'en changer — : ici rien n'est affirmé, rien n'est figé, et
+   * un geste présenté ensuite relance la sonde ; si elle aboutit, le coffre redevient `verrouille`
+   * sans rechargement.
+   */
+  indetermine: "indetermine",
 });
 
 const ETATS_CONNUS = Object.freeze(new Set(Object.values(ETATS_DU_VOLUME)));
@@ -42,9 +52,7 @@ const ETATS_CONNUS = Object.freeze(new Set(Object.values(ETATS_DU_VOLUME)));
  */
 export function chargeUtileDEtat({ etat, barrieres }) {
   if (!ETATS_CONNUS.has(etat)) {
-    throw new Error(
-      `État de volume inconnu : ${etat}. La coquille ne publie que ses quatre états.`,
-    );
+    throw new Error(`État de volume inconnu : ${etat}. La coquille ne publie que ses cinq états.`);
   }
   if (!Number.isInteger(barrieres) || barrieres < 0) {
     throw new Error("Le compte de barrières est un entier positif ou nul.");

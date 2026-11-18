@@ -67,9 +67,11 @@ export function conduiteApresLaMort({
       `Cause de mort inconnue : ${String(cause)}. La coquille ne constate pas une mort par défaut.`,
     );
   }
+  // Ni `indisponible` ni `indetermine` ne se transforment en `verrouille` : rien n'a pu s'ouvrir, et la
+  // coquille n'invente pas un verrou là où le stockage ne répondait pas.
   const etat =
-    etatConnu === ETATS_DU_VOLUME.indisponible
-      ? ETATS_DU_VOLUME.indisponible
+    etatConnu === ETATS_DU_VOLUME.indisponible || etatConnu === ETATS_DU_VOLUME.indetermine
+      ? etatConnu
       : ETATS_DU_VOLUME.verrouille;
   return Object.freeze({
     cause,

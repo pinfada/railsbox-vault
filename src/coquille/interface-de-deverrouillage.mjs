@@ -98,6 +98,11 @@ export const CONDUITES = Object.freeze({
     "Ce navigateur ne sait pas ouvrir un coffre : il n'offre pas l'accès synchrone au stockage privé " +
     "depuis un Worker. Rien n'a échoué — rien n'a pu être tenté. Essayez un autre navigateur ; la " +
     "matrice de compatibilité du dépôt dit lesquels le savent.",
+  // Aucune absence n'est affirmée : le moteur dit lui-même transitoire le rejet qui l'a produit (#231).
+  [STORAGE_ERROR_CODES.indeterminate]:
+    "Le stockage du navigateur est inaccessible pour l'instant, cause non établie. Rien n'a été " +
+    "tenté sur le coffre : le même geste, dans un instant, peut aboutir. Si cela dure, essayez une autre " +
+    "fenêtre ou un autre navigateur.",
   [STORAGE_ERROR_CODES.volumeSansRacine]:
     "Ce coffre a été restauré, mais ce qui prouvait que son contenu vient bien de son archive n'est " +
     "plus là. Rien n'est perdu du côté de l'archive : restaurez-la à nouveau, puis ouvrez le coffre " +

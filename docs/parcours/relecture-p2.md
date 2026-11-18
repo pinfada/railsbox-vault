@@ -773,6 +773,9 @@ faire.
   coffre existant.
 - La demande a été annulée, ou personne n'y a répondu à temps. Rien n'a été perdu. Vous pouvez
   recommencer.
+- Le stockage du navigateur est inaccessible pour l'instant, cause non établie. Rien n'a été tenté
+  sur le coffre : réessayez dans un instant. Si cela dure, essayez une autre fenêtre ou un autre
+  navigateur. Rien n'a été perdu.
 - Ce coffre est déjà ouvert dans un autre onglet ou une autre fenêtre. Fermez l'autre onglet, puis
   réessayez ici.
 - Il n'y a plus assez de place pour ce coffre dans ce navigateur. Libérez de l'espace sur

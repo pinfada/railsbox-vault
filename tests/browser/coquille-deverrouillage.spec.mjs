@@ -43,7 +43,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
-import { ETATS_SANS_VOLUME } from "../support/refus-de-capacite.mjs";
+import { ETATS_SANS_VOLUME, MOTIF_DE_REFUS_DE_CAPACITE } from "../support/refus-de-capacite.mjs";
 
 import { ATTENTE_MESUREE } from "../../src/coquille/attente-annoncee.mjs";
 import { DELAI_PASSKEY_MS } from "../../src/coquille/moyens-de-deverrouillage.mjs";
@@ -222,6 +222,23 @@ async function releveDeLInterface(page) {
 }
 
 /**
+ * Attend la FIN d'un geste de déverrouillage. L'état « n'a plus la valeur de départ » ne la dit pas
+ * toujours : sur un moteur sans volume, l'état (`indisponible` ou `indetermine`) est déjà celui de
+ * l'arrivée AVANT le geste, et il ne bouge pas. La fin du geste est alors SON REFUS TYPÉ — que la
+ * sonde de l'état indéterminé rend plus tard qu'avant, puisqu'elle réessaie (#231).
+ */
+async function attendreLaFinDuGeste(page) {
+  await expect
+    .poll(async () => (await releve(page)).etat, { timeout: DELAI })
+    .not.toBe(ETATS_DU_VOLUME.verrouille);
+  if (ETATS_SANS_VOLUME.includes((await releve(page)).etat)) {
+    await expect(page.locator("#deverrouillage-refus")).toContainText(MOTIF_DE_REFUS_DE_CAPACITE, {
+      timeout: DELAI,
+    });
+  }
+}
+
+/**
  * Ce moteur sait-il ouvrir un volume ?
  *
  * WebKit n'offre pas l'accès synchrone à l'OPFS dans un Worker (`docs/compatibility.md` : « refusé
@@ -235,9 +252,7 @@ async function porte(page) {
   // la capacité du moteur.
   await page.locator("#saisie-phrase").fill(PHRASE);
   await page.locator("#ouvrir-par-phrase").click();
-  await expect
-    .poll(async () => (await releve(page)).etat, { timeout: DELAI })
-    .not.toBe(ETATS_DU_VOLUME.verrouille);
+  await attendreLaFinDuGeste(page);
   return !ETATS_SANS_VOLUME.includes((await releve(page)).etat);
 }
 
@@ -292,9 +307,7 @@ async function exigerLEtatFerme(page) {
 async function ouvrirParLaPhrase(page, phrase = PHRASE) {
   await page.locator("#saisie-phrase").fill(phrase);
   await page.locator("#ouvrir-par-phrase").click();
-  await expect
-    .poll(async () => (await releve(page)).etat, { timeout: DELAI })
-    .not.toBe(ETATS_DU_VOLUME.verrouille);
+  await attendreLaFinDuGeste(page);
   return (await releve(page)).etat;
 }
 

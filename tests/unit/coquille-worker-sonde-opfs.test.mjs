@@ -166,8 +166,10 @@ test("un geste présenté APRÈS l'indéterminé relance la sonde : si elle abou
   await attendre(250);
   const reponse = worker.parCorrelation("d1");
   assert.ok(reponse, "le geste reçoit une réponse");
+  // Le geste a été TENTÉ : le refus n'est plus celui de l'indétermination. (Le reste du chemin, sur
+  // un double sans vrai OPFS, échoue pour ses propres raisons : seule la levée est éprouvée ici.)
   assert.notEqual(reponse.code, STORAGE_ERROR_CODES.indeterminate, "la sonde l'a levé");
-  assert.notEqual(reponse.code, STORAGE_ERROR_CODES.unsupported);
+  assert.equal(worker.appels.getDirectory, 4, "une seule nouvelle sonde, réussie du premier coup");
 
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e2");
   await attendre(100);

@@ -72,6 +72,11 @@ const OPFS_SYNC = "src/vm/opfs-sync-access.mjs";
 const EPREUVE_GETDIRECTORY = "tests/unit/vm-opfs-getdirectory-refuse.test.mjs";
 const EPREUVE_WORKER_SONDE = "tests/unit/coquille-worker-sonde-opfs.test.mjs";
 const RUNTIME_WORKER = "public/runtime-worker.mjs";
+const SONDE_DU_STOCKAGE = "src/vm/sonde-du-stockage.mjs";
+const EPREUVE_SONDE = "tests/unit/vm-sonde-du-stockage.test.mjs";
+const RACINE_OPFS = "public/spike/origin/racine-opfs.mjs";
+const TEMOINS_OPFS = "tests/support/temoins-opfs.mjs";
+const EPREUVE_TEMOINS = "tests/unit/temoins-opfs.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -323,14 +328,12 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_ADMISSION],
   },
   {
-    nom: "la coquille ne publie que ses quatre états",
+    nom: "la coquille ne publie que ses cinq états",
     garde: "chargeUtileDEtat — la table des états connus",
     fichier: ETAT,
     avant:
       "  if (!ETATS_CONNUS.has(etat)) {\n" +
-      "    throw new Error(\n" +
-      "      `État de volume inconnu : ${etat}. La coquille ne publie que ses quatre états.`,\n" +
-      "    );\n" +
+      "    throw new Error(`État de volume inconnu : ${etat}. La coquille ne publie que ses cinq états.`);\n" +
       "  }\n",
     apres: "",
     epreuves: [EPREUVE_CONTRAT],
@@ -1265,52 +1268,106 @@ export const MUTATIONS = Object.freeze([
     apres: "",
     epreuves: [EPREUVE_PARCOURS_CONDUITES],
   },
-  // #231 : WebKit 26.6+ expose `getDirectory` mais le REJETTE en contexte éphémère. Trois familles de
-  // gardes. (1) Le CLASSEMENT du rejet, dans `src/vm/opfs-sync-access.mjs` : seul le rejet qui signe
-  // l'absence est « indisponible », tout autre échec est signalé. (2) Le BRANCHEMENT de la sonde dans
-  // `public/runtime-worker.mjs`, chargé TEL QUEL par `coquille-worker-sonde-opfs.test.mjs` (une sonde
-  // suspendue, des demandes reçues pendant elle) : l'attente de la sonde par la poignée d'état et par le
-  // canal, l'ordre « attendre puis lire », l'état que la sonde pose. (3) Non muté, et dit : les sondes du
-  // spike (`public/spike/origin/app-inter.mjs`), éprouvables par le seul navigateur — voir
-  // `tests/browser/apps-frontiere.spec.mjs`.
+  // #231 : WebKit 26.6+ expose `getDirectory` mais le REJETTE (`UnknownError`, que le moteur dit
+  // « transitoire ») en contexte éphémère. Cinq familles de gardes. (1) La SONDE du stockage
+  // (`src/vm/sonde-du-stockage.mjs`) : essais bornés, délai, classement — `indetermine` jamais
+  // `absente`. (2) La traduction du rejet en `VAULT_STORAGE_INDETERMINE` (`opfs-sync-access.mjs`).
+  // (3) Le BRANCHEMENT dans `public/runtime-worker.mjs`, chargé TEL QUEL par
+  // `coquille-worker-sonde-opfs.test.mjs` (sonde suspendue, demandes reçues pendant elle) : attente,
+  // ordre « attendre puis lire », état indéterminé, relance par un geste, refus typés. (4) La racine
+  // des témoins du spike et de la fouille du banc (`racine-opfs.mjs`) : un `UnknownError` n'est jamais
+  // `indisponible`, une panne lève. (5) La comparaison des témoins (`tests/support/temoins-opfs.mjs`) :
+  // la tolérance du seul contexte éphémère mesuré. Non muté, et dit : le branchement DOM du spike
+  // (`app-inter.mjs`) et du banc, éprouvé par le seul navigateur (`apps-frontiere`,
+  // `deverrouillage-frontiere`) ; et `PEUT_OUVRIR = true` à la levée de l'indétermination, que le double
+  // du Worker ne distingue pas d'un refus tiers.
   {
-    nom: "un rejet de getDirectory() n'est pas, en général, une absence d'OPFS",
-    garde: "opfsConstateeAbsente — le classement du rejet : seul ce qui signe l'absence (#231)",
-    fichier: OPFS_SYNC,
-    avant: "    return rejetDeRacineSigneUneAbsence(cause);\n",
-    apres: "    return true;\n",
-    epreuves: [EPREUVE_GETDIRECTORY],
+    nom: "un UnknownError PERSISTANT n'est pas une absence : indéterminé, jamais « absente »",
+    garde: "classerLeRejetDeRacine — le nom transitoire mesuré donne `indetermine` (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      "  if (cause?.name === REJET_TRANSITOIRE_MESURE) return VERDICTS_DU_STOCKAGE.indetermine;\n",
+    apres: "  if (cause?.name === REJET_TRANSITOIRE_MESURE) return VERDICTS_DU_STOCKAGE.absente;\n",
+    epreuves: [EPREUVE_SONDE],
   },
   {
-    nom: "l'UnknownError mesuré de getDirectory() est reconnu comme une absence",
-    garde: "rejetDeRacineSigneUneAbsence — le nom mesuré (#231)",
-    fichier: OPFS_SYNC,
-    avant: 'const REJET_DE_RACINE_MESURE = "UnknownError";',
-    apres: 'const REJET_DE_RACINE_MESURE = "UnknownErrorXX";',
-    epreuves: [EPREUVE_GETDIRECTORY, EPREUVE_WORKER_SONDE],
+    nom: "la sonde réessaie un nombre BORNÉ de fois — pas un de moins, pas un de plus",
+    garde: "sonderLeStockage — la borne des essais (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      "      if (verdict !== VERDICTS_DU_STOCKAGE.indetermine || essai >= essais) return verdict;\n",
+    apres:
+      "      if (verdict !== VERDICTS_DU_STOCKAGE.indetermine || essai > essais) return verdict;\n",
+    epreuves: [EPREUVE_SONDE],
   },
   {
-    nom: "la sonde APPELLE getDirectory : la présence de la fonction ne dit pas l'OPFS",
-    garde: "opfsConstateeAbsente — l'appel, et non `typeof` (#231)",
-    fichier: OPFS_SYNC,
-    avant: "    await storage.getDirectory();\n    return false;\n",
-    apres: "    return false;\n",
-    epreuves: [EPREUVE_GETDIRECTORY],
+    nom: "seul l'indéterminé est réessayé : une panne ou une absence ne le sont pas",
+    garde: "sonderLeStockage — le réessai conditionné au verdict (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      "      if (verdict !== VERDICTS_DU_STOCKAGE.indetermine || essai >= essais) return verdict;\n",
+    apres: "      if (essai >= essais) return verdict;\n",
+    epreuves: [EPREUVE_SONDE],
   },
   {
-    nom: "une fonction getDirectory absente est une OPFS absente",
-    garde: "opfsConstateeAbsente — la garde `typeof` (#231)",
-    fichier: OPFS_SYNC,
-    avant: '  if (typeof storage?.getDirectory !== "function") return true;\n  try {',
-    apres: '  if (typeof storage?.getDirectory !== "function") return false;\n  try {',
-    epreuves: [EPREUVE_GETDIRECTORY],
+    nom: "la sonde ATTEND entre deux essais",
+    garde: "sonderLeStockage — le délai (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "    await attendre(delaiMs);\n",
+    apres: "",
+    epreuves: [EPREUVE_SONDE],
   },
   {
-    nom: "le rejet de racine non mesuré garde son classement précis, jamais `unsupported`",
+    nom: "le délai entre essais reste court : le coût du démarrage est borné",
+    garde: "DELAI_ENTRE_ESSAIS_MS (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "export const DELAI_ENTRE_ESSAIS_MS = 100;",
+    apres: "export const DELAI_ENTRE_ESSAIS_MS = 5000;",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "la sonde réessaie : un UnknownError transitoire suivi d'une réussite n'est pas figé",
+    garde: "ESSAIS_DE_LA_SONDE (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "export const ESSAIS_DE_LA_SONDE = 3;",
+    apres: "export const ESSAIS_DE_LA_SONDE = 1;",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "une fonction getDirectory absente est une absence établie",
+    garde: "sonderLeStockage — la garde `typeof` (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      '  if (typeof storage?.getDirectory !== "function") return VERDICTS_DU_STOCKAGE.absente;\n',
+    apres:
+      '  if (typeof storage?.getDirectory !== "function") return VERDICTS_DU_STOCKAGE.atteignable;\n',
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "les refus de capacité déjà typés restent des absences",
+    garde: "classerLeRejetDeRacine — le renvoi à la table des codes (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "    ? VERDICTS_DU_STOCKAGE.absente\n    : VERDICTS_DU_STOCKAGE.panne;",
+    apres: "    ? VERDICTS_DU_STOCKAGE.panne\n    : VERDICTS_DU_STOCKAGE.panne;",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "le rejet de racine non transitoire garde son classement précis, jamais INDETERMINE",
     garde: "volumeDirectory — `throw cause` pour tout autre nom (#231)",
     fichier: OPFS_SYNC,
-    avant: "    if (cause?.name !== REJET_DE_RACINE_MESURE) throw cause;\n",
+    avant:
+      "    if (classerLeRejetDeRacine(cause) !== VERDICTS_DU_STOCKAGE.indetermine) throw cause;\n",
     apres: "",
+    epreuves: [EPREUVE_GETDIRECTORY],
+  },
+  {
+    nom: "le rejet transitoire de racine rend INDETERMINE, jamais UNSUPPORTED",
+    garde: "volumeDirectory — le code du refus (#231)",
+    fichier: OPFS_SYNC,
+    avant:
+      "      STORAGE_ERROR_CODES.indeterminate,\n      `Le stockage du navigateur est inaccessible",
+    apres:
+      "      STORAGE_ERROR_CODES.unsupported,\n      `Le stockage du navigateur est inaccessible",
     epreuves: [EPREUVE_GETDIRECTORY],
   },
   {
@@ -1326,14 +1383,9 @@ export const MUTATIONS = Object.freeze([
     garde: "publierLEtat — l'ordre « attendre, lire » (#231, revue de la PR #305)",
     fichier: RUNTIME_WORKER,
     avant:
-      "  const exclusivite = await exclusiviteConstatee;\n" +
-      "  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n" +
-      "    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n" +
-      "    exclusivite,\n",
+      "  const exclusivite = await exclusiviteConstatee;\n  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n    exclusivite,\n",
     apres:
-      "  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n" +
-      "    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n" +
-      "    exclusivite: await exclusiviteConstatee,\n",
+      "  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n    exclusivite: await exclusiviteConstatee,\n",
     epreuves: [EPREUVE_WORKER_SONDE],
   },
   {
@@ -1341,36 +1393,150 @@ export const MUTATIONS = Object.freeze([
     garde: "exclusiviteConstatee — `sondeDeLOpfs.then` (#231)",
     fichier: RUNTIME_WORKER,
     avant:
-      "const exclusiviteConstatee = sondeDeLOpfs.then(() =>\n" +
-      "  constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR }),\n" +
-      ");\n",
+      "const exclusiviteConstatee = sondeDeLOpfs.then(() =>\n  constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR }),\n);\n",
     apres:
       "const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR });\n",
     epreuves: [EPREUVE_WORKER_SONDE],
   },
   {
-    nom: "seule une OPFS CONSTATÉE absente pose `indisponible` (et une OPFS atteignable non)",
-    garde: "sondeDeLOpfs — le test de la conclusion (#231)",
+    nom: "un stockage INDÉTERMINÉ pose l'état `indetermine`, et non `indisponible`",
+    garde: "appliquerLeVerdictDeLaSonde — la branche indéterminée (#231, revue de la PR #305)",
     fichier: RUNTIME_WORKER,
-    avant: "      if (!absente) return;\n",
-    apres: "      if (absente) return;\n",
+    avant: "  } else if (stockageIndetermine) {\n",
+    apres: "  } else if (false) {\n",
     epreuves: [EPREUVE_WORKER_SONDE],
   },
   {
-    nom: "la sonde qui conclut `absente` pose l'état `indisponible`",
-    garde: "sondeDeLOpfs — l'état publié (#231)",
+    nom: "le verdict indéterminé est RETENU : le refus et la relance en dépendent",
+    garde: "appliquerLeVerdictDeLaSonde — `stockageIndetermine` (#231)",
     fichier: RUNTIME_WORKER,
-    avant: "      interne.etat = ETATS_DU_VOLUME.indisponible;\n    })\n  : Promise.resolve();",
-    apres: "    })\n  : Promise.resolve();",
+    avant: "  stockageIndetermine = verdict === VERDICTS_DU_STOCKAGE.indetermine;\n",
+    apres: "  stockageIndetermine = false;\n",
     epreuves: [EPREUVE_WORKER_SONDE],
   },
   {
-    nom: "la sonde qui conclut `absente` retire la capacité d'ouvrir : le geste est refusé typé",
-    garde: "sondeDeLOpfs — `PEUT_OUVRIR = false` (#231)",
+    nom: "une absence ÉTABLIE pose `indisponible` et retire la capacité",
+    garde: "appliquerLeVerdictDeLaSonde — la branche absente (#231)",
     fichier: RUNTIME_WORKER,
-    avant: "      PEUT_OUVRIR = false;\n      interne.etat = ETATS_DU_VOLUME.indisponible;\n",
-    apres: "      interne.etat = ETATS_DU_VOLUME.indisponible;\n",
+    avant:
+      "  if (verdict === VERDICTS_DU_STOCKAGE.absente) {\n    PEUT_OUVRIR = false;\n    interne.etat = ETATS_DU_VOLUME.indisponible;\n  } else if",
+    apres:
+      "  if (false) {\n    PEUT_OUVRIR = false;\n    interne.etat = ETATS_DU_VOLUME.indisponible;\n  } else if",
     epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la levée de l'indétermination rend l'état `verrouille` sans rechargement",
+    garde: "appliquerLeVerdictDeLaSonde — le retour à `verrouille` (#231)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "    if (interne.etat === ETATS_DU_VOLUME.indetermine) interne.etat = ETATS_DU_VOLUME.verrouille;\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "un geste présenté pendant l'indétermination RELANCE la sonde : rien n'est figé",
+    garde: "surMessagePrivilegie — la relance (#231)",
+    fichier: RUNTIME_WORKER,
+    avant: "    stockageIndetermine &&\n",
+    apres: "    false &&\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "le refus d'un geste en stockage indéterminé est INDETERMINE, réessayable — pas UNSUPPORTED",
+    garde: "exigerUnVolumeAtteignable — la branche indéterminée (#231)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "  if (stockageIndetermine) {\n    throw new StorageError(\n      STORAGE_ERROR_CODES.indeterminate,",
+    apres: "  if (false) {\n    throw new StorageError(\n      STORAGE_ERROR_CODES.indeterminate,",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la racine des témoins : un UnknownError n'est PAS « indisponible »",
+    garde: "racineDeLOpfs — le verdict du rejet transitoire (#231, revue de la PR #305)",
+    fichier: RACINE_OPFS,
+    avant: '          resultat: "indetermine",\n',
+    apres: '          resultat: "indisponible",\n',
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la racine des témoins : seul le nom transitoire est indéterminé, tout autre rejet est une panne",
+    garde: "racineDeLOpfs — le nom du rejet (#231)",
+    fichier: RACINE_OPFS,
+    avant: "    if (erreur?.name === NOM_DU_REJET_TRANSITOIRE) {\n",
+    apres: "    if (erreur) {\n",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la fouille impossible LÈVE sur une panne : jamais un texte vide muet",
+    garde: "fouilleImpossible — la levée (#231, revue de la PR #305)",
+    fichier: RACINE_OPFS,
+    avant: '  if (absent.resultat === "panne") throw new Error(absent.detail);\n',
+    apres: "",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la fouille impossible se DIT : `impossible` est rendu",
+    garde: "fouilleImpossible — le marqueur (#231)",
+    fichier: RACINE_OPFS,
+    avant: '  return { texte: "", impossible: absent.resultat };\n',
+    apres: '  return { texte: "" };\n',
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la tolérance des témoins ne vaut que pour le contexte éphémère connu de l'épreuve",
+    garde: "estToleree — `contexteEphemereMesure` (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: "    contexteEphemereMesure === true &&\n",
+    apres: "",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la tolérance ne vaut que si A n'a RIEN déposé : un témoin déjà déposé qui disparaît reste rouge",
+    garde: "estToleree — le dépôt de A (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: '    depots.opfs.startsWith("indetermine: ") &&\n',
+    apres: "",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la tolérance ne vaut que pour un témoin OPFS",
+    garde: "estToleree — le mécanisme (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: '    sonde.mecanisme === "OPFS" &&\n    sonde.resultat === "indetermine" &&\n',
+    apres: '    sonde.resultat === "indetermine" &&\n',
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la tolérance ne vaut que pour le détail MESURÉ",
+    garde: "estToleree — le détail (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: "    sonde.detail === DETAIL_MESURE\n",
+    apres: "    true\n",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "seule une API ABSENTE sort de la comparaison parmi les `indisponible`",
+    garde: "estIndisponibleEtablie — le motif (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: "const INDISPONIBILITE_ETABLIE = /(^| )absent$/;",
+    apres: "const INDISPONIBILITE_ETABLIE = /.*/;",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "une isolation n'est prouvée que par des témoins OPFS MESURÉS : indeterminé ou panne ne comptent pas",
+    garde: "opfsNonMesures — les résultats admis (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: '      !["lu", "invisible"].includes(sonde.resultat) &&\n',
+    apres: '      !["lu", "invisible", "indetermine", "panne"].includes(sonde.resultat) &&\n',
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "une fouille impossible est une PANNE sur un moteur qui ouvre un volume",
+    garde: "fouilleOpfsAdmise — la branche `porte` (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: "    if (porte) {\n",
+    apres: "    if (!porte) {\n",
+    epreuves: [EPREUVE_TEMOINS],
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,

@@ -54,7 +54,7 @@ import {
 } from "/src/coquille/contrat-de-messages.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "/src/coquille/identites-du-coffre.mjs";
 import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
-import { opfsConstateeAbsente } from "/src/vm/opfs-sync-access.mjs";
+import { VERDICTS_DU_STOCKAGE, sonderLeStockage } from "/src/vm/sonde-du-stockage.mjs";
 import { brancherLeRelaisDuWorker } from "./relais-du-worker.mjs";
 import { brancherLaPortabilite } from "./portabilite-du-worker.mjs";
 import { battementDuWorker } from "./battement-du-worker.mjs";
@@ -138,25 +138,54 @@ const interne = {
 };
 
 /**
- * WebKit 26.6+ expose `getDirectory` mais le REJETTE en contexte éphémère (#231) : `typeof` ne suffit
- * plus, il faut un appel. Il est ASYNCHRONE et SANS `await` au niveau du module — un `await` de
- * premier niveau fait perdre ses premiers messages à un Worker module (mesuré sur les trois moteurs,
- * `docs/compatibility.md`), et la poignée de main de la coquille serait muette.
+ * WebKit 26.6+ expose `getDirectory` mais le REJETTE (`UnknownError`) en contexte éphémère (#231) :
+ * `typeof` ne suffit plus, il faut un appel. Ce rejet, le moteur le dit « transitoire » : il ne PROUVE
+ * pas que l'OPFS est absente. La sonde (`sonderLeStockage`) réessaie un nombre borné de fois ; si le
+ * rejet persiste, le stockage est `indetermine` — « inaccessible pour l'instant, cause non établie » —,
+ * refusé `VAULT_STORAGE_INDETERMINE`, jamais `indisponible` ni `VAULT_STORAGE_UNSUPPORTED`.
  *
- * Cette promesse est donc ATTENDUE par tout ce qui en dépend, à deux endroits et pas un de moins :
- * `surMessagePrivilegie` (l'inventaire et chaque geste, dont les refus lisent `PEUT_OUVRIR`) et
- * `publierLEtat` (qui attend d'abord, lit l'état ensuite). Une demande reçue PENDANT la sonde reçoit
- * la valeur d'APRÈS — jamais un `verrouille` que la sonde est sur le point de retirer. Seul un rejet
- * qui SIGNE l'absence (`opfsConstateeAbsente`) pose `indisponible` ; toute autre panne laisse le vrai
- * geste rendre son échec précis.
+ * RIEN n'est figé. Tout geste présenté tant que le stockage est `indetermine` relance la sonde
+ * (`reessayerLaSonde`) : si elle aboutit, le coffre redevient `verrouille` sans rechargement. Seul un
+ * refus de capacité déjà typé (`SecurityError`) pose `indisponible`, et toute autre panne laisse le
+ * vrai geste rendre son échec précis.
+ *
+ * La sonde est ASYNCHRONE et SANS `await` au niveau du module — un `await` de premier niveau fait
+ * perdre ses premiers messages à un Worker module (mesuré sur les trois moteurs,
+ * `docs/compatibility.md`), et la poignée de main de la coquille serait muette. Elle est donc ATTENDUE
+ * par tout ce qui en dépend, à deux endroits et pas un de moins : `surMessagePrivilegie` (l'inventaire
+ * et chaque geste, dont les refus lisent `PEUT_OUVRIR`) et `publierLEtat` (qui attend d'abord, lit
+ * l'état ensuite). Une demande reçue PENDANT la sonde reçoit la valeur d'APRÈS.
  */
-const sondeDeLOpfs = PEUT_OUVRIR
-  ? opfsConstateeAbsente().then((absente) => {
-      if (!absente) return;
-      PEUT_OUVRIR = false;
-      interne.etat = ETATS_DU_VOLUME.indisponible;
-    })
-  : Promise.resolve();
+let stockageIndetermine = false;
+
+function appliquerLeVerdictDeLaSonde(verdict) {
+  stockageIndetermine = verdict === VERDICTS_DU_STOCKAGE.indetermine;
+  if (verdict === VERDICTS_DU_STOCKAGE.absente) {
+    PEUT_OUVRIR = false;
+    interne.etat = ETATS_DU_VOLUME.indisponible;
+  } else if (stockageIndetermine) {
+    PEUT_OUVRIR = false;
+    interne.etat = ETATS_DU_VOLUME.indetermine;
+  } else if (verdict === VERDICTS_DU_STOCKAGE.atteignable) {
+    PEUT_OUVRIR = true;
+    if (interne.etat === ETATS_DU_VOLUME.indetermine) interne.etat = ETATS_DU_VOLUME.verrouille;
+  }
+  // `panne` : ni absence ni indétermination — rien ne change, le vrai geste dira son échec.
+}
+
+/** Une seule sonde à la fois : les messages qui la réclament partagent sa promesse. */
+let sondeEnCours = null;
+
+function reessayerLaSonde() {
+  sondeEnCours ??= sonderLeStockage()
+    .then(appliquerLeVerdictDeLaSonde)
+    .finally(() => {
+      sondeEnCours = null;
+    });
+  return sondeEnCours;
+}
+
+const sondeDeLOpfs = PEUT_OUVRIR ? reessayerLaSonde() : Promise.resolve();
 
 /** Le port privilégié, transféré UNE fois par la coquille avant tout document applicatif. */
 let portPrivilegie = null;
@@ -261,6 +290,14 @@ async function surMessagePrivilegie(event) {
   await sondeDeLOpfs;
   const decode = decoderMessage(event.data);
   if (!decode.ok) return repondreCode(decode.code, null);
+  // Un GESTE présenté alors que le stockage est indéterminé relance la sonde : rien n'est figé.
+  if (
+    stockageIndetermine &&
+    decode.type !== TYPES_PRIVILEGIES.etat &&
+    decode.type !== TYPES_PRIVILEGIES.inventaire
+  ) {
+    await reessayerLaSonde();
+  }
   const correlation = correlationDe(decode.message);
   if (decode.type === TYPES_PRIVILEGIES.etat) return publierLEtat(correlation);
   if (decode.type === TYPES_PRIVILEGIES.inventaire) return publierLInventaire(correlation);
@@ -425,6 +462,14 @@ async function publierLInventaire(correlation) {
  */
 function exigerUnVolumeAtteignable() {
   if (PEUT_OUVRIR) return;
+  // Indéterminé : aucune absence n'est affirmée. Le refus est réessayable, et il le dit.
+  if (stockageIndetermine) {
+    throw new StorageError(
+      STORAGE_ERROR_CODES.indeterminate,
+      "Le stockage du navigateur est inaccessible pour l'instant, cause non établie. Le geste n'a pas été tenté : le présenter de nouveau peut aboutir.",
+      { volume: VOLUME },
+    );
+  }
   throw new StorageError(
     STORAGE_ERROR_CODES.unsupported,
     "Ce navigateur n'offre pas l'accès synchrone à l'OPFS dans un Worker : aucun volume n'est atteignable ici. Le geste n'a pas échoué — il n'a pas pu être tenté.",
@@ -616,7 +661,11 @@ async function relacherTout(capturer) {
     interne.kek = null;
     oublierLeMoyenRetenu();
     interne.revocation = null;
-    interne.etat = PEUT_OUVRIR ? ETATS_DU_VOLUME.verrouille : ETATS_DU_VOLUME.indisponible;
+    interne.etat = PEUT_OUVRIR
+      ? ETATS_DU_VOLUME.verrouille
+      : stockageIndetermine
+        ? ETATS_DU_VOLUME.indetermine
+        : ETATS_DU_VOLUME.indisponible;
   }
 }
 
