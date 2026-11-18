@@ -304,6 +304,16 @@ export async function retenirLaRevocation(page) {
     MessagePort.prototype.postMessage = function (message, ...reste) {
       const revoque =
         typeof message?.type === "string" && message.type.endsWith("revoquer-en-urgence");
+      // Une relecture d'INVENTAIRE qui échoue (refus typé immédiat, jamais livré au Worker).
+      if (
+        globalThis.__echecInventaire !== undefined &&
+        typeof message?.type === "string" &&
+        message.type.endsWith("inventaire-prive")
+      ) {
+        const gabarit = { ...globalThis.__echecInventaire, correlation: message.correlation };
+        setTimeout(() => this.dispatchEvent(new MessageEvent("message", { data: gabarit })), 0);
+        return undefined;
+      }
       if (revoque && globalThis.__retenir === true) {
         globalThis.__retenues.push({ port: this, message, reste });
         return undefined;
@@ -317,6 +327,18 @@ export async function retenirLaRevocation(page) {
     };
   });
   return {
+    /** Les relectures d'inventaire suivantes ÉCHOUENT (refus typé) : après une révocation, par exemple. */
+    echouerLInventaire: (code) =>
+      page.evaluate(
+        ([gabarit]) => (globalThis.__echecInventaire = gabarit),
+        [
+          enveloppePrivilegiee(TYPES_PRIVILEGIES.refus, {
+            code,
+            message: "refus de l'épreuve",
+            correlation: "x",
+          }),
+        ],
+      ),
     /**
      * Répond à la demande retenue par un REFUS TYPÉ du Worker (jamais livré à ce dernier) : la page voit
      * un échec reçu APRÈS l'envoi, sans que le Worker meure — l'étape 9 reste à l'écran.

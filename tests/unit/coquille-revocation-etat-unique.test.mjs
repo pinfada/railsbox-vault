@@ -65,21 +65,22 @@ test("A : l'état « en vol » est posé AVANT l'envoi, dans le tour de boucle d
   assert.equal(m.revocation.enVol(), true);
 });
 
-test("A : le succès lève l'état ; un échec le rend INCERTAIN ; un succès ultérieur le lève", async () => {
+test("A : le succès lève l'état ; un échec le rend INCERTAIN ; la vérification (document neuf) le lève", async () => {
   const m = monter();
   confirmer(m);
   m.finir().rendre({ nombreRetires: 1, nombreRestants: 1, retires: {}, restants: {} });
   await apres();
   assert.equal(m.revocation.phase(), "repos");
+  assert.equal(m.region(), "", "le « en cours » est levé par le succès");
   confirmer(m);
   m.finir().refuser({ code: "VAULT_X" });
   await apres();
   assert.equal(m.revocation.phase(), "incertaine");
-  confirmer(m);
-  m.finir().rendre({ nombreRetires: 1, nombreRestants: 1, retires: {}, restants: {} });
-  await apres();
+  assert.equal(m.region(), MESSAGES.revocationIncertaine, "l'avertissement persiste");
+  // Pas de nouvelle demande avant la vérification ; réouvrir le coffre recharge le document : un état neuf.
+  assert.equal(creerEtatDeRevocation().phase(), "repos");
+  m.revocation.aboutir();
   assert.equal(m.revocation.phase(), "repos", "une révocation qui aboutit lève le doute");
-  assert.equal(m.region(), "");
 });
 
 for (const [nom, erreur] of [

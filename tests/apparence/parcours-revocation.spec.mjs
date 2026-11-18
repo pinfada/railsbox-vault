@@ -176,7 +176,7 @@ test("en vol : une sortie PRESSÉE pendant le départ de la demande (rendu diff�
   await expect(titre(page, "Parcours terminé")).toBeVisible({ timeout: 180_000 });
 });
 
-test("issue incertaine : l'avertissement vit hors du bloc, survit à « Revenir à mon application » et à un autre clic, puis se lève par une révocation qui aboutit", async ({
+test("issue incertaine : l'avertissement vit hors du bloc, survit à « Revenir à mon application » et à un autre clic, puis se lève par la réouverture du coffre", async ({
   page,
 }) => {
   const retenue = await revoquerSansReponse(page);
@@ -208,12 +208,33 @@ test("issue incertaine : l'avertissement vit hors du bloc, survit à « Revenir 
   await expect(titre(page, "Révoquer en urgence")).toBeVisible();
   await expect(avertissement).toBeVisible();
 
-  // Levée : une révocation qui aboutit.
-  await retenue.retenir(false);
+  // Aucune nouvelle révocation avant la vérification : le geste est fermé, rien n'est annoncé « annulé ».
+  // `aria-disabled` : Playwright refuserait de cliquer ; l'événement est livré au gestionnaire.
+  await bouton(page, REVOQUER).dispatchEvent("click");
+  await expect(page.locator("#revocation-confirmation")).toBeHidden();
+  await expect(avertissement).toContainText("peut-être eu lieu");
+
+  // Levée : la réouverture du coffre (le document se recharge), qui est la vérification demandée.
+  await page.reload();
+  await expect(page.locator("#parcours-incertitude")).toBeEmpty({ timeout: 60_000 });
+});
+
+test("relecture échouée après une révocation CONFIRMÉE : le succès tient, aucun constat périmé ne garde le parcours, la reprise est dite", async ({
+  page,
+}) => {
+  const retenue = await retenirLaRevocation(page);
+  await jusquALEtape9(page);
+  await retenue.echouerLInventaire("VAULT_X");
   await bouton(page, REVOQUER).click();
   await bouton(page, "Oui, révoquer les autres moyens").click();
-  await expect(page.locator("#parcours-incertitude")).toHaveText("", { timeout: 180_000 });
-  await expect(avertissement).toBeEmpty();
+  // Le constat d'avant (feuille éprouvée) garderait « Parcours terminé » : il est invalidé.
+  await expect(titre(page, "Votre coffre doit être relu")).toBeVisible({ timeout: 180_000 });
+  await expect(titre(page, "Parcours terminé")).toHaveCount(0);
+  const region = page.locator("#parcours-incertitude");
+  await expect(region).toContainText("La révocation a été faite");
+  await expect(region).toContainText("Rouvrez votre coffre");
+  await expect(region).not.toContainText("peut-être eu lieu");
+  expect(await page.getByRole("alert").allTextContents()).not.toContain("Rien n'a été révoqué");
 });
 
 test("issue incertaine → rouvrir → Annuler / Échap : aucune nouvelle confirmation, jamais « Rien n'a été révoqué »", async ({
@@ -226,7 +247,7 @@ test("issue incertaine → rouvrir → Annuler / Échap : aucune nouvelle confir
   const declencheur = bouton(page, REVOQUER);
   await expect(declencheur).toHaveAttribute("aria-disabled", "true");
   for (const geste of ["clic", "echap"]) {
-    if (geste === "clic") await declencheur.click();
+    if (geste === "clic") await declencheur.dispatchEvent("click");
     else await page.keyboard.press("Escape");
     await expect(page.locator("#revocation-confirmation")).toBeHidden();
     // Tout ce qu'une personne lit ou entend : l'avertissement persistant ET l'état du bloc.

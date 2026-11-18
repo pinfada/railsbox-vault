@@ -463,6 +463,14 @@ Messages qui peuvent s'afficher sur cet écran :
 - N moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V. — ou, pour un seul
   moyen — 1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V.
 
+### Écran : Votre coffre doit être relu
+
+> La révocation a été faite. Mais votre coffre n'a pas pu relire ce qu'il contient : cet écran ne
+> peut plus dire quels moyens l'ouvrent encore, ni si votre feuille est toujours juste.
+>
+> Ce que vous avez à faire : Rouvrez votre coffre : rechargez la page, puis ouvrez-le avec le moyen
+> que vous avez utilisé.
+
 ### Écran : Travailler dans l'application
 
 > Dans cette version de RailsBox Vault, l'application ne démarre pas dans Firefox : elle y
@@ -750,6 +758,10 @@ Messages qui peuvent s'afficher sur cet écran :
   n'est retiré tant que vous n'avez pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler »
   ne change rien.
 - Rien n'a été révoqué : tout ce qui ouvrait ce coffre l'ouvre toujours.
+- Une révocation précédente n'a pas été confirmée : elle a peut-être eu lieu. Rouvrez votre coffre
+  pour le vérifier avant d'en demander une autre.
+- La révocation a été faite, mais l'affichage des moyens de ce coffre n'a pas pu être mis à jour.
+  Rouvrez votre coffre pour le relire.
 - Révocation en cours : la demande est partie et ne peut plus être annulée. Attendez la réponse du
   coffre.
 - La révocation est partie, mais le coffre ne l'a pas confirmée : elle a peut-être eu lieu. Rouvrez

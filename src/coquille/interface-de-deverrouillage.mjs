@@ -189,6 +189,8 @@ export function monterLInterface({
       moyensProposes: [],
       nombreDeCodes: 0,
       typesInconnus: [],
+      // Faux quand la dernière relecture de l'inventaire a ÉCHOUÉ : les trois champs ci-dessus sont alors inconnus.
+      inventaireRelu: true,
       attenteAnnoncee: null,
       codeRendu: false,
       versionExigee: null,
@@ -205,6 +207,18 @@ export function monterLInterface({
     rafraichirLInventaire: () => rafraichirLInventaire(contexte),
     releve: contexte.releve,
   });
+}
+
+/** Ce que la page savait du coffre n'est plus connu : moyens, compte de feuilles, types inconnus. */
+function invaliderLInventaire(contexte) {
+  const { releve } = contexte;
+  contexte.inventaire = { present: false, versionEnveloppe: null, emplacements: [] };
+  contexte.propose = moyensProposes({ emplacements: [], versionEnveloppe: null });
+  releve.inventaireRelu = false;
+  releve.moyensProposes = null;
+  releve.nombreDeCodes = null;
+  releve.typesInconnus = [];
+  publier(contexte);
 }
 
 /** Écrit un texte dans un nœud. La seule façon dont ce module touche le document. */
@@ -237,7 +251,15 @@ function brancherLesGestes(contexte) {
  */
 async function rafraichirLInventaire(contexte) {
   const { noeuds, releve } = contexte;
-  contexte.inventaire = await contexte.demander("inventaire", {});
+  try {
+    contexte.inventaire = await contexte.demander("inventaire", {});
+  } catch (erreur) {
+    // Une relecture échouée n'est pas un inventaire d'avant qui reste vrai : tout ce qui en dépend est
+    // INVALIDÉ, et le relevé le dit (`inventaireRelu`) — le parcours ne s'en sert plus comme garde.
+    invaliderLInventaire(contexte);
+    throw erreur;
+  }
+  releve.inventaireRelu = true;
   relireLaPhrase(contexte);
   contexte.propose = moyensProposes(contexte.inventaire);
   const propose = contexte.propose;

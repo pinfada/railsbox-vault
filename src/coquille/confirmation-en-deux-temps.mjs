@@ -19,9 +19,15 @@
 // #218 (retirer un code que l'on n'a plus) réutilise ce composant avec ses propres identifiants.
 
 /**
+ * `enCours` : une demande attend sa réponse — la confirmation ne se rouvre qu'une fois la réponse
+ * connue. `interdite` : aucune demande ne s'offre (une révocation précédente d'issue incertaine) ; il
+ * n'y a PAS de confirmation à ouvrir, donc rien à annuler, et `refusee` dit pourquoi. `refermer` rend le
+ * focus au geste qui a demandé ; `accomplir` laisse le geste `aria-disabled` jusqu'à la réponse.
+ *
  * @param {{ noeud: (id: string) => any,
  *           declencheur: string, panneau: string, annuler: string, confirmer: string,
  *           confirmee: () => void | Promise<unknown>, enCours?: () => boolean,
+ *           interdite?: () => boolean, refusee?: () => void,
  *           demandee?: () => void, annulee?: () => void }} liaison
  * @returns {{ demander: () => void, annuler: () => void, confirmer: () => Promise<void> }}
  */
@@ -33,21 +39,23 @@ export function brancherUneConfirmation({
   confirmer,
   confirmee,
   enCours = () => false,
+  interdite = () => false,
+  refusee = () => {},
   demandee = () => {},
   annulee = () => {},
 }) {
   const ouverte = () => noeud(panneau)?.hidden === false;
+  const marquer = (ferme) => marquerLeGeste(noeud(declencheur), ferme);
   const dire = (ouvert) => noeud(declencheur)?.setAttribute("aria-expanded", String(ouvert));
 
   function demander() {
-    // La SEULE garde « une demande en vol » : la confirmation ne se rouvre qu'une fois la réponse connue.
     if (ouverte() || enCours()) return;
+    if (interdite()) return refusee();
     noeud(panneau).hidden = false;
     dire(true);
     noeud(annuler)?.focus();
     demandee();
   }
-  /** Referme et rend le focus au geste qui a demandé : le focus ne tombe jamais au document. */
   function refermer() {
     noeud(panneau).hidden = true;
     dire(false);
@@ -58,21 +66,26 @@ export function brancherUneConfirmation({
     refermer();
     annulee();
   }
-  /** `confirmee` peut rendre une promesse : le geste reste `aria-disabled` jusqu'à sa réponse. */
   async function accomplir() {
     if (!ouverte()) return;
     refermer();
     const attente = confirmee(); // pose l'état « en vol », de façon synchrone, AVANT l'envoi
-    noeud(declencheur)?.setAttribute("aria-disabled", "true");
+    marquer(true);
     try {
       await attente;
     } finally {
-      noeud(declencheur)?.removeAttribute("aria-disabled");
+      marquer(interdite()); // fermé si l'issue le rend interdit
     }
   }
 
   relier({ noeud, declencheur, panneau, annuler, confirmer }, { demander, renoncer, accomplir });
   return Object.freeze({ demander, annuler: renoncer, confirmer: accomplir });
+}
+
+/** Le geste se dit fermé (`aria-disabled`) sans perdre le focus. */
+function marquerLeGeste(bouton, ferme) {
+  if (ferme) bouton?.setAttribute("aria-disabled", "true");
+  else bouton?.removeAttribute("aria-disabled");
 }
 
 /** Les quatre écouteurs : le geste demande, « Annuler » et Échap renoncent, « Oui » accomplit. */

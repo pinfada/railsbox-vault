@@ -76,6 +76,8 @@ const MOYENS_NOMMES = "src/coquille/moyens-nommes.mjs";
 const CONFIRMEE = "src/coquille/confirmation-de-la-revocation.mjs";
 const BLOCS_MONTRES = "src/coquille/blocs-montres.mjs";
 const SORTIE = "src/coquille/sortie-de-la-revocation.mjs";
+const EPREUVE_NOUVELLE = "tests/unit/coquille-revocation-incertaine-nouvelle.test.mjs";
+const EPREUVE_RELECTURE = "tests/unit/coquille-relecture-echouee.test.mjs";
 const ETAT_REVOCATION = "src/coquille/etat-de-la-revocation.mjs";
 const GESTE_PARCOURS = "src/coquille/geste-du-parcours.mjs";
 const MESSAGES_DE_GESTE = "src/coquille/messages-de-geste.mjs";
@@ -1382,7 +1384,7 @@ export const MUTATIONS = Object.freeze([
     nom: "le geste en vol se dit désactivé (#308)",
     garde: "brancherUneConfirmation — `aria-disabled` posé",
     fichier: CONFIRMATION,
-    avant: '    noeud(declencheur)?.setAttribute("aria-disabled", "true");\n',
+    avant: "    marquer(true);\n",
     apres: "",
     epreuves: [EPREUVE_EN_VOL],
   },
@@ -1655,6 +1657,110 @@ export const MUTATIONS = Object.freeze([
     avant: "return incertaine(ligne.code);",
     apres: "return refuser(ligne.code);",
     epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "après une issue incertaine, aucune NOUVELLE révocation n'est offerte avant la vérification (#308)",
+    garde: "brancherLesGestesDePortabilite — `interdite`",
+    fichier: GESTES_PORTABILITE,
+    avant: "    interdite: () => contexte.revocation.incertaine(),",
+    apres: "    interdite: () => false,",
+    epreuves: [EPREUVE_NOUVELLE],
+  },
+  {
+    nom: "la demande interdite dit pourquoi (#308)",
+    garde: "brancherLesGestesDePortabilite — `refusee`",
+    fichier: GESTES_PORTABILITE,
+    avant: '    refusee: () => contexte.dire("revocation-etat", MESSAGES.revocationAVerifier),',
+    apres: "    refusee: () => {},",
+    epreuves: [EPREUVE_NOUVELLE],
+  },
+  {
+    nom: "la demande interdite n'ouvre PAS de confirmation (#308)",
+    garde: "brancherUneConfirmation — la garde `interdite`",
+    fichier: CONFIRMATION,
+    avant: "    if (interdite()) return refusee();\n",
+    apres: "",
+    epreuves: [EPREUVE_NOUVELLE],
+  },
+  {
+    nom: "le geste reste fermé (`aria-disabled`) après une issue incertaine (#308)",
+    garde: "brancherUneConfirmation — `marquer(interdite())`",
+    fichier: CONFIRMATION,
+    avant: "      marquer(interdite()); // fermé si l'issue le rend interdit\n",
+    apres: "      marquer(false);\n",
+    epreuves: [EPREUVE_NOUVELLE],
+  },
+  {
+    nom: "une relecture échouée après succès invalide le constat de feuille éprouvée (#308)",
+    garde: "relireApresLaRevocation — le constat",
+    fichier: GESTES_PORTABILITE,
+    avant: "    contexte.rapport.feuilleEprouvee = false;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "une relecture échouée après succès est DITE, avec sa reprise (#308)",
+    garde: "relireApresLaRevocation — le message",
+    fichier: GESTES_PORTABILITE,
+    avant: '    contexte.dire("parcours-incertitude", MESSAGES.relectureEchouee);\n',
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "la révocation relit l'inventaire après son succès (#308)",
+    garde: "relireApresLaRevocation — l'appel",
+    fichier: GESTES_PORTABILITE,
+    avant: "    await contexte.apresRevocation?.();\n",
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "une relecture d'inventaire échouée invalide ce que l'interface savait — l'APPEL (#308)",
+    garde: "rafraichirLInventaire — `invaliderLInventaire`",
+    fichier: INTERFACE,
+    avant: "    invaliderLInventaire(contexte);\n",
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "l'invalidation dit que l'inventaire n'est pas relu (#308)",
+    garde: "invaliderLInventaire — `inventaireRelu`",
+    fichier: INTERFACE,
+    avant: "  releve.inventaireRelu = false;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "l'invalidation oublie les moyens d'avant (#308)",
+    garde: "invaliderLInventaire — `moyensProposes`",
+    fichier: INTERFACE,
+    avant: "  releve.moyensProposes = null;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "l'invalidation oublie le compte de codes d'avant (#308)",
+    garde: "invaliderLInventaire — `nombreDeCodes`",
+    fichier: INTERFACE,
+    avant: "  releve.nombreDeCodes = null;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "une relecture réussie rend l'inventaire relu (#308)",
+    garde: "rafraichirLInventaire — `inventaireRelu = true`",
+    fichier: INTERFACE,
+    avant: "  releve.inventaireRelu = true;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
+  },
+  {
+    nom: "le parcours n'utilise aucun constat périmé quand la relecture a échoué (#308)",
+    garde: "ecranCourant — `inventaireRelu`",
+    fichier: PARCOURS,
+    avant: '    if (!inventaireRelu) return "relire";\n',
+    apres: "",
+    epreuves: [EPREUVE_RELECTURE],
   },
   {
     nom: "un code du chemin rend SA conduite, jamais la phrase générique",

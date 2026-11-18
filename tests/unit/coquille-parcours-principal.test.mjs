@@ -17,6 +17,8 @@ const SANS_PRINCIPAL = Object.freeze({
   chargement: "rien à faire : la page vérifie l'appareil",
   refuse: "le message dit quoi faire hors de la page",
   "travailler-sans-application": "la limite de Firefox : le geste est d'ouvrir un autre navigateur",
+  relire:
+    "rien à cliquer : la personne recharge la page pour rouvrir son coffre (relecture de #308)",
 });
 
 /** Le bloc (`data-bloc`) qui contient le bouton, ou `null` s'il est hors de tout bloc. */

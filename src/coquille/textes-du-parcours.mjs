@@ -302,6 +302,17 @@ export const ECRANS = Object.freeze({
     attente: DEMARRAGE_SUIVANT,
     blocs: ["application", "verrouiller", "espace-de-travail", "sauvegarde", "revocation"],
   }),
+  // Une révocation confirmée, puis une relecture de l'inventaire ÉCHOUÉE : ni les moyens ni le constat
+  // de feuille ne sont connus, et aucun ne sert de garde (relecture de #308).
+  relire: ecran(4, {
+    titre: "Votre coffre doit être relu",
+    ceQuiVaSePasser:
+      "La révocation a été faite. Mais votre coffre n'a pas pu relire ce qu'il contient : cet écran ne " +
+      "peut plus dire quels moyens l'ouvrent encore, ni si votre feuille est toujours juste.",
+    attendu:
+      "Rouvrez votre coffre : rechargez la page, puis ouvrez-le avec le moyen que vous avez utilisé.",
+    blocs: [],
+  }),
   "travailler-sans-application": ecran(4, {
     titre: "Travailler dans l'application",
     ceQuiVaSePasser: LIMITE_DE_FIREFOX,

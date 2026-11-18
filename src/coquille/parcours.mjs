@@ -340,7 +340,7 @@ export function etapeDeLURL(texte) {
  * l'indice de `parcours.json` n'y entre pas.
  *
  * @param {{ pointeur: number | null, coffre: string, moyens?: string[], nombreDeCodes?: number,
- *           feuilleEprouvee?: boolean, progression?: object, sousEtatDuCode?: string,
+ *           feuilleEprouvee?: boolean, inventaireRelu?: boolean, progression?: object, sousEtatDuCode?: string,
  *           revocationFaite?: boolean, sansRevoquer?: boolean, phrasePerdue?: boolean,
  *           nouveauCodeDemande?: boolean, refus?: string | null, moteur?: string }} observation
  * @returns {string} une clé de `ECRANS`
@@ -351,6 +351,7 @@ export function ecranCourant({
   moyens = [],
   nombreDeCodes = moyens.includes("recuperation") ? 1 : 0,
   feuilleEprouvee = false,
+  inventaireRelu = true,
   progression = PROGRESSION_INITIALE,
   sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce,
   revocationFaite = false,
@@ -368,6 +369,9 @@ export function ecranCourant({
   if (coffre === COFFRE.verrouille)
     return ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande, phrasePerdue);
   if (coffre === COFFRE.ouvert) {
+    // Une relecture d'inventaire échouée : ni les moyens ni le constat de feuille ne sont connus, et
+    // aucun ne sert de garde. L'écran dit de rouvrir le coffre (relecture de #308).
+    if (!inventaireRelu) return "relire";
     return ecranOuvert({
       pointeur,
       nombreDeCodes,

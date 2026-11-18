@@ -141,5 +141,25 @@ de l'enveloppe, de `src/vm/` ni des codes de refus.**
   changement du Worker, hors de ce lot « page seule », non fait. _Limite_ : l'état est celui du
   document ; rechargé, il n'est pas persisté (la personne a été invitée à rouvrir son coffre pour
   vérifier).
+- **Relecture de #308 (REFUSÉ `aefe2d1`), deux points.** (1) _Annuler une NOUVELLE confirmation
+  contredisait une révocation incertaine_ (« Rien n'a été révoqué » à côté d'un « a peut-être eu
+  lieu »). Choix, le plus sûr : pendant l'état `incertaine`, **aucune nouvelle révocation n'est
+  offerte** avant la vérification — la réouverture du coffre, qui recharge le document et donc
+  l'état. Il n'y a ainsi pas de nouvelle confirmation à annuler ; le geste se dit fermé
+  (`aria-disabled`) et un clic dit pourquoi (« une révocation précédente n'a pas été confirmée…
+  rouvrez votre coffre pour le vérifier avant d'en demander une autre »). Rien de l'ADR 0026 ne
+  l'interdit : la révocation reste rejouable (elle garde l'emplacement de la séance et retire les
+  autres) ; c'est la page qui refuse d'empiler une demande sur un doute, et le texte de
+  l'incertitude dit déjà de « refaire la révocation » après avoir rouvert. Conséquence : l'état
+  incertain ne se lève plus que par la réouverture (plus par une seconde révocation dans le même
+  document). (2) _Une relecture d'inventaire échouée après une révocation CONFIRMÉE laissait des
+  moyens et un constat de feuille périmés._ Le succès tient (l'acquittement du Worker le justifie) ;
+  mais l'interface INVALIDE son relevé (`inventaireRelu: false`, moyens et compte de codes
+  inconnus), le constat `rapport.feuilleEprouvee` est remis à faux, le parcours n'utilise plus
+  aucune de ces données comme garde et montre l'écran « Votre coffre doit être relu »
+  (`ecranCourant`, paramètre `inventaireRelu`), et la région persistante dit « La révocation a été
+  faite, mais l'affichage des moyens n'a pas pu être mis à jour. Rouvrez votre coffre pour le
+  relire. » La reprise est la réouverture ; une relecture qui réussit ensuite rend l'inventaire
+  relu.
 - **Non prouvé.** L'annonce par un vrai lecteur d'écran (seules la description et le nom accessibles
   sont éprouvés, sous Chromium) ; le parcours clavier E2E sur Rails réel (il tourne en CI).

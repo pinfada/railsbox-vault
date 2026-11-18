@@ -40,6 +40,14 @@ sans révoquer » reste désactivé, « Revenir à mon application » est permis
 visible** à l'étape 4 (hors du bloc de la révocation). Rejouer :
 `scripts/recette-incertitude.mjs <origine> <dossier>`.
 
+## Relecture de #308 (REFUSÉ `aefe2d1`) : pas de nouvelle révocation sur un doute, relecture échouée
+
+Pas de capture nouvelle à produire pour le premier point : après une issue incertaine, « Révoquer… »
+reste fermé et dit pourquoi dans son bloc (voir `incertaine-etape-9-*`, où la région persistante
+précède). L'écran « Votre coffre doit être relu » (relecture échouée après une révocation confirmée)
+est joué par l'épreuve navigateur `parcours-revocation.spec.mjs` ; sa mise en page est celle des
+écrans sans geste (titre, explication, consigne).
+
 ## Limites de la recette
 
 - Sans machine virtuelle : le parcours clavier sur Rails réel est l'E2E `parcours-clavier.spec.mjs`

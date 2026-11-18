@@ -97,6 +97,11 @@ export function brancherLesGestesDePortabilite(liaison) {
     confirmer: "revoquer-confirmer",
     confirmee: revoquer,
     enCours: () => contexte.revocation.enVol(),
+    // Après une issue INCERTAINE, aucune nouvelle révocation n'est offerte avant la vérification
+    // (réouverture du coffre, qui recharge le document) : annuler une NOUVELLE demande dirait « rien
+    // n'a été révoqué » à côté d'une révocation qui a peut-être eu lieu (relecture de #308).
+    interdite: () => contexte.revocation.incertaine(),
+    refusee: () => contexte.dire("revocation-etat", MESSAGES.revocationAVerifier),
     demandee: () => contexte.dire("revocation-etat", ""),
     annulee: () => contexte.dire("revocation-etat", MESSAGES.revocationAnnulee),
   });
@@ -231,11 +236,26 @@ async function revoquerEnUrgence(contexte) {
       contexte,
       `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`,
     );
-    // Relire l'inventaire n'est pas la révocation : son échec ne la défait pas, il se relit au geste suivant.
-    await Promise.resolve(contexte.apresRevocation?.()).catch(() => {});
+    await relireApresLaRevocation(contexte);
     return rapport.portabilite.revocation;
   } finally {
     publier();
+  }
+}
+
+/**
+ * Relire l'inventaire n'est pas la révocation : son échec ne la défait pas, le SUCCÈS confirmé tient.
+ * Mais ce que la page savait AVANT (les moyens, le compte de feuilles, le constat de feuille éprouvée)
+ * peut ne plus être vrai — une feuille retirée n'a plus rien prouvé : le constat est INVALIDÉ (jamais
+ * gardé comme garde du parcours), l'interface a invalidé son relevé, et la page DIT l'échec et sa
+ * reprise. Aucune donnée d'avant n'est présentée comme actuelle (relecture de #308).
+ */
+async function relireApresLaRevocation(contexte) {
+  try {
+    await contexte.apresRevocation?.();
+  } catch {
+    contexte.rapport.feuilleEprouvee = false;
+    contexte.dire("parcours-incertitude", MESSAGES.relectureEchouee);
   }
 }
 

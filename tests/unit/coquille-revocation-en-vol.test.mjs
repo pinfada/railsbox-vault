@@ -177,19 +177,20 @@ for (const [nom, erreur] of [
     assert.match(m.etat(), /peut-être eu lieu/);
     assert.match(m.etat(), /Rouvrez votre coffre/);
     assert.doesNotMatch(m.etat(), /en cours|Rien n'a été révoqué|refusée/);
-    assert.equal(m.page.noeud("revoquer-en-urgence").getAttribute("aria-disabled"), null);
+    // L'issue est incertaine : le geste reste fermé jusqu'à la vérification (réouverture du coffre).
+    assert.equal(m.page.noeud("revoquer-en-urgence").getAttribute("aria-disabled"), "true");
     assert.equal(m.envois(), 1);
   });
 }
 
-test("après l'issue, une NOUVELLE demande reste possible, et envoie un message de plus, volontaire", async () => {
+test("après l'issue incertaine, AUCUNE nouvelle demande avant la vérification (réouverture du coffre)", async () => {
   const m = await confirmerSansReponse();
   m.finir().refuser({ code: "VAULT_X" });
   await apres();
   m.page.noeud("revoquer-en-urgence").click();
-  m.page.noeud("revoquer-confirmer").click();
+  m.page.noeud("revoquer-confirmer").emettre("click");
   await apres();
-  assert.equal(m.envois(), 2);
+  assert.equal(m.envois(), 1, "pas de second message : la vérification d'abord");
 });
 
 // --- 3. La demande périmée ------------------------------------------------------------------------

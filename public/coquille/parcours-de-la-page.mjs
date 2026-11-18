@@ -395,7 +395,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     etat.coffre = coffreObserve({
       etat: rapport.etat,
       texteDesMoyens: noeud("deverrouillage-moyens").textContent,
-      moyensProposes: releve.moyensProposes,
+      moyensProposes: releve.moyensProposes ?? [],
       dernierRefus: releve.dernierRefus,
     });
     if (!etat.progressionLue) return "chargement";
@@ -406,6 +406,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       nombreDeCodes: releve.nombreDeCodes,
       // Le CONSTAT du Worker, jamais l'indice du fichier : c'est la garde des étapes 4 à 9 (#239).
       feuilleEprouvee: rapport.feuilleEprouvee === true,
+      inventaireRelu: releve.inventaireRelu !== false,
       progression: etat.progression,
       sousEtatDuCode: etat.sousEtatDuCode,
       revocationFaite: etat.revocationFaite,

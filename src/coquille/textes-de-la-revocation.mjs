@@ -22,6 +22,14 @@ export const TEXTES_DE_LA_REVOCATION = Object.freeze({
   revocationEnCours:
     "Révocation en cours : la demande est partie et ne peut plus être annulée. Attendez la réponse " +
     "du coffre.",
+  // Après une issue incertaine : aucune nouvelle révocation avant la vérification. Dit à qui la demande.
+  revocationAVerifier:
+    "Une révocation précédente n'a pas été confirmée : elle a peut-être eu lieu. Rouvrez votre " +
+    "coffre pour le vérifier avant d'en demander une autre.",
+  // La relecture de l'inventaire a échoué APRÈS une révocation confirmée : le succès tient.
+  relectureEchouee:
+    "La révocation a été faite, mais l'affichage des moyens de ce coffre n'a pas pu être mis à jour. " +
+    "Rouvrez votre coffre pour le relire.",
   revocationIncertaine:
     "La révocation est partie, mais le coffre ne l'a pas confirmée : elle a peut-être eu lieu. " +
     "Rouvrez votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites " +

@@ -161,6 +161,8 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "titreDeLaConfirmationDeRevocation",
     "confirmationDeRevocation",
     "revocationAnnulee",
+    "revocationAVerifier",
+    "relectureEchouee",
     "revocationEnCours",
     "revocationIncertaine",
     "revoque",
