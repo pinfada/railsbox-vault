@@ -79,10 +79,17 @@ test("un 301 vers une AUTRE origine n'est pas suivi : l'autre origine n'est jama
   t.after(origine.arreter);
   const { etat, repliHorsConnexion } = repli();
 
-  const lu = await lireLeDescripteur({ recuperer: recupererChez(origine.origine), repliHorsConnexion });
+  const lu = await lireLeDescripteur({
+    recuperer: recupererChez(origine.origine),
+    repliHorsConnexion,
+  });
 
   assert.equal(etat.appels, 0);
-  assert.equal(lu.present, false, "un descripteur servi par une autre origine n'est pas l'application");
+  assert.equal(
+    lu.present,
+    false,
+    "un descripteur servi par une autre origine n'est pas l'application",
+  );
   assert.match(lu.motif, /redirig/i);
   assert.equal(ailleurs.compteur.requetes, 0, "la redirection n'est pas suivie");
 });
@@ -120,7 +127,10 @@ test("témoin : une origine qui sert le descripteur directement est lue", async 
   t.after(droite.arreter);
   const { etat, repliHorsConnexion } = repli();
 
-  const lu = await lireLeDescripteur({ recuperer: recupererChez(droite.origine), repliHorsConnexion });
+  const lu = await lireLeDescripteur({
+    recuperer: recupererChez(droite.origine),
+    repliHorsConnexion,
+  });
 
   assert.equal(lu.present, true);
   assert.equal(etat.appels, 0);

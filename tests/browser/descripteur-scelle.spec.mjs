@@ -1,3 +1,8 @@
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { expect, test } from "../support/test.mjs";
 
 // FRONTIÈRE du DESCRIPTEUR SCELLÉ, sur les trois moteurs (#247, D1g ; ADR 0045).
@@ -340,4 +345,90 @@ test("le constat de la page, réseau coupé : refus typés selon ce que l'OPFS g
   );
   expect(rendu.sansCopie).toBe("VAULT_COQUILLE_HORS_LIGNE_SANS_COPIE");
   if (avecOpfs) expect(rendu.refuse).toBe("VAULT_COQUILLE_HORS_LIGNE_DESCRIPTEUR_REFUSE");
+});
+
+// --- Une redirection est une RÉPONSE de l'origine : jamais le repli (revue de #298, constat 1) ----
+//
+// Le navigateur rend `opaqueredirect` en mode manuel, et lève un `TypeError` sur une boucle quand il
+// suit : seul le vrai moteur dit ce que le produit reçoit. Un VRAI serveur, dans ce processus, sert
+// la coquille (`/src/`) ET répond sur `/artifacts/application.json` — même origine, comme en
+// production (la CSP interdit d'ailleurs un `fetch` vers une autre) — par une boucle de 302, par un
+// 301 vers une autre origine, puis ne répond plus du tout : le seul cas du repli.
+
+const RACINE = fileURLToPath(new URL("../..", import.meta.url));
+
+/** Un serveur HTTP local ; `reponse(req, res)` répond, sinon le serveur de fichiers de `/src/`. */
+async function serveurLocal(reponse) {
+  const compteur = { requetes: 0 };
+  const http = createServer(async (req, res) => {
+    compteur.requetes += 1;
+    if (reponse(req, res) !== false) return;
+    if (req.url === "/") {
+      res
+        .writeHead(200, { "content-type": "text/html" })
+        .end("<!doctype html><title>origine</title>");
+      return;
+    }
+    const chemin = join(RACINE, decodeURIComponent(new URL(req.url, "http://x").pathname));
+    if (!req.url.startsWith("/src/") || !chemin.startsWith(join(RACINE, "src"))) {
+      res.writeHead(404).end();
+      return;
+    }
+    const octets = await readFile(chemin).catch(() => null);
+    if (octets === null) res.writeHead(404).end();
+    else res.writeHead(200, { "content-type": "text/javascript" }).end(octets);
+  });
+  await new Promise((resolve) => http.listen(0, "127.0.0.1", resolve));
+  return {
+    origine: `http://127.0.0.1:${http.address().port}`,
+    compteur,
+    arreter: () => new Promise((resolve) => (http.closeAllConnections(), http.close(resolve))),
+  };
+}
+
+/** Ce que `lireLeDescripteur` rend dans la page, avec le `fetch` du navigateur et un repli espion. */
+const lireLeDescripteurDeLaPage = (page) =>
+  page.evaluate(async () => {
+    const { lireLeDescripteur } = await import("/src/coquille/descripteur-applicatif.mjs");
+    let appels = 0;
+    const lu = await lireLeDescripteur({
+      repliHorsConnexion: async () => {
+        appels += 1;
+        return { present: false, horsConnexion: true, code: "REPLI", motif: "repli" };
+      },
+    });
+    return { present: lu.present, motif: lu.motif, repli: appels };
+  });
+
+test("une boucle de 302 ou un 301 vers une autre origine n'ouvre pas le repli ; une connexion refusée l'ouvre", async ({
+  page,
+}) => {
+  const ailleurs = await serveurLocal((req, res) => {
+    res.writeHead(200).end("{}");
+  });
+  let mode = "boucle";
+  const origine = await serveurLocal((req, res) => {
+    if (req.url !== "/artifacts/application.json") return false;
+    if (mode === "boucle") res.writeHead(302, { location: req.url }).end();
+    else res.writeHead(301, { location: `${ailleurs.origine}${req.url}` }).end();
+  });
+  try {
+    await page.goto(`${origine.origine}/`); // une page vide de cette origine, rien de plus
+    const enBoucle = await lireLeDescripteurDeLaPage(page);
+    expect(enBoucle.repli, "une boucle de 302 est une réponse de l'origine").toBe(0);
+    expect(enBoucle.present).toBe(false);
+    expect(enBoucle.motif).toMatch(/redirig/);
+
+    mode = "croisee";
+    const versUneAutre = await lireLeDescripteurDeLaPage(page);
+    expect(versUneAutre.repli).toBe(0);
+    expect(versUneAutre.motif).toMatch(/redirig/);
+    expect(ailleurs.compteur.requetes, "la redirection n'est pas suivie").toBe(0);
+
+    await origine.arreter();
+    const refusee = await lireLeDescripteurDeLaPage(page);
+    expect(refusee.repli, "pas de réponse du tout : le repli").toBe(1);
+  } finally {
+    await Promise.all([origine.arreter(), ailleurs.arreter()]);
+  }
 });

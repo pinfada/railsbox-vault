@@ -40,6 +40,7 @@ const MAJ = "src/coquille/mise-a-jour-applicative.mjs";
 const T = {
   scelle: "tests/unit/coquille-descripteur-scelle.test.mjs",
   hors: "tests/unit/coquille-hors-connexion.test.mjs",
+  redirections: "tests/unit/coquille-descripteur-redirections.test.mjs",
   cle: "tests/unit/vm-cle-du-descripteur-scelle.test.mjs",
   demarrage: "tests/unit/coquille-demarrage-hors-connexion.test.mjs",
   preparation: "tests/unit/coquille-preparation-du-demarrage.test.mjs",
@@ -88,6 +89,39 @@ export const MUTATIONS = Object.freeze([
     apres:
       '  } catch {\n    if (repliHorsConnexion !== undefined) return repliHorsConnexion();\n    return { present: false, motif: "descripteur illisible" };\n',
     epreuves: [T.hors],
+  },
+  // --- Une redirection est une réponse de l'origine (revue de #298, constat 1) ------------------
+  {
+    nom: "le descripteur est demandé en `redirect: manual` : une boucle de 302 n'est pas un TypeError",
+    garde: "lireLeDescripteur — redirect: manual",
+    fichier: APPLICATIF,
+    avant: '{ cache: "no-store", redirect: "manual" }',
+    apres: '{ cache: "no-store" }',
+    epreuves: [T.redirections],
+  },
+  {
+    nom: "une redirection est classée « redirigé », jamais lue ni confondue avec le réseau",
+    garde: "lireLeDescripteur — estUneRedirection",
+    fichier: APPLICATIF,
+    avant: "  if (estUneRedirection(reponse)) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [T.redirections],
+  },
+  {
+    nom: "une redirection opaque (navigateur, statut 0) est reconnue",
+    garde: "estUneRedirection — opaqueredirect",
+    fichier: APPLICATIF,
+    avant: '  reponse.type === "opaqueredirect" || (reponse.status',
+    apres: "  false || (reponse.status",
+    epreuves: [T.redirections],
+  },
+  {
+    nom: "une redirection 3xx (Node) est reconnue",
+    garde: "estUneRedirection — statut 3xx",
+    fichier: APPLICATIF,
+    avant: "(reponse.status >= 300 && reponse.status < 400)",
+    apres: "false",
+    epreuves: [T.redirections],
   },
   // --- Le sceau : ni fabriqué, ni modifié, ni d'un autre coffre, ni d'une autre version ----------
   {

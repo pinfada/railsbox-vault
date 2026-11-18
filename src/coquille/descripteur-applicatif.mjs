@@ -29,6 +29,13 @@ export const ADRESSE_DESCRIPTEUR = "/artifacts/application.json";
 export const estInjoignable = (erreur) => erreur instanceof TypeError;
 
 /**
+ * Une REDIRECTION, vue du navigateur ou de Node : `opaqueredirect` (statut 0) en mode manuel côté
+ * navigateur, un statut 3xx côté Node. Dans les deux cas l'origine a répondu (ADR 0042).
+ */
+export const estUneRedirection = (reponse) =>
+  reponse.type === "opaqueredirect" || (reponse.status >= 300 && reponse.status < 400);
+
+/**
  * Version de descripteur que ce module sait lire. Une autre est refusée, jamais devinée.
  *
  * **v2 depuis #236 (ADR 0041), et la v1 n'est PAS portée.** La v1 décrivait UN disque — code et
@@ -339,12 +346,21 @@ function formeDesMorceaux(descripteur) {
 export async function lireLeDescripteur({ recuperer = globalThis.fetch, repliHorsConnexion } = {}) {
   let reponse;
   try {
-    reponse = await recuperer(ADRESSE_DESCRIPTEUR, { cache: "no-store" });
+    // `redirect: "manual"` : une redirection est une RÉPONSE de l'origine, jamais suivie. Suivie, une
+    // boucle lèverait un `TypeError` — le signal de « pas de réseau » — et ouvrirait le repli alors
+    // que l'origine a répondu ; un 301 vers une autre origine ferait lire le descripteur d'ailleurs.
+    reponse = await recuperer(ADRESSE_DESCRIPTEUR, { cache: "no-store", redirect: "manual" });
   } catch (erreur) {
     if (estInjoignable(erreur) && repliHorsConnexion !== undefined) {
       return repliHorsConnexion();
     }
     return { present: false, motif: `descripteur inatteignable : ${erreur.message}` };
+  }
+  if (estUneRedirection(reponse)) {
+    return {
+      present: false,
+      motif: "descripteur redirigé : l'origine a répondu par une redirection",
+    };
   }
   if (!reponse.ok) {
     return { present: false, motif: `aucun descripteur servi (${reponse.status})` };
