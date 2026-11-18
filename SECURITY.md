@@ -120,8 +120,8 @@ et la page ferme le lien de la sauvegarde qu'elle offrait. Une archive déjà en
 l'origine est une copie « déjà prise » que rien ne révoque (ADR 0026). La révocation ne publie que
 des noms de moyens et des nombres. **La confirmation en deux temps de la page (#265) est une aide à
 la personne, pas une garde** : un script de même origine envoie le message sans elle ; la garde du
-geste reste celle du Worker. **Depuis le 13 septembre 2026**, un coffre créé par une version
-de développement antérieure est refusé (`VAULT_COQUILLE_COFFRE_ANTERIEUR`), jamais migré ni écrasé.
+geste reste celle du Worker. **Depuis le 13 septembre 2026**, un coffre créé par une version de
+développement antérieure est refusé (`VAULT_COQUILLE_COFFRE_ANTERIEUR`), jamais migré ni écrasé.
 
 **La promesse de persistance est bornée (#209).** Ce qui est garanti : aucune écriture n'est
 annoncée durable au guest avant le flush OPFS (`SEC-DURABLE-001`), et une écriture qui a franchi
