@@ -11,6 +11,8 @@ const CHAMP_DU_GESTE = Object.freeze({
   "ouvrir-par-code": "saisie-code",
 });
 const CHAMPS_JUGES = Object.freeze([...new Set(Object.values(CHAMP_DU_GESTE))]);
+/** Les champs que `aria-invalid` peut marquer : ceux qu'un refus juge, et le numéro de feuille (B2-7). */
+const CHAMPS_MARQUES = Object.freeze([...CHAMPS_JUGES, "ancre-version"]);
 const REFUS = "parcours-refus";
 
 /**
@@ -36,12 +38,13 @@ export function relierLeRefusAuChamp({ doc, noeud, gesteCourant, dire, jugeLaVal
     const texte = refus?.textContent ?? "";
     const juge = texte !== "" && jugeLaValeur(texte);
     let emplacement = null;
-    for (const champ of CHAMPS_JUGES) {
+    for (const champ of CHAMPS_MARQUES) {
       const cible = noeud(champ);
       if (cible === null) continue;
       const refuse = juge && CHAMP_DU_GESTE[gesteCourant()] === champ;
       if (refuse) emplacement = noeud(`refus-${champ}`);
-      // La saisie fausse EN DIRECT (code mal recopié, B2-2) marque le champ sans refus.
+      // La saisie fausse EN DIRECT (code mal recopié, B2-2 ; numéro qui n'en est pas un, B2-7) marque
+      // le champ sans refus.
       const invalide = refuse || cible.dataset?.saisieFausse === "true";
       const cites = (cible.getAttribute("aria-describedby") ?? "")
         .split(" ")
@@ -88,4 +91,31 @@ export function relierLaSaisieDuCode({ noeud, dire, lire, annoncer, relier }) {
     noeud("saisie-code").dataset.saisieFausse = String(fausse);
     relier();
   });
+}
+
+/**
+ * Un numéro de feuille qui n'en est pas un se dit au champ, avant tout clic (#266 B2-7) : la recette a
+ * vu la PHRASE tapée dans ce champ, et le refus qui s'ensuivait s'écrivait dans le relevé technique,
+ * que personne n'ouvre. Un champ vide n'est pas une erreur : c'est un choix.
+ *
+ * @param {{ noeud: (id: string) => HTMLElement | null, dire: (id: string, texte: string) => void,
+ *           lire: (texte: string) => { valide: boolean, aveu: string }, relier: () => void }} page
+ */
+export function relierLAncre({ noeud, dire, lire, relier }) {
+  noeud("ancre-version")?.addEventListener("input", () => {
+    const lue = lire(noeud("ancre-version").value);
+    dire("parcours-ancre-lue", lue.valide ? "" : lue.aveu);
+    noeud("ancre-version").dataset.saisieFausse = String(!lue.valide);
+    relier();
+  });
+}
+
+/** Les trois branchements des champs : le refus qui les juge, le code lu en direct, le numéro lu. */
+export function relierLesChamps({ lireLeCode, annoncerLeCode, lireLAncre, ...page }) {
+  const refusDuChamp = relierLeRefusAuChamp(page);
+  const { noeud, dire } = page;
+  const { relier } = refusDuChamp;
+  relierLaSaisieDuCode({ noeud, dire, lire: lireLeCode, annoncer: annoncerLeCode, relier });
+  relierLAncre({ noeud, dire, lire: lireLAncre, relier });
+  return refusDuChamp;
 }

@@ -1,0 +1,3091 @@
+{
+  "nom": "360-light",
+  "console": [
+    "error: Failed to load resource: the server responded with a status of 503 ()",
+    "error: Failed to load resource: the server responded with a status of 503 ()",
+    "error: Failed to load resource: the server responded with a status of 503 ()",
+    "error: Failed to load resource: the server responded with a status of 503 ()",
+    "error: Failed to load resource: the server responded with a status of 503 ()",
+    "error: Failed to load resource: the server responded with a status of 503 ()",
+    "error: Failed to load resource: the server responded with a status of 503 ()",
+    "error: Failed to load resource: the server responded with a status of 503 ()"
+  ],
+  "reponsesEnErreur": [
+    "503 http://localhost:4106/",
+    "503 http://localhost:4106/",
+    "404 http://127.0.0.1:4105/artifacts/application.json",
+    "503 http://localhost:4106/",
+    "503 http://localhost:4106/",
+    "404 http://127.0.0.1:4105/artifacts/application.json",
+    "503 http://localhost:4106/",
+    "503 http://localhost:4106/",
+    "404 http://127.0.0.1:4105/artifacts/application.json",
+    "503 http://localhost:4106/",
+    "503 http://localhost:4106/",
+    "404 http://127.0.0.1:4105/artifacts/application.json"
+  ],
+  "longtasks": [],
+  "etapes": {
+    "01-creer": {
+      "url": "",
+      "titre": "Créer votre coffre",
+      "rang": "Étape 1 sur 9",
+      "suivante": "Étape suivante : Choisir comment l'ouvrir.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 964,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Au moins 12 caractères hors espaces de bord sont nécessaires. Choisissez plusieurs mots sans lien entre eux, ou un secret généré par votre gestionnaire de mots de passe.",
+      "continuer": "Continuer : Choisir comment l'ouvrir",
+      "principal": ["parcours-commencer"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 29,
+          "y": 964,
+          "w": 302,
+          "h": 49
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1243
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — vous êtes ici",
+        "2. Choisir comment l'ouvrir — à venir",
+        "3. Recevoir et confirmer votre code de récupération — à venir",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Votre coffre garde une application et ses données sur cet appareil, dans ce navigateur, protégées par votre secret. Cette version est expérimentale : utilisez uniquement des données d'essai. La protection dépend aussi du navigateur et de la version de RailsBox Vault que vous utilisez.",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Commencer ». Si vous avez déjà une sauvegarde d'un coffre, choisissez plutôt « J'ai déjà une sauvegarde ».",
+      "version": "",
+      "consigne": ""
+    },
+    "02-choisir": {
+      "url": "?etape=2",
+      "titre": "Choisir comment l'ouvrir",
+      "rang": "Étape 2 sur 9",
+      "suivante": "Étape suivante : Recevoir et confirmer votre code de récupération.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 604,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner votre phrase en essayant. Comptez environ 2 secondes sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.",
+      "conseil": "Au moins 12 caractères hors espaces de bord sont nécessaires. Choisissez plusieurs mots sans lien entre eux, ou un secret généré par votre gestionnaire de mots de passe.",
+      "continuer": "Continuer : Recevoir et confirmer votre code de récupération",
+      "principal": ["ouvrir-par-phrase"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 29,
+          "y": 631,
+          "w": 302,
+          "h": 53
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 29,
+          "y": 844,
+          "w": 302,
+          "h": 49
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(17, 24, 39)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1499
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — vous êtes ici",
+        "3. Recevoir et confirmer votre code de récupération — à venir",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Vous choisissez le secret qui ouvrira votre coffre. Le plus simple est une phrase : plusieurs mots, faciles à retenir pour vous et difficiles à deviner pour les autres. Le coffre est créé dès que vous cliquez.",
+      "attendu": "Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Créer mon coffre ».",
+      "version": "",
+      "consigne": ""
+    },
+    "02b-phrase-courte": {
+      "url": "?etape=2",
+      "titre": "Choisir comment l'ouvrir",
+      "rang": "Étape 2 sur 9",
+      "suivante": "Étape suivante : Recevoir et confirmer votre code de récupération.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 604,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner votre phrase en essayant. Comptez environ 2 secondes sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.",
+      "conseil": "Au moins 12 caractères hors espaces de bord sont nécessaires. Choisissez plusieurs mots sans lien entre eux, ou un secret généré par votre gestionnaire de mots de passe.",
+      "continuer": "Continuer : Recevoir et confirmer votre code de récupération",
+      "principal": ["ouvrir-par-phrase"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 29,
+          "y": 631,
+          "w": 302,
+          "h": 53
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 29,
+          "y": 844,
+          "w": 302,
+          "h": 49
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(17, 24, 39)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1499
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — vous êtes ici",
+        "3. Recevoir et confirmer votre code de récupération — à venir",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Vous choisissez le secret qui ouvrira votre coffre. Le plus simple est une phrase : plusieurs mots, faciles à retenir pour vous et difficiles à deviner pour les autres. Le coffre est créé dès que vous cliquez.",
+      "attendu": "Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Créer mon coffre ».",
+      "version": "",
+      "consigne": ""
+    },
+    "02c-phrase-ok": {
+      "url": "?etape=2",
+      "titre": "Choisir comment l'ouvrir",
+      "rang": "Étape 2 sur 9",
+      "suivante": "Étape suivante : Recevoir et confirmer votre code de récupération.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 604,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner votre phrase en essayant. Comptez environ 2 secondes sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.",
+      "conseil": "Longueur suffisante (45 caractères). La longueur seule ne garantit pas la robustesse. Choisissez plusieurs mots sans lien entre eux, ou un secret généré par votre gestionnaire de mots de passe.",
+      "continuer": "Continuer : Recevoir et confirmer votre code de récupération",
+      "principal": ["ouvrir-par-phrase"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 29,
+          "y": 631,
+          "w": 302,
+          "h": 53
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 29,
+          "y": 870,
+          "w": 302,
+          "h": 49
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(17, 24, 39)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1524
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — vous êtes ici",
+        "3. Recevoir et confirmer votre code de récupération — à venir",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Vous choisissez le secret qui ouvrira votre coffre. Le plus simple est une phrase : plusieurs mots, faciles à retenir pour vous et difficiles à deviner pour les autres. Le coffre est créé dès que vous cliquez.",
+      "attendu": "Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Créer mon coffre ».",
+      "version": "",
+      "consigne": ""
+    },
+    "03-code-annonce": {
+      "url": "?etape=3",
+      "titre": "Recevoir votre code de récupération",
+      "rang": "Étape 3 sur 9",
+      "suivante": "Étape suivante : Travailler dans l'application.",
+      "attente": "",
+      "reussite": "Votre coffre est ouvert.",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 528,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Travailler dans l'application",
+      "principal": ["creer-recuperation"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": true,
+        "busy": "false",
+        "bg": "rgb(243, 244, 246)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 766
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — vous êtes ici",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Si vous oubliez votre phrase, seul un code de récupération pourra rouvrir votre coffre. Sans lui, une phrase oubliée est un coffre perdu, et personne ne peut vous aider. Ce code ne s'affichera QU'UNE SEULE FOIS : préparez une feuille de papier et un stylo avant de cliquer.",
+      "attendu": "Ce que vous avez à faire : Quand vous êtes prêt à écrire, cliquez sur « Afficher mon code de récupération ».",
+      "version": "",
+      "consigne": ""
+    },
+    "04-code-feuille": {
+      "url": "?etape=3",
+      "titre": "Recopier votre code de récupération",
+      "rang": "Étape 3 sur 9",
+      "suivante": "Étape suivante : Travailler dans l'application.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 409,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Travailler dans l'application",
+      "principal": ["parcours-code-recopie"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": "false",
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 890
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — vous êtes ici",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Voici votre code. Il ne sera plus jamais affiché, et rien sur cet appareil n'en garde de copie. Recopiez-le à la main, avec le numéro de feuille, et rangez la feuille ailleurs que près de cet appareil.",
+      "attendu": "Ce que vous avez à faire : Recopiez le code et le numéro de feuille, puis cliquez sur « J'ai recopié mon code ».",
+      "version": "",
+      "consigne": "Numéro de feuille à noter à côté du code : 2. Recopiez les 7 groupes de 4 symboles exactement. Ce code ne sera plus jamais affiché."
+    },
+    "05-code-a-verrouiller": {
+      "url": "?etape=3",
+      "titre": "Vérifier votre code de récupération",
+      "rang": "Étape 3 sur 9",
+      "suivante": "Étape suivante : Travailler dans l'application.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 582,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Le verrouillage prend quelques secondes.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Travailler dans l'application",
+      "principal": ["verrouiller-le-coffre"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 29,
+          "y": 647,
+          "w": 302,
+          "h": 49
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": "false",
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 865
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — vous êtes ici",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Pour être sûr que votre feuille est juste, vous allez vous en servir : verrouillez votre coffre, puis rouvrez-le avec le code que vous venez de recopier. Le code quitte alors cette page. Votre coffre est encore vide : si vous vous êtes trompé en recopiant, votre phrase le rouvre, et rien n'est perdu.",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Verrouiller mon coffre », puis ouvrez-le avec le code de votre feuille. Si vous n'avez pas fini de recopier, cliquez d'abord sur « Revoir mon code ».",
+      "version": "",
+      "consigne": "Numéro de feuille à noter à côté du code : 2. Recopiez les 7 groupes de 4 symboles exactement. Ce code ne sera plus jamais affiché."
+    },
+    "06-code-verifier": {
+      "url": "?etape=3",
+      "titre": "Vérifier votre code de récupération",
+      "rang": "Étape 3 sur 9",
+      "suivante": "Étape suivante : Travailler dans l'application.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 567,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Travailler dans l'application",
+      "principal": ["ouvrir-par-code"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 29,
+          "y": 594,
+          "w": 302,
+          "h": 48
+        },
+        "scrollW": 300,
+        "clientW": 300
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 29,
+          "y": 722,
+          "w": 302,
+          "h": 49
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1162
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — vous êtes ici",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet appareil, cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit, tant que vous ne l'avez pas révoquée.",
+      "attendu": "Ce que vous avez à faire : Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir mon coffre avec le code ».",
+      "version": "",
+      "consigne": ""
+    },
+    "06b-code-incomplet": {
+      "url": "?etape=3",
+      "titre": "Vérifier votre code de récupération",
+      "rang": "Étape 3 sur 9",
+      "suivante": "Étape suivante : Travailler dans l'application.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 567,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Travailler dans l'application",
+      "principal": ["ouvrir-par-code"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 29,
+          "y": 594,
+          "w": 302,
+          "h": 48
+        },
+        "scrollW": 300,
+        "clientW": 300
+      },
+      "codeLu": "16 symbole(s) sur 28.",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 29,
+          "y": 722,
+          "w": 302,
+          "h": 49
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1162
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — vous êtes ici",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet appareil, cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit, tant que vous ne l'avez pas révoquée.",
+      "attendu": "Ce que vous avez à faire : Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir mon coffre avec le code ».",
+      "version": "",
+      "consigne": ""
+    },
+    "06c-code-faux": {
+      "url": "?etape=3",
+      "titre": "Vérifier votre code de récupération",
+      "rang": "Étape 3 sur 9",
+      "suivante": "Étape suivante : Travailler dans l'application.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 567,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Travailler dans l'application",
+      "principal": ["ouvrir-par-code"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": "true",
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 29,
+          "y": 594,
+          "w": 302,
+          "h": 48
+        },
+        "scrollW": 300,
+        "clientW": 300
+      },
+      "codeLu": "Le code a une faute de recopie : une lettre ou un chiffre est mal lu, ou deux sont inversés. Relisez votre feuille, symbole par symbole. Les tirets, les espaces et les majuscules n'ont pas d'importance.",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 29,
+          "y": 828,
+          "w": 302,
+          "h": 49
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1267
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — vous êtes ici",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet appareil, cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit, tant que vous ne l'avez pas révoquée.",
+      "attendu": "Ce que vous avez à faire : Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir mon coffre avec le code ».",
+      "version": "",
+      "consigne": ""
+    },
+    "06d-code-juste": {
+      "url": "?etape=3",
+      "titre": "Vérifier votre code de récupération",
+      "rang": "Étape 3 sur 9",
+      "suivante": "Étape suivante : Travailler dans l'application.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 567,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Travailler dans l'application",
+      "principal": ["ouvrir-par-code"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 29,
+          "y": 594,
+          "w": 302,
+          "h": 48
+        },
+        "scrollW": 300,
+        "clientW": 300
+      },
+      "codeLu": "Code complet : aucune faute de recopie détectée.",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 29,
+          "y": 725,
+          "w": 302,
+          "h": 49
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(17, 24, 39)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1165
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — vous êtes ici",
+        "4. Travailler dans l'application — à venir",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet appareil, cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit, tant que vous ne l'avez pas révoquée.",
+      "attendu": "Ce que vous avez à faire : Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir mon coffre avec le code ».",
+      "version": "",
+      "consigne": ""
+    },
+    "07-travailler": {
+      "url": "?etape=4",
+      "titre": "Travailler dans l'application",
+      "rang": "Étape 4 sur 9",
+      "suivante": "Étape suivante : Verrouiller et rouvrir.",
+      "attente": "",
+      "reussite": "Votre feuille est juste : son code a ouvert votre coffre. Gardez-la bien, loin de cet appareil.",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 751,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Le premier démarrage installe l'application : comptez environ deux minutes, parfois davantage sur un appareil lent ou occupé. Les démarrages suivants sont plus courts. Pendant ce temps, l'onglet peut sembler figé : ne le fermez pas. Le bouton s'efface dès le premier clic, et la progression s'affiche à sa place.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Verrouiller et rouvrir",
+      "principal": ["demarrer-application"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1129
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — vous êtes ici",
+        "5. Verrouiller et rouvrir — à venir",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré dans votre coffre, sur cet appareil.",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche, puis utilisez-la. Quand vous avez fini, passez à l'étape suivante.",
+      "version": "",
+      "consigne": ""
+    },
+    "08-verrouiller": {
+      "url": "?etape=5",
+      "titre": "Verrouiller votre coffre",
+      "rang": "Étape 5 sur 9",
+      "suivante": "Étape suivante : Sauvegarder votre coffre.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 462,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Le verrouillage prend quelques secondes.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Sauvegarder votre coffre",
+      "principal": ["verrouiller-le-coffre"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 29,
+          "y": 462,
+          "w": 302,
+          "h": 49
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 823
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — vous êtes ici",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Verrouiller arrête l'application, enregistre tout, et referme le coffre : plus rien n'est lisible sans votre secret. La page se recharge ensuite. Le coffre se verrouille aussi tout seul après un moment sans activité.",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Verrouiller mon coffre », puis rouvrez-le avec votre phrase.",
+      "version": "",
+      "consigne": ""
+    },
+    "09-rouvrir": {
+      "url": "?etape=5",
+      "titre": "Rouvrir votre coffre",
+      "rang": "Étape 5 sur 9",
+      "suivante": "Étape suivante : Sauvegarder votre coffre.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 803,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner votre phrase en essayant. Comptez environ 2 secondes sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Sauvegarder votre coffre",
+      "principal": ["ouvrir-par-phrase"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 29,
+          "y": 943,
+          "w": 302,
+          "h": 53
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 29,
+          "y": 1100,
+          "w": 302,
+          "h": 49
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(17, 24, 39)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1540
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — vous êtes ici",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": true,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Votre coffre est verrouillé. Il s'ouvre avec la phrase que vous avez choisie. Si vous avez noté un numéro de feuille sur votre feuille, tapez-le : il empêche qu'on vous rende une copie plus ancienne de votre coffre sans que vous le sachiez.",
+      "attendu": "Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Ouvrir mon coffre ».",
+      "version": "",
+      "consigne": ""
+    },
+    "09b-phrase-fausse": {
+      "url": "?etape=5",
+      "titre": "Rouvrir votre coffre",
+      "rang": "Étape 5 sur 9",
+      "suivante": "Étape suivante : Sauvegarder votre coffre.",
+      "attente": "",
+      "reussite": "",
+      "refus": "Ce que vous avez présenté n'ouvre pas ce coffre : la phrase est peut-être mal tapée (majuscules, accents, espaces), ou ce n'est pas le bon code. Rien n'a été perdu. Réessayez tranquillement : il n'y a pas de nombre d'essais limité.",
+      "refusParent": "refus-saisie-phrase",
+      "refusBox": {
+        "x": 29,
+        "y": 1165,
+        "w": 302,
+        "h": 231
+      },
+      "attenteAnnoncee": "Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner votre phrase en essayant. Comptez environ 2 secondes sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Sauvegarder votre coffre",
+      "principal": ["ouvrir-par-phrase"],
+      "champPhrase": {
+        "invalid": "true",
+        "describedby": "phrase-conseil parcours-refus",
+        "box": {
+          "x": 29,
+          "y": 943,
+          "w": 302,
+          "h": 53
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 674,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 29,
+          "y": 1100,
+          "w": 302,
+          "h": 49
+        },
+        "code": {
+          "x": 0,
+          "y": 674,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 674,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 674,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": "false",
+        "bg": "rgb(17, 24, 39)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1650
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — vous êtes ici",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": true,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Votre coffre est verrouillé. Il s'ouvre avec la phrase que vous avez choisie. Si vous avez noté un numéro de feuille sur votre feuille, tapez-le : il empêche qu'on vous rende une copie plus ancienne de votre coffre sans que vous le sachiez.",
+      "attendu": "Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Ouvrir mon coffre ».",
+      "version": "",
+      "consigne": ""
+    },
+    "09c-refus-efface": {
+      "url": "?etape=5",
+      "titre": "Rouvrir votre coffre",
+      "rang": "Étape 5 sur 9",
+      "suivante": "Étape suivante : Sauvegarder votre coffre.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 803,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner votre phrase en essayant. Comptez environ 2 secondes sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Sauvegarder votre coffre",
+      "principal": ["ouvrir-par-phrase"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 29,
+          "y": 943,
+          "w": 302,
+          "h": 53
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 674,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 29,
+          "y": 1100,
+          "w": 302,
+          "h": 49
+        },
+        "code": {
+          "x": 0,
+          "y": 674,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 674,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 674,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": "false",
+        "bg": "rgb(17, 24, 39)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1540
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — vous êtes ici",
+        "6. Sauvegarder votre coffre — à venir",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": true,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Votre coffre est verrouillé. Il s'ouvre avec la phrase que vous avez choisie. Si vous avez noté un numéro de feuille sur votre feuille, tapez-le : il empêche qu'on vous rende une copie plus ancienne de votre coffre sans que vous le sachiez.",
+      "attendu": "Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Ouvrir mon coffre ».",
+      "version": "",
+      "consigne": ""
+    },
+    "10-sauvegarder": {
+      "url": "?etape=6",
+      "titre": "Sauvegarder votre coffre",
+      "rang": "Étape 6 sur 9",
+      "suivante": "Étape suivante : Restaurer sur un autre appareil.",
+      "attente": "",
+      "reussite": "Votre coffre est ouvert.",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 678,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : La sauvegarde prend de quelques secondes à quelques minutes, selon la taille du coffre et l'appareil. Ne fermez pas l'onglet.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Restaurer sur un autre appareil",
+      "principal": ["sauvegarder-le-coffre"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": "false",
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1063
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — vous êtes ici",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Une sauvegarde est un fichier qui contient tout votre coffre, toujours protégé. L'application est arrêtée le temps de la sauvegarde. Le fichier est enregistré par votre navigateur, comme un téléchargement : gardez-en une copie ailleurs que sur cet appareil (clé USB, autre ordinateur).",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Sauvegarder mon coffre ». Si le navigateur ne l'enregistre pas tout seul, cliquez sur « Enregistrer la sauvegarde ».",
+      "version": "",
+      "consigne": ""
+    },
+    "10b-sauvegarde-refusee": {
+      "url": "?etape=6",
+      "titre": "Sauvegarder votre coffre",
+      "rang": "Étape 6 sur 9",
+      "suivante": "Étape suivante : Restaurer sur un autre appareil.",
+      "attente": "",
+      "reussite": "",
+      "refus": "Il n'y a encore rien à sauvegarder : démarrez l'application une première fois.",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 604,
+        "w": 302,
+        "h": 103
+      },
+      "attenteAnnoncee": "Durée : La sauvegarde prend de quelques secondes à quelques minutes, selon la taille du coffre et l'appareil. Ne fermez pas l'onglet.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Restaurer sur un autre appareil",
+      "principal": ["sauvegarder-le-coffre"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 79,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": true,
+        "busy": "false",
+        "bg": "rgb(243, 244, 246)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1116
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — vous êtes ici",
+        "7. Restaurer sur un autre appareil — à venir",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Une sauvegarde est un fichier qui contient tout votre coffre, toujours protégé. L'application est arrêtée le temps de la sauvegarde. Le fichier est enregistré par votre navigateur, comme un téléchargement : gardez-en une copie ailleurs que sur cet appareil (clé USB, autre ordinateur).",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Sauvegarder mon coffre ». Si le navigateur ne l'enregistre pas tout seul, cliquez sur « Enregistrer la sauvegarde ».",
+      "version": "",
+      "consigne": ""
+    },
+    "11-restaurer-ailleurs": {
+      "url": "?etape=7",
+      "titre": "Restaurer sur un autre appareil",
+      "rang": "Étape 7 sur 9",
+      "suivante": "Étape suivante : Récupérer votre coffre avec le code.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 499,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Récupérer votre coffre avec le code",
+      "principal": ["parcours-continuer"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": "false",
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 838
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — étape passée",
+        "7. Restaurer sur un autre appareil — vous êtes ici",
+        "8. Récupérer votre coffre avec le code — à venir",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Votre sauvegarde permet de retrouver votre coffre sur un autre appareil, dans un autre navigateur ou à une autre adresse. Il s'y ouvrira avec votre code de récupération. On ne restaure jamais par-dessus un coffre existant : faites-le là où il n'y en a pas encore.",
+      "attendu": "Ce que vous avez à faire : Sur l'autre appareil, ouvrez RailsBox Vault, choisissez « J'ai déjà une sauvegarde » et donnez le fichier. Pour continuer ici, cliquez sur le bouton ci-dessous.",
+      "version": "",
+      "consigne": ""
+    },
+    "12-recuperer": {
+      "url": "?etape=8",
+      "titre": "Récupérer votre coffre avec le code",
+      "rang": "Étape 8 sur 9",
+      "suivante": "Étape suivante : Révoquer en urgence.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 432,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Révoquer en urgence",
+      "principal": ["ouvrir-par-code"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 29,
+          "y": 571,
+          "w": 302,
+          "h": 48
+        },
+        "scrollW": 300,
+        "clientW": 300
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 29,
+          "y": 699,
+          "w": 302,
+          "h": 49
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1053
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — étape passée",
+        "7. Restaurer sur un autre appareil — étape passée",
+        "8. Récupérer votre coffre avec le code — vous êtes ici",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": true,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Le code de récupération de votre feuille rouvre votre coffre, même sans la phrase. Le numéro de version noté à côté du code protège contre une copie plus ancienne : tapez-le aussi.",
+      "attendu": "Ce que vous avez à faire : Tapez le numéro de feuille et le code de votre feuille, puis cliquez sur « Ouvrir mon coffre avec le code ».",
+      "version": "",
+      "consigne": ""
+    },
+    "12b-numero-non-numerique": {
+      "url": "?etape=8",
+      "titre": "Récupérer votre coffre avec le code",
+      "rang": "Étape 8 sur 9",
+      "suivante": "Étape suivante : Révoquer en urgence.",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 432,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Révoquer en urgence",
+      "principal": ["ouvrir-par-code"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 29,
+          "y": 571,
+          "w": 302,
+          "h": 48
+        },
+        "scrollW": 300,
+        "clientW": 300
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 29,
+          "y": 699,
+          "w": 302,
+          "h": 49
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1053
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — étape passée",
+        "7. Restaurer sur un autre appareil — étape passée",
+        "8. Récupérer votre coffre avec le code — vous êtes ici",
+        "9. Révoquer en urgence — à venir"
+      ],
+      "ancre": {
+        "visible": true,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Le code de récupération de votre feuille rouvre votre coffre, même sans la phrase. Le numéro de version noté à côté du code protège contre une copie plus ancienne : tapez-le aussi.",
+      "attendu": "Ce que vous avez à faire : Tapez le numéro de feuille et le code de votre feuille, puis cliquez sur « Ouvrir mon coffre avec le code ».",
+      "version": "",
+      "consigne": ""
+    },
+    "13-revoquer": {
+      "url": "?etape=9",
+      "titre": "Révoquer en urgence",
+      "rang": "Étape 9 sur 9",
+      "suivante": "",
+      "attente": "",
+      "reussite": "Votre coffre est ouvert.",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 721,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer",
+      "principal": ["parcours-sans-revoquer"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1241
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — étape passée",
+        "7. Restaurer sur un autre appareil — étape passée",
+        "8. Récupérer votre coffre avec le code — étape passée",
+        "9. Révoquer en urgence — vous êtes ici"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Cette étape est facultative : elle vous montre le geste à faire si quelqu'un connaît votre phrase ou a trouvé votre feuille. Révoquer retire tout ce qui ouvre ce coffre, SAUF le moyen que vous venez d'utiliser. Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du moyen avec lequel vous avez ouvert ce coffre. Les sauvegardes déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
+      "attendu": "Ce que vous avez à faire : Si personne n'a vu votre phrase ni votre feuille, cliquez sur « Terminer sans révoquer ». Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce coffre », puis notez le nouveau numéro de feuille sur votre feuille.",
+      "version": "",
+      "consigne": ""
+    },
+    "14-termine": {
+      "url": "?etape=9",
+      "titre": "Parcours terminé",
+      "rang": "",
+      "suivante": "",
+      "attente": "",
+      "reussite": "1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : 3.",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 661,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer",
+      "principal": ["parcours-retour-application"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        },
+        "commencer": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 859
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — étape passée",
+        "7. Restaurer sur un autre appareil — étape passée",
+        "8. Récupérer votre coffre avec le code — étape passée",
+        "9. Révoquer en urgence — étape passée"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "Seul le moyen que vous avez utilisé pour ouvrir ce coffre l'ouvre désormais. Les sauvegardes déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
+      "attendu": "Ce que vous avez à faire : Notez sur votre feuille le nouveau numéro de feuille. Pour vous servir de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours depuis le début, effacez les données du site dans les réglages du navigateur : supprimer les cookies ne suffit pas.",
+      "version": "",
+      "consigne": ""
+    },
+    "15-accueil": {
+      "url": "?etape=4",
+      "titre": "Votre application",
+      "rang": "",
+      "suivante": "",
+      "attente": "",
+      "reussite": "",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 29,
+        "y": 709,
+        "w": 302,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Le démarrage prend en général moins de trente secondes. Si l'application doit être installée de nouveau, comptez environ deux minutes. Le bouton s'efface dès le premier clic, et la progression s'affiche à sa place.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Verrouiller et rouvrir",
+      "principal": ["demarrer-application"],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 29,
+          "y": 774,
+          "w": 302,
+          "h": 49
+        },
+        "commencer": {
+          "x": 0,
+          "y": 15,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 12,
+        "y": 24,
+        "w": 336,
+        "h": 1362
+      },
+      "ombre": "rgb(17, 24, 39) 6px 6px 0px 0px",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — étape passée",
+        "7. Restaurer sur un autre appareil — étape passée",
+        "8. Récupérer votre coffre avec le code — étape passée",
+        "9. Révoquer en urgence — étape passée"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "La visite est finie. L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré dans votre coffre, sur cet appareil. Vos gestes de tous les jours sont sur cet écran : verrouiller le coffre quand vous avez fini, le sauvegarder de temps en temps, et révoquer les autres moyens de l'ouvrir si l'un d'eux a pu être vu. Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du moyen avec lequel vous avez ouvert ce coffre.",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche, puis utilisez-la. Quand vous avez fini, cliquez sur « Verrouiller mon coffre ».",
+      "version": "",
+      "consigne": ""
+    },
+    "16-application-simulee": {
+      "url": "?etape=4",
+      "titre": "Votre application",
+      "rang": "",
+      "suivante": "",
+      "attente": "",
+      "reussite": "L'application est démarrée.",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 16,
+        "y": 262,
+        "w": 328,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Le démarrage prend en général moins de trente secondes. Si l'application doit être installée de nouveau, comptez environ deux minutes. Le bouton s'efface dès le premier clic, et la progression s'affiche à sa place.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Verrouiller et rouvrir",
+      "principal": [],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 16,
+          "y": 77,
+          "w": 328,
+          "h": 49
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": false,
+        "busy": null,
+        "bg": "rgb(255, 255, 255)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 0,
+        "y": 20,
+        "w": 360,
+        "h": 629
+      },
+      "ombre": "none",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — étape passée",
+        "7. Restaurer sur un autre appareil — étape passée",
+        "8. Récupérer votre coffre avec le code — étape passée",
+        "9. Révoquer en urgence — étape passée"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "La visite est finie. L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré dans votre coffre, sur cet appareil. Vos gestes de tous les jours sont sur cet écran : verrouiller le coffre quand vous avez fini, le sauvegarder de temps en temps, et révoquer les autres moyens de l'ouvrir si l'un d'eux a pu être vu. Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du moyen avec lequel vous avez ouvert ce coffre.",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche, puis utilisez-la. Quand vous avez fini, cliquez sur « Verrouiller mon coffre ».",
+      "version": "",
+      "consigne": ""
+    },
+    "17-demarrage-simule": {
+      "url": "?etape=4",
+      "titre": "Votre application",
+      "rang": "",
+      "suivante": "",
+      "attente": "Démarrage en cours depuis 0 seconde, en général moins de trente secondes. Le démarrage commence : le coffre n'a pas encore répondu.",
+      "reussite": "L'application est démarrée.",
+      "refus": "",
+      "refusParent": "parcours",
+      "refusBox": {
+        "x": 16,
+        "y": 262,
+        "w": 328,
+        "h": 0
+      },
+      "attenteAnnoncee": "Durée : Le démarrage prend en général moins de trente secondes. Si l'application doit être installée de nouveau, comptez environ deux minutes. Le bouton s'efface dès le premier clic, et la progression s'affiche à sa place.",
+      "conseil": "Saisissez la phrase utilisée lors de la création du coffre.",
+      "continuer": "Continuer : Verrouiller et rouvrir",
+      "principal": [],
+      "champPhrase": {
+        "invalid": null,
+        "describedby": "phrase-conseil",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "champCode": {
+        "invalid": null,
+        "describedby": "parcours-code-lu",
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "scrollW": 0,
+        "clientW": 0
+      },
+      "codeLu": "",
+      "boutonsBox": {
+        "phrase": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "code": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "verrouiller": {
+          "x": 16,
+          "y": 77,
+          "w": 328,
+          "h": 49
+        },
+        "commencer": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        }
+      },
+      "boutonPhrase": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "boutonCode": {
+        "disabled": true,
+        "busy": null,
+        "bg": "rgb(243, 244, 246)"
+      },
+      "carte": {
+        "x": 0,
+        "y": 20,
+        "w": 360,
+        "h": 647
+      },
+      "ombre": "none",
+      "corps": {
+        "ceQuiVaSePasser": "14px",
+        "attendu": "14px",
+        "label": "12px",
+        "rang": "11px",
+        "refus": "16px",
+        "conseil": "16px"
+      },
+      "ouSuisJe": [
+        "1. Créer votre coffre — étape passée",
+        "2. Choisir comment l'ouvrir — étape passée",
+        "3. Recevoir et confirmer votre code de récupération — étape passée",
+        "4. Travailler dans l'application — étape passée",
+        "5. Verrouiller et rouvrir — étape passée",
+        "6. Sauvegarder votre coffre — étape passée",
+        "7. Restaurer sur un autre appareil — étape passée",
+        "8. Récupérer votre coffre avec le code — étape passée",
+        "9. Révoquer en urgence — étape passée"
+      ],
+      "ancre": {
+        "visible": false,
+        "label": "Numéro de feuille noté sur votre feuille (facultatif)",
+        "type": "text"
+      },
+      "ce": "La visite est finie. L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré dans votre coffre, sur cet appareil. Vos gestes de tous les jours sont sur cet écran : verrouiller le coffre quand vous avez fini, le sauvegarder de temps en temps, et révoquer les autres moyens de l'ouvrir si l'un d'eux a pu être vu. Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du moyen avec lequel vous avez ouvert ce coffre.",
+      "attendu": "Ce que vous avez à faire : Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche, puis utilisez-la. Quand vous avez fini, cliquez sur « Verrouiller mon coffre ».",
+      "version": "",
+      "consigne": ""
+    }
+  },
+  "creation": {
+    "ms": 491,
+    "suivi": [
+      {
+        "ms": 35,
+        "t": "Choisir comment l'ouvrir",
+        "att": "",
+        "champ": 0,
+        "btn": false,
+        "busy": null
+      },
+      {
+        "ms": 187,
+        "t": "Choisir comment l'ouvrir",
+        "att": "Ouverture en cours… Ne fermez pas l'onglet.",
+        "champ": 0,
+        "btn": true,
+        "busy": "true"
+      },
+      {
+        "ms": 339,
+        "t": "Choisir comment l'ouvrir",
+        "att": "Ouverture en cours… Ne fermez pas l'onglet.",
+        "champ": 0,
+        "btn": true,
+        "busy": "true"
+      },
+      {
+        "ms": 491,
+        "t": "Recevoir votre code de récupération",
+        "att": "",
+        "champ": 0,
+        "btn": true,
+        "busy": "false"
+      }
+    ]
+  },
+  "verrouillage": {
+    "msJusquauChamp": 315,
+    "longtasks": []
+  },
+  "ouvertureParCode": {
+    "ms": 142,
+    "premiereAnnonceMs": null,
+    "suivi": [
+      {
+        "ms": 39,
+        "titre": "Vérifier votre code de récupération",
+        "att": "",
+        "url": "?etape=3",
+        "btn": {
+          "disabled": true,
+          "busy": null,
+          "bg": "rgb(243, 244, 246)"
+        }
+      },
+      {
+        "ms": 142,
+        "titre": "Travailler dans l'application",
+        "att": "",
+        "url": "?etape=4",
+        "btn": {
+          "disabled": true,
+          "busy": null,
+          "bg": "rgb(243, 244, 246)"
+        }
+      }
+    ]
+  },
+  "phraseFausse": {
+    "ms": 811
+  },
+  "ouvertureParPhrase": {
+    "ms": 500,
+    "suivi": [
+      {
+        "ms": 37,
+        "titre": "Rouvrir votre coffre",
+        "att": "",
+        "btn": {
+          "disabled": false,
+          "busy": "false",
+          "bg": "rgb(17, 24, 39)"
+        }
+      },
+      {
+        "ms": 500,
+        "titre": "Sauvegarder votre coffre",
+        "att": "",
+        "btn": {
+          "disabled": false,
+          "busy": "false",
+          "bg": "rgb(255, 255, 255)"
+        }
+      }
+    ]
+  }
+}

@@ -127,10 +127,13 @@
               type="text"
               inputmode="numeric"
               pattern="[1-9][0-9]*"
+              aria-describedby="parcours-ancre-lue"
               autocomplete="off"
               spellcheck="false"
             />
           </p>
+          <!-- Ce que le champ dit d'une saisie qui n'est pas un numéro : une phrase tapée ici (#266 B2-7). -->
+          <p id="parcours-ancre-lue" aria-live="polite"></p>
         </div>
 
         <div data-bloc="phrase" hidden>
@@ -146,12 +149,14 @@
               type="password"
               required
               minlength="12"
-              aria-describedby="phrase-conseil"
+              aria-describedby="phrase-conseil phrase-aide"
               autocomplete="new-password"
               spellcheck="false"
             />
           </p>
           <p id="phrase-conseil" role="status" aria-live="polite"></p>
+          <!-- Le conseil qui ne change jamais : écrit une fois, sous le constat qui, lui, varie (#266 B2-4). -->
+          <p id="phrase-aide"></p>
           <p><button id="ouvrir-par-phrase" type="button">Ouvrir mon coffre</button></p>
           <!--
             Le refus de la phrase vient s'écrire ICI, sous le champ et son bouton (#266 B2-1). Pas

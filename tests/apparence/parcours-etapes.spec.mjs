@@ -13,66 +13,28 @@
 // réelle de l'étape 4 prête (aide repliée, cadre remonté, focus) reste l'E2E clavier.
 
 import {
+  FORME_DU_CODE,
+  LONG,
   PHRASE,
+  afficherLeCode,
   aucunGroupeSansNom,
   bouton,
   capturer,
   contraste,
+  eprouverLaFeuille,
   expect,
+  jusquAuTravail,
   ouvrir,
   simulerLigneDuCycle,
   test,
   titre,
   verifier,
   verifierAux,
+  verrouillerEtRecharger,
 } from "./outils-d-apparence.mjs";
 
 const DEUX_LARGEURS = [320, 1024];
 const QUATRE_LARGEURS = [320, 768, 1024, 1440];
-const FORME_DU_CODE = /^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/;
-const LONG = { timeout: 180_000 };
-
-/** Étapes 1 à 3 jusqu'à la feuille affichée ; rend le code et le numéro de feuille. */
-async function afficherLeCode(page) {
-  await ouvrir(page);
-  await bouton(page, "Commencer").click();
-  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
-  await bouton(page, "Créer mon coffre").click();
-  await bouton(page, "Afficher mon code de récupération").click({ timeout: 60_000 });
-  await expect(page.locator("#feuille-code")).toHaveText(FORME_DU_CODE);
-  const code = (await page.locator("#feuille-code").textContent()).trim();
-  const consigne = await page.locator("#parcours-consigne-feuille").textContent();
-  return { code, version: /: (\d+)\./.exec(consigne)[1] };
-}
-
-/**
- * VERROUILLE et attend le NOUVEAU document : le verrouillage recharge la coquille, mais l'ancien
- * document voit le coffre verrouillé un instant avant — et y montre déjà l'écran d'après. Attendre un
- * titre ou un champ laissait l'épreuve agir dans un document condamné (#239, Firefox en CI).
- */
-async function verrouillerEtRecharger(page) {
-  const recharge = page.waitForEvent("load");
-  await bouton(page, "Verrouiller mon coffre").click();
-  await recharge;
-}
-
-/** La feuille s'éprouve en verrouillant, puis en rouvrant par son code (#239). */
-async function eprouverLaFeuille(page, code) {
-  await bouton(page, "J'ai recopié mon code").click();
-  await verrouillerEtRecharger(page);
-  const champ = page.getByLabel("Code de récupération", { exact: true });
-  await expect(champ).toBeVisible({ timeout: 60_000 });
-  await page.waitForLoadState("load");
-  await champ.fill(code);
-  await bouton(page, "Ouvrir mon coffre avec le code").click();
-  await expect(titre(page, "Travailler dans l'application")).toBeVisible({ timeout: 60_000 });
-}
-
-async function jusquAuTravail(page) {
-  const feuille = await afficherLeCode(page);
-  await eprouverLaFeuille(page, feuille.code);
-  return feuille;
-}
 
 async function simulerRailsPret(page) {
   await simulerLigneDuCycle(page, "cycle:application-demarree");

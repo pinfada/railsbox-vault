@@ -41,11 +41,11 @@
 // et chaque écran des étapes 5 à 9 offre d'y revenir. La VISITE (neuf étapes, une fois, vers
 // l'avant) n'est pas l'USAGE (ouvrir, travailler, verrouiller, chaque jour).
 
-import { conduiteHumaine } from "./conduites-du-parcours.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { GROUPES } from "./saisie-du-code.mjs";
-import { ECRANS, ETAPES, MESSAGES, texteDAttenteDeLaPhrase } from "./textes-du-parcours.mjs";
+import { ECRANS, ETAPES, MESSAGES } from "./textes-du-parcours.mjs";
 
+export { SURCOUT_MESURE_DE_L_OUVERTURE_MS, attenteDeLaPhrase } from "./durees-annoncees.mjs";
 export {
   ECRANS,
   ECRANS_DE_L_ENTREE,
@@ -517,12 +517,15 @@ export function etapeSuivante(ecranId) {
  * @returns {{ rang: number, titre: string, statut: string }[]}
  */
 export function ouSuisJe(ecranId, origine = ORIGINES_DU_COFFRE.creation, progression = {}) {
+  // L'écran de restauration est celui d'un appareil qui n'a rien joué : les étapes 1 à 6 n'y ont pas
+  // eu lieu (#266 m3). Mais tant que la restauration n'a pas eu lieu, rien n'est dit « restauré ».
   const restaure = origine === ORIGINES_DU_COFFRE.restauration;
+  const nonJouee = restaure ? "non-jouee" : ecranId === "restaurer" ? "non-jouee-ici" : null;
   const finie = progression.visiteTerminee === true;
   const courante = finie ? 0 : (ECRANS[ecranId]?.etape ?? 0);
   const atteinte = finie ? ETAPES.length + 1 : Math.max(progression.etapeAtteinte ?? 0, courante);
   return ETAPES.map(({ rang, titre }) => {
-    if (restaure && rang < 7) return { rang, titre, statut: "non-jouee" };
+    if (nonJouee !== null && rang < 7) return { rang, titre, statut: nonJouee };
     if (rang === courante) return { rang, titre, statut: "en-cours" };
     if (rang === 9 && ecranId === "termine-sans-revoquer") {
       return { rang, titre, statut: "sans-revoquer" };
@@ -652,7 +655,7 @@ export function texteSansCode(texte) {
 export function annonceDeLaSaisie({ symbolesLus, envoyable, code }) {
   if (symbolesLus === 0) return "";
   if (envoyable) return MESSAGES.saisieComplete;
-  if (code !== null) return conduiteHumaine(code);
+  if (code !== null) return MESSAGES.saisieFausse;
   return MESSAGES.saisieIncomplete(symbolesLus, SYMBOLES_DE_LA_FEUILLE);
 }
 
@@ -664,33 +667,23 @@ export function annonceDeLaSaisie({ symbolesLus, envoyable, code }) {
  */
 const SYMBOLES_DE_LA_FEUILLE = GROUPES * 4;
 
-/**
- * L'attente d'une ouverture par phrase, dite AVANT le clic.
- *
- * @param {number} attenteMs l'attente annoncée par `annonceDAttente` pour ce navigateur
- */
-export function attenteDeLaPhrase(attenteMs) {
-  const secondes = Math.ceil((attenteMs + SURCOUT_MESURE_DE_L_OUVERTURE_MS) / 1000);
-  return texteDAttenteDeLaPhrase(`environ ${secondes} secondes`);
-}
-
-/**
- * Ce que le geste entier ajoute à la dérivation seule (#242, défaut 13) : la création annoncée
- * « moins d'une seconde » a été MESURÉE à 1,9 s sous Chrome par la recette QA du 18/09/2026, pour
- * une dérivation dont le p95 publié est de 446 ms (ADR 0021). L'écart — dériver, écrire l'enveloppe,
- * ouvrir le volume, relire l'inventaire — est annoncé avec elle, arrondi à la seconde supérieure.
- */
-export const SURCOUT_MESURE_DE_L_OUVERTURE_MS = 1500;
+/** Ce que la page dit des deux phases d'un démarrage ORDINAIRE ; « données » ne s'y produit pas. */
+const PHASES_D_UN_DEMARRAGE = Object.freeze({
+  telechargement: MESSAGES.phasePreparation,
+  demarrage: MESSAGES.phaseDemarrage,
+});
 
 /**
  * La PROGRESSION d'un démarrage, à partir de ce que la page a réellement observé : le temps écoulé et
  * les signes de vie envoyés par le coffre pendant le geste.
  *
- * @param {{ ecouleMs: number, signesDeVie: number, premier?: boolean }} observation `premier` : le
- *   premier démarrage annonce deux minutes, les suivants moins de trente secondes (#266 B2-6)
+ * @param {{ ecouleMs: number, signesDeVie: number, premier?: boolean, phase?: string | null }}
+ *   observation `premier` : le premier démarrage annonce deux minutes, les suivants moins de trente
+ *   secondes (#266 B2-6) ; `phase` : celle du dernier battement, dite quand elle est connue (#242, 4)
  */
-export function progressionDuDemarrage({ ecouleMs, signesDeVie, premier = true }) {
+export function progressionDuDemarrage({ ecouleMs, signesDeVie, premier = true, phase = null }) {
   const secondes = Math.max(0, Math.round(ecouleMs / 1000));
   const vie = signesDeVie > 0 ? MESSAGES.signesDeVie(signesDeVie) : MESSAGES.premierSigneDeVie;
-  return MESSAGES.demarrageEnCours(secondes, vie, premier);
+  const etape = PHASES_D_UN_DEMARRAGE[phase] ?? "";
+  return MESSAGES.demarrageEnCours(secondes, `${vie} ${etape}`.trim(), premier);
 }

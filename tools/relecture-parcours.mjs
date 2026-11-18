@@ -24,7 +24,7 @@ import prettier from "prettier";
 
 import { annonceDAttente } from "../src/coquille/attente-annoncee.mjs";
 import { CONSEIL_DE_REOUVERTURE } from "../src/coquille/interface-de-deverrouillage.mjs";
-import { SURCOUT_MESURE_DE_L_OUVERTURE_MS } from "../src/coquille/parcours.mjs";
+import { dureeDeLaPhrase } from "../src/coquille/durees-annoncees.mjs";
 import { evaluerPhrase } from "../src/coquille/politique-de-phrase.mjs";
 import {
   CLASSEMENT_DES_CONDUITES,
@@ -57,6 +57,7 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
   "code-verifier": [
     "saisieIncomplete",
     "saisieComplete",
+    "saisieFausse",
     "ouvertureEnCours",
     "feuilleEprouvee",
     "coffreOuvert",
@@ -85,6 +86,7 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "miseAJourEnCoursDepuis",
     "plusTardEnCoursDepuis",
     "phaseTelechargement",
+    "phasePreparation",
     "phaseDemarrage",
     "phaseDonnees",
     "versionDeLApplication",
@@ -115,6 +117,7 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "miseAJourEnCoursDepuis",
     "plusTardEnCoursDepuis",
     "phaseTelechargement",
+    "phasePreparation",
     "phaseDemarrage",
     "phaseDonnees",
     "versionDeLApplication",
@@ -146,7 +149,13 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
   ],
   restaurer: ["restaurationEnCours", "restauree"],
   "recuperer-preparer": ["verrouillageEnCours"],
-  recuperer: ["saisieIncomplete", "saisieComplete", "ouvertureEnCours", "coffreOuvert"],
+  recuperer: [
+    "saisieIncomplete",
+    "saisieComplete",
+    "saisieFausse",
+    "ouvertureEnCours",
+    "coffreOuvert",
+  ],
   revoquer: ["avertissementDeRevocation", "revoque", "revoqueSansRien"],
 });
 
@@ -264,7 +273,9 @@ function texteDuMessage(nom) {
   const message = MESSAGES[nom];
   if (nom.startsWith("dureeDe")) return MESSAGES.duree(message);
   if (typeof message !== "function") return message;
-  if (nom === "demarrageEnCours") return message(N, MESSAGES.signesDeVie(N));
+  if (nom === "demarrageEnCours") {
+    return `${message(N, MESSAGES.signesDeVie(N))} (la phrase dit en plus l'étape en cours : « ${MESSAGES.phasePreparation} » ou « ${MESSAGES.phaseDemarrage} »)`;
+  }
   // Le pluriel, puis le SINGULIER : un seul moyen retiré se lit autrement (#246).
   if (nom === "revoque") return `${message(N, "V")} — ou, pour un seul moyen — ${message(1, "V")}`;
   if (nom === "miseAJourEnCoursDepuis" || nom === "plusTardEnCoursDepuis") {
@@ -313,11 +324,9 @@ function citation(lignes) {
   return lignes.map((ligne) => `> ${ligne}`).join("\n>\n");
 }
 
-function attenteDeLaPhraseRelue() {
-  const duree = (moteur) => {
-    const { attenteMs } = annonceDAttente({ moyen: "phrase", moteur });
-    return `environ ${Math.ceil((attenteMs + SURCOUT_MESURE_DE_L_OUVERTURE_MS) / 1000)} secondes`;
-  };
+function attenteDeLaPhraseRelue(reouverture) {
+  const duree = (moteur) =>
+    dureeDeLaPhrase(annonceDAttente({ moyen: "phrase", moteur }).attenteMs, { reouverture });
   return texteDAttenteDeLaPhrase(`${duree("chromium")} (dans Firefox : « ${duree("firefox")} »)`);
 }
 
@@ -327,7 +336,8 @@ function sectionDEcran(id, libelles) {
   if (ecran.casRares !== null)
     lignes.push(`Replié sous « Je n'ai plus ma feuille » : ${ecran.casRares}`);
   const attente =
-    ecran.attente ?? (ecran.blocs.includes("phrase") ? attenteDeLaPhraseRelue() : null);
+    ecran.attente ??
+    (ecran.blocs.includes("phrase") ? attenteDeLaPhraseRelue(id !== "choisir") : null);
   if (attente !== null) lignes.push(MESSAGES.duree(attente));
   const morceaux = [`### Écran : ${ecran.titre}`, "", citation(lignes)];
   const libellesDesBlocs = ecran.blocs.flatMap((bloc) => LIBELLES_DES_BLOCS[bloc]);

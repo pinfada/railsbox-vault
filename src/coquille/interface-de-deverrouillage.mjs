@@ -43,9 +43,11 @@ import {
   feuilleDeRecuperation,
   versionANoter,
 } from "./feuille-de-recuperation.mjs";
+import { REFUS_SANS_CODE } from "./conduites-du-parcours.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
 import {
   CODE_PHRASE_FAIBLE,
+  CONSEIL_DE_CHOIX_DE_PHRASE,
   evaluerPhrase,
   LONGUEUR_MINIMALE_PHRASE,
 } from "./politique-de-phrase.mjs";
@@ -138,9 +140,7 @@ export function ancreSaisie(texte) {
     return {
       version: null,
       valide: false,
-      aveu:
-        "La version notée sur la feuille est un nombre entier, à partir de 1. Laissez le champ " +
-        "vide si vous n'en avez pas noté — la coquille dira alors ce qu'elle ne protège plus.",
+      aveu: REFUS_SANS_CODE.versionMalTapee.conduite,
     };
   }
   return { version: Number(brut), valide: true, aveu: ancreOpposee(Number(brut)) };
@@ -394,7 +394,9 @@ function relireLaPhrase(contexte) {
   noeuds.phrase.minLength = creation ? LONGUEUR_MINIMALE_PHRASE : 1;
   noeuds.phrase.autocomplete = creation ? "new-password" : "current-password";
   const verdict = evaluerPhrase(noeuds.phrase.value);
-  dire(noeuds.phraseConseil, creation ? verdict.message : CONSEIL_DE_REOUVERTURE);
+  // Le constat varie avec la saisie, le conseil non : l'un se pose en direct, l'autre une fois (B2-4).
+  dire(noeuds.phraseConseil, creation ? verdict.constat : CONSEIL_DE_REOUVERTURE);
+  dire(noeuds.phraseAide, creation ? CONSEIL_DE_CHOIX_DE_PHRASE : "");
   return !creation || verdict.admise;
 }
 
@@ -515,6 +517,7 @@ function poignees(doc, racine) {
     aveu: trouver("ancre-aveu"),
     phrase: trouver("saisie-phrase"),
     phraseConseil: trouver("phrase-conseil"),
+    phraseAide: trouver("phrase-aide"),
     ouvrirParPhrase: trouver("ouvrir-par-phrase"),
     ouvrirParPasskey: trouver("ouvrir-par-passkey"),
     code: trouver("saisie-code"),

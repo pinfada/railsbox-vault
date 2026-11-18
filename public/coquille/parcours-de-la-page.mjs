@@ -16,7 +16,7 @@
 // public suffit. Ses OBSERVATEURS de ces relevés vivent à part, dans `observateurs-du-parcours.mjs`
 // (scission du 19/09/2026, #250) ; ce module garde l'écran, la progression et les gestes.
 
-import { relierLaSaisieDuCode, relierLeRefusAuChamp } from "./refus-du-champ.mjs";
+import { relierLesChamps } from "./refus-du-champ.mjs";
 import { ecrireLaPromesse } from "./promesse-de-l-entree.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
@@ -56,6 +56,7 @@ import {
 } from "/src/coquille/parcours.mjs";
 import { brancherLesObservateurs } from "./observateurs-du-parcours.mjs";
 import { surveillerLaPression } from "./pression-du-bouton.mjs";
+import { ancreSaisie } from "/src/coquille/interface-de-deverrouillage.mjs";
 import { etatDeLaSaisie } from "/src/coquille/saisie-du-code.mjs";
 
 /** Les sections qui regroupent des blocs : cachées quand aucun de leurs blocs n'est montré. */
@@ -116,9 +117,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     boutonDuGeste: null,
   };
 
-  const attenteDeLaPhraseAnnoncee = attenteDeLaPhrase(
-    annonceDAttente({ moyen: "phrase", moteur }).attenteMs,
-  );
+  const attenteMs = annonceDAttente({ moyen: "phrase", moteur }).attenteMs;
+  // La création et la réouverture n'annoncent pas la même durée (#266 m1).
+  const attenteDeLaPhraseAnnoncee = (ecranId) =>
+    attenteDeLaPhrase(attenteMs, { reouverture: ecranId !== "choisir" });
   const passkeyConnue = typeof globalThis.PublicKeyCredential !== "undefined";
 
   /** La seule écriture du parcours dans le document : jamais un code de récupération en clair. */
@@ -478,7 +480,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const attente =
       (surLApplication ? accueil.attenteDuDephasage(rapport.dephasage) : null) ??
       ecran.attente ??
-      (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee : "");
+      (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee(ecranId) : "");
     dire("parcours-attente-annoncee", attente === "" ? "" : MESSAGES.duree(attente));
     dire("parcours-cas-rares", ecran.casRares ?? "");
     noeud("parcours-feuille-perdue").hidden = ecran.casRares === null;
@@ -638,20 +640,15 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.feuille;
   });
 
-  const refusDuChamp = relierLeRefusAuChamp({
+  relierLesChamps({
     doc,
     noeud,
     gesteCourant: () => etat.idDuGeste,
     dire,
     jugeLaValeur: refusJugeLaValeur,
-  });
-
-  relierLaSaisieDuCode({
-    noeud,
-    dire,
-    lire: (texte) => etatDeLaSaisie(texte),
-    annoncer: annonceDeLaSaisie,
-    relier: refusDuChamp.relier,
+    lireLeCode: etatDeLaSaisie,
+    annoncerLeCode: annonceDeLaSaisie,
+    lireLAncre: ancreSaisie,
   });
 
   for (const [champ, boutons] of Object.entries(ENTREE_VAUT)) {

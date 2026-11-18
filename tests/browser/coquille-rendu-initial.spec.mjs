@@ -54,7 +54,7 @@ test.describe("le rendu initial et la saisie (#266 Q1, S2)", () => {
     await champ.fill(PHRASE);
     await expect(refus).toHaveText("");
     await expect(champ).not.toHaveAttribute("aria-invalid");
-    await expect(champ).toHaveAttribute("aria-describedby", "phrase-conseil");
+    await expect(champ).toHaveAttribute("aria-describedby", "phrase-conseil phrase-aide");
   });
 
   test("taper le code ne déplace pas « Ouvrir mon coffre avec le code » avant le clic", async ({

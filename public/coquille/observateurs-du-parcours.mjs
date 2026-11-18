@@ -49,6 +49,8 @@ const SONDE_DE_LA_PHASE_MS = 1_000;
  */
 export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, allerA, rendre }) {
   function refuser(code) {
+    // Le CODE seul, jamais la valeur refusée : la console aide qui cherche, elle ne garde rien (#266 m11).
+    console.warn(`[RailsBox Vault] refus : ${code ?? "sans code"}`);
     dire("parcours-reussite", "");
     dire("parcours-refus", conduiteHumaine(code));
   }
@@ -232,7 +234,7 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
       const premier = etat.progression?.visiteTerminee !== true;
       dire(
         "parcours-attente",
-        chemin ?? progressionDuDemarrage({ ecouleMs, signesDeVie, premier }),
+        chemin ?? progressionDuDemarrage({ ecouleMs, signesDeVie, premier, phase }),
       );
     };
     noeud("parcours-progression").hidden = false;

@@ -137,7 +137,7 @@ function saisieIncomplete(symbolesLus, decoupe) {
     decoupe,
     envoyable: false,
     code: null,
-    message: `${symbolesLus} symbole(s) sur ${SYMBOLES_TOTAL}.`,
+    message: `${symbolesLus} symbole${symbolesLus > 1 ? "s" : ""} sur ${SYMBOLES_TOTAL}.`,
   });
 }
 
