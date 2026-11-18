@@ -1,0 +1,203 @@
+{
+  "largeur": 1280,
+  "ralenti": 1,
+  "creation": {
+    "ms": 589,
+    "premiereAnnonceMs": 157,
+    "echantillons": [
+      {
+        "ms": 34,
+        "titre": "Choisir comment l'ouvrir",
+        "rang": "Étape 2 sur 9",
+        "suivante": "Étape suivante : Recevoir et confirmer votre code de récupération.",
+        "attente": "",
+        "url": "?etape=2",
+        "btnPhrase": {
+          "disabled": false,
+          "busy": null,
+          "bg": "rgb(17, 24, 39)",
+          "visible": true
+        },
+        "btnCode": {
+          "disabled": true,
+          "bg": "rgb(243, 244, 246)",
+          "visible": false
+        },
+        "ce": "Vous choisissez le secret qui ouvrira votre coffre. Le plus simple est une phrase : plusieurs mots, faciles à retenir po"
+      },
+      {
+        "ms": 589,
+        "titre": "Recevoir votre code de récupération",
+        "rang": "Étape 3 sur 9",
+        "suivante": "Étape suivante : Travailler dans l'application.",
+        "attente": "",
+        "url": "?etape=3",
+        "btnPhrase": {
+          "disabled": false,
+          "busy": "false",
+          "bg": "rgb(255, 255, 255)",
+          "visible": false
+        },
+        "btnCode": {
+          "disabled": true,
+          "bg": "rgb(243, 244, 246)",
+          "visible": false
+        },
+        "ce": "Si vous oubliez votre phrase, seul un code de récupération pourra rouvrir votre coffre. Sans lui, une phrase oubliée est"
+      }
+    ]
+  },
+  "verrouillage": {
+    "msJusquauChamp": 311
+  },
+  "codeParCode": {
+    "ms": 345,
+    "premiereAnnonceMs": null,
+    "echantillons": [
+      {
+        "ms": 223,
+        "titre": "Vérifier votre code de récupération",
+        "rang": "Étape 3 sur 9",
+        "suivante": "Étape suivante : Travailler dans l'application.",
+        "attente": "",
+        "url": "?etape=3",
+        "btnPhrase": {
+          "disabled": false,
+          "busy": null,
+          "bg": "rgb(255, 255, 255)",
+          "visible": false
+        },
+        "btnCode": {
+          "disabled": true,
+          "bg": "rgb(243, 244, 246)",
+          "visible": true
+        },
+        "ce": "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : il n'existe que sur vot"
+      },
+      {
+        "ms": 345,
+        "titre": "Travailler dans l'application",
+        "rang": "Étape 4 sur 9",
+        "suivante": "Étape suivante : Verrouiller et rouvrir.",
+        "attente": "",
+        "url": "?etape=4",
+        "btnPhrase": {
+          "disabled": false,
+          "busy": null,
+          "bg": "rgb(255, 255, 255)",
+          "visible": false
+        },
+        "btnCode": {
+          "disabled": true,
+          "bg": "rgb(243, 244, 246)",
+          "visible": false
+        },
+        "ce": "L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré dans votre coffre, sur c"
+      }
+    ]
+  },
+  "carteEtape4": {
+    "w": 520,
+    "x": 380
+  },
+  "apresRechargement": {
+    "titre": "Rouvrir votre coffre",
+    "rang": "",
+    "suivante": "",
+    "attente": "",
+    "url": "?etape=4",
+    "btnPhrase": {
+      "disabled": false,
+      "busy": null,
+      "bg": "rgb(17, 24, 39)",
+      "visible": true
+    },
+    "btnCode": {
+      "disabled": true,
+      "bg": "rgb(243, 244, 246)",
+      "visible": false
+    },
+    "ce": "Votre coffre est verrouillé. Il s'ouvre avec la phrase que vous avez choisie. Si vous avez noté un numéro de feuille sur"
+  },
+  "reouverturePhrase": {
+    "ms": 600,
+    "premiereAnnonceMs": 165,
+    "echantillons": [
+      {
+        "ms": 44,
+        "titre": "Rouvrir votre coffre",
+        "rang": "",
+        "suivante": "",
+        "attente": "",
+        "url": "?etape=4",
+        "btnPhrase": {
+          "disabled": false,
+          "busy": null,
+          "bg": "rgb(17, 24, 39)",
+          "visible": true
+        },
+        "btnCode": {
+          "disabled": true,
+          "bg": "rgb(243, 244, 246)",
+          "visible": false
+        },
+        "ce": "Votre coffre est verrouillé. Il s'ouvre avec la phrase que vous avez choisie. Si vous avez noté un numéro de feuille sur"
+      },
+      {
+        "ms": 600,
+        "titre": "Travailler dans l'application",
+        "rang": "Étape 4 sur 9",
+        "suivante": "Étape suivante : Verrouiller et rouvrir.",
+        "attente": "",
+        "url": "?etape=4",
+        "btnPhrase": {
+          "disabled": false,
+          "busy": "false",
+          "bg": "rgb(255, 255, 255)",
+          "visible": false
+        },
+        "btnCode": {
+          "disabled": true,
+          "bg": "rgb(243, 244, 246)",
+          "visible": false
+        },
+        "ce": "L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré dans votre coffre, sur c"
+      }
+    ]
+  },
+  "apresReouverture": {
+    "titre": "Travailler dans l'application",
+    "rang": "Étape 4 sur 9",
+    "suivante": "Étape suivante : Verrouiller et rouvrir.",
+    "attente": "",
+    "url": "?etape=4",
+    "btnPhrase": {
+      "disabled": false,
+      "busy": "false",
+      "bg": "rgb(255, 255, 255)",
+      "visible": false
+    },
+    "btnCode": {
+      "disabled": true,
+      "bg": "rgb(243, 244, 246)",
+      "visible": false
+    },
+    "ce": "L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré dans votre coffre, sur c"
+  },
+  "restaurationVierge": {
+    "titre": "Restaurer une sauvegarde",
+    "rang": "Étape 7 sur 9",
+    "suivante": "Étape suivante : Récupérer votre coffre avec le code.",
+    "ou": [
+      "1. Créer votre coffre — non jouée sur cet appareil : le coffre y est restauré",
+      "2. Choisir comment l'ouvrir — non jouée sur cet appareil : le coffre y est restauré",
+      "3. Recevoir et confirmer votre code de récupération — non jouée sur cet appareil : le coffre y est restauré",
+      "4. Travailler dans l'application — non jouée sur cet appareil : le coffre y est restauré",
+      "5. Verrouiller et rouvrir — non jouée sur cet appareil : le coffre y est restauré",
+      "6. Sauvegarder votre coffre — non jouée sur cet appareil : le coffre y est restauré",
+      "7. Restaurer sur un autre appareil — vous êtes ici",
+      "8. Récupérer votre coffre avec le code — à venir",
+      "9. Révoquer en urgence — à venir"
+    ]
+  }
+}
