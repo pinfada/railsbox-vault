@@ -77,15 +77,28 @@ const RENONCIATION = Object.freeze({
 
 const TAILLE_DU_JOURNAL = 64;
 
-function verifierLesExecuteurs(executeurs) {
+/**
+ * COPIE les exécuteurs à la création, dans un objet PRIVÉ gelé, par UNE lecture du descripteur de chaque
+ * propriété PROPRE : un accesseur (qui pourrait exécuter du code entre la garde et l'appel), une propriété
+ * héritée ou une valeur qui n'est pas une fonction est une `TypeError`. L'objet de l'appelant n'est plus
+ * jamais relu : rien de ce que l'appelant lui fait ensuite n'atteint le magasin (#315).
+ */
+function resoudreLesExecuteurs(executeurs) {
   if (executeurs === null || typeof executeurs !== "object") {
     throw new TypeError("« executeurs » est obligatoire.");
   }
+  const prives = {};
   for (const nom of EXECUTEURS_REQUIS) {
-    if (typeof executeurs[nom] !== "function") {
-      throw new TypeError(`l'exécuteur « ${nom} » est obligatoire et doit être une fonction.`);
+    const descripteur = Object.getOwnPropertyDescriptor(executeurs, nom);
+    // Un accesseur n'a pas de `value` : la même vérification le refuse (descripteur de DONNÉES exigé).
+    if (descripteur === undefined || typeof descripteur.value !== "function") {
+      throw new TypeError(
+        `l'exécuteur « ${nom} » est obligatoire : une propriété propre de données, de type fonction.`,
+      );
     }
+    prives[nom] = descripteur.value;
   }
+  return Object.freeze(prives);
 }
 
 // --- Le journal interne (I20′) : aucun exécuteur, aucune récursion ----------------------------------
@@ -169,18 +182,18 @@ function evenementDEchec(type, erreur) {
 }
 
 /** L'ENVOI : l'issue de la promesse est classée par `evenementDeLaReponse`, jamais par l'appelant. */
-function lancerEnvoyer(ctx) {
-  demarrer(ctx.executeurs.envoyer).then(
+function lancerEnvoyer(ctx, effet, fonction) {
+  demarrer(fonction).then(
     (valeur) => enfiler(ctx, { type: evenementDeLaReponse({ ok: true, valeur }) }),
     (erreur) => enfiler(ctx, evenementDEchec(evenementDeLaReponse({ ok: false, erreur }), erreur)),
   );
 }
 
 /** La LECTURE : la normalisation est faite ICI ; un échec devient `relecture-echouee` (I19). */
-function lancerRelire(ctx, effet) {
+function lancerRelire(ctx, effet, fonction) {
   const { lecture } = effet;
   const ouvert = ctx.etat.phase === "SL" || ctx.etat.phase === "RL";
-  demarrer(ctx.executeurs.relire, lecture).then(
+  demarrer(fonction, lecture).then(
     (valeur) => {
       const normalise = normaliserLInventaire(valeur, { ouvert });
       enfiler(
@@ -195,22 +208,21 @@ function lancerRelire(ctx, effet) {
 }
 
 /** La MODIFICATION : toute issue relance la lecture (e20) ; une mort du Worker est e7. */
-function lancerModification(ctx) {
-  const lanceur = ctx.lanceur;
+function lancerModification(ctx, effet, fonction) {
   const fin = (erreur) =>
     codeDeLErreur(erreur) === CODES_REFUS_COQUILLE.workerMort
       ? evenementDEchec("worker-mort", erreur)
       : { type: "modification-terminee" };
-  demarrer(lanceur).then(
+  demarrer(fonction).then(
     () => enfiler(ctx, { type: "modification-terminee" }),
     (erreur) => enfiler(ctx, fin(erreur)),
   );
 }
 
 /** `noter` : l'indice n'est appliqué que si AUCUNE remise à zéro n'a été demandée depuis (rang). */
-function lancerNoter(ctx) {
+function lancerNoter(ctx, effet, fonction) {
   const rang = ctx.rangIndice;
-  demarrer(ctx.executeurs.noter).then(
+  demarrer(fonction).then(
     () => {
       if (ctx.rangIndice === rang) enfiler(ctx, { type: "indice-change", valeur: true });
     },
@@ -227,21 +239,18 @@ const LANCEURS = Object.freeze({
 
 // --- Les effets --------------------------------------------------------------------------------------
 
+/** Un effet qui n'est pas un lanceur : miroir, diagnostic, affichage, navigation. */
 function executerUnEffet(ctx, effet) {
-  const lanceur = LANCEURS[effet.nom];
-  if (lanceur !== undefined) {
-    try {
-      lanceur(ctx, effet);
-    } catch (erreur) {
-      journaliser(ctx, effet.nom, erreur);
-    }
-    return;
-  }
   if (effet.nom === "masquer") masquerVerifie(ctx);
   else if (effet.nom === "publier") appeler(ctx, "publier", effet.lecture, effet.donnees);
   else if (effet.nom === "consigner") {
     appeler(ctx, "consigner", { evenement: effet.evenement, code: effet.code });
   } else appeler(ctx, effet.nom);
+}
+
+/** La fonction d'un lanceur, RÉSOLUE avant toute garde : celle copiée à la création, ou celle de `modifier`. */
+function fonctionDe(ctx, effet) {
+  return effet.nom === "lancer" ? ctx.lanceur : ctx.executeurs[EXECUTEUR_DE[effet.nom]];
 }
 
 /**
@@ -263,11 +272,22 @@ function renoncer(ctx, effet) {
 function executerLesEffets(ctx, effets, cible, dejaMasque) {
   for (const effet of effets) {
     if (effet.nom === "masquer" && dejaMasque) continue;
+    const lanceur = LANCEURS[effet.nom];
+    if (lanceur === undefined) {
+      executerUnEffet(ctx, effet);
+      continue;
+    }
+    // Fonction résolue, PUIS la garde relue, PUIS l'appel : aucune lecture de propriété entre les deux.
+    const fonction = fonctionDe(ctx, effet);
     if (LANCEURS_D_ENVELOPPE.includes(effet.nom) && !transitionIntacte(ctx, cible)) {
       renoncer(ctx, effet);
       continue;
     }
-    executerUnEffet(ctx, effet);
+    try {
+      lanceur(ctx, effet, fonction);
+    } catch (erreur) {
+      journaliser(ctx, effet.nom, erreur);
+    }
   }
 }
 
@@ -371,9 +391,8 @@ function definirLIndice(ctx, valeur) {
  * @param {{ executeurs: object, indice: boolean }} options `indice` : booléen OBLIGATOIRE
  */
 export function creerLaRevocation({ executeurs, indice } = {}) {
-  verifierLesExecuteurs(executeurs);
   const ctx = {
-    executeurs,
+    executeurs: resoudreLesExecuteurs(executeurs),
     etat: etatInitial(indice),
     termine: false,
     enApplication: false,

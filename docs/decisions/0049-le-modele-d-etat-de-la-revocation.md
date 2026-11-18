@@ -81,6 +81,17 @@ effectif et idempotent. Le choix est « **refusé** » plutôt que « différé 
 laisserait partir l'envoi, c'est le défaut reproduit par la revue (`masquer()` appelait `terminer()`
 puis rendait `true`).
 
+**Exécuteurs copiés à la création (revue de #315, 2ᵉ tour).** Le magasin ne garde jamais l'objet de
+l'appelant : à la création, chaque exécuteur est copié dans un objet privé gelé par UNE lecture du
+descripteur de sa propriété PROPRE ; un accesseur (qui pourrait exécuter du code entre la garde et
+l'appel), une propriété héritée ou une valeur qui n'est pas une fonction est une `TypeError`. Rien
+de ce que l'appelant fait ensuite à son objet (remplacer, supprimer, ajouter, redéfinir en
+accesseur) n'atteint le magasin ; un `Proxy` n'est lu que par son descripteur, jamais par `get`. Les
+lanceurs reçoivent la fonction déjà résolue ; l'ordre est : fonction résolue, garde « transition
+intacte » relue, appel — sans aucune lecture de propriété entre les deux (épreuve statique de
+l'ordre). Les exécuteurs sont appelés avec l'objet privé pour `this` : un exécuteur qui dépend de
+son `this` d'origine doit être lié par l'appelant.
+
 **Aucun ensemble exporté.** Les ensembles de phases ne sont jamais exportés :
 `Object.freeze(new Set(...))` n'empêche ni `add`, ni `delete`, ni `clear`, et un appelant faisait
 dire « révoqué » à la phase I pour toutes les instances. Seuls des **prédicats** (`phaseConnue`,
@@ -158,6 +169,9 @@ règle (`masquer`, `consigner`, `vue-a-rendre`) ne sont pas répétés ici : ils
   ordres de réponse, `noter` et la remise à zéro (M-a à M-f).
 - `tests/unit/coquille-revocation-reponse.test.mjs` : le contrat du succès (R8.6), l'inventaire
   (N1′-N12), la totalité.
+- `tests/unit/coquille-revocation-executeurs.test.mjs` : accesseur, propriété héritée, valeur non
+  fonction (10 exécuteurs chacun), propriété remplacée, supprimée ou ajoutée après la création,
+  `Proxy` dont `get` viole, ordre fonction résolue → garde → appel.
 - `tests/unit/coquille-revocation-purete.test.mjs` : aucun DOM, aucune horloge, aucun état de
   module.
 - `tools/mutants-de-la-revocation.mjs`, dans la campagne `coquille` : un mutant par cellule gardée
@@ -168,8 +182,9 @@ règle (`masquer`, `consigner`, `vue-a-rendre`) ne sont pas répétés ici : ils
   d'une exception interne en V (inatteignable par l'API publique) ; dans la fermeture, les
   relectures « instance vivante » et « état cible courant » (la réentrance étant refusée,
   `terminer()` ne peut pas s'exécuter pendant une transition et l'état ne peut pas changer : seule
-  la violation est observable) et la renonciation de `envoyer` (aucun exécuteur ne s'exécute entre
-  l'affectation de V et `envoyer`).
+  la violation est observable) la garde `descripteur === undefined` de la copie des exécuteurs (lire
+  `.value` d'`undefined` lève la même `TypeError`) et la renonciation de `envoyer` (aucun exécuteur
+  ne s'exécute entre l'affectation de V et `envoyer`).
 
 ## Critères de C2 (ce que C1 NE fait PAS, et que C2 doit prouver — BLOQUANTS)
 

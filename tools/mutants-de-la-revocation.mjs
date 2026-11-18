@@ -9,7 +9,8 @@
 // `!ctx.termine` de `masquerVerifie`, le test `ctx.termine` de `renoncer` et la renonciation de `envoyer`
 // (la réentrance étant refusée, `terminer()` ne s'exécute jamais pendant une transition et aucun exécuteur
 // ne s'exécute entre l'affectation de V et `envoyer`) ; la garde `etat.lecture !== null` de `classeDeLaLecture` (un identifiant entier
-// n'égale jamais `null`) ; les cellules « lecture courante » des phases sans lecture (inatteignables).
+// n'égale jamais `null`) ; la garde `descripteur === undefined` de `resoudreLesExecuteurs` (lire `.value` d'`undefined`
+// lève la même TypeError) ; les cellules « lecture courante » des phases sans lecture (inatteignables).
 
 const SRC = "src/coquille/";
 const MODELE = `${SRC}modele-de-la-revocation.mjs`;
@@ -25,6 +26,7 @@ const INVARIANTS = `${T}invariants.test.mjs`;
 const MAG = `${T}magasin.test.mjs`;
 const REP = `${T}reponse.test.mjs`;
 const FERMETURE = `${T}fermeture.test.mjs`;
+const EXEC = `${T}executeurs.test.mjs`;
 const PURETE = `${T}purete.test.mjs`;
 
 /** `[fichier, avant, apres, nom, garde, epreuves]` → une entrée de la campagne. */
@@ -1949,11 +1951,35 @@ const AUTRES = [
   // --- magasin ---------------------------------------------------------------------------------------------
   [
     MAGASIN,
-    'if (typeof executeurs[nom] !== "function") {',
-    "if (false) {",
-    "un exécuteur manquant est toléré à la création",
-    "verifierLesExecuteurs — prévalidation (I16′)",
-    [MAG],
+    'descripteur === undefined || typeof descripteur.value !== "function"',
+    "false",
+    "un exécuteur qui n'est pas une fonction est toléré à la création",
+    "resoudreLesExecuteurs — prévalidation (I16′)",
+    [MAG, EXEC],
+  ],
+  [
+    MAGASIN,
+    "  return Object.freeze(prives);",
+    "  return executeurs;",
+    "la copie des exécuteurs est retirée : l'objet de l'appelant est relu à chaque appel (#315)",
+    "resoudreLesExecuteurs — copie gelée, jamais relue",
+    [EXEC],
+  ],
+  [
+    MAGASIN,
+    "    const descripteur = Object.getOwnPropertyDescriptor(executeurs, nom);",
+    "    const descripteur = { value: executeurs[nom] };",
+    "les exécuteurs sont lus par `get` (accesseurs exécutés, propriétés héritées acceptées) au lieu du descripteur",
+    "resoudreLesExecuteurs — lecture du descripteur propre",
+    [EXEC],
+  ],
+  [
+    MAGASIN,
+    "    const fonction = fonctionDe(ctx, effet);\n    if (LANCEURS_D_ENVELOPPE.includes(effet.nom) && !transitionIntacte(ctx, cible)) {\n      renoncer(ctx, effet);\n      continue;\n    }",
+    "    if (LANCEURS_D_ENVELOPPE.includes(effet.nom) && !transitionIntacte(ctx, cible)) {\n      renoncer(ctx, effet);\n      continue;\n    }\n    const fonction = fonctionDe(ctx, effet);",
+    "la fonction du lanceur est résolue APRÈS la garde (une lecture entre la garde et l'appel)",
+    "executerLesEffets — fonction résolue, garde, appel",
+    [EXEC],
   ],
   [
     MAGASIN,

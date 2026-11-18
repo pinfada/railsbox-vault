@@ -1735,9 +1735,10 @@ affirmation négative après un envoi ; aucune donnée (moyens, nombre de codes,
 n'est lisible hors des états où elle a été relue, et les portes ne prennent aucune source ; un
 succès dont la forme ne respecte pas le contrat du Worker (un seul emplacement conservé, comptes
 cohérents) laisse la révocation INCERTAINE ; un exécuteur qui rappelle le magasin pendant une
-transition (même en avalant le refus) n'en laisse partir aucun lanceur d'enveloppe ; les ensembles
-de phases ne sont pas muables par un appelant ; un échec de lecture ne défait pas un succès acquitté
-et ne l'invente pas.
+transition (même en avalant le refus) n'en laisse partir aucun lanceur d'enveloppe ; les exécuteurs
+sont copiés à la création (un accesseur ou une propriété héritée est refusé, l'objet de l'appelant
+n'est plus relu) ; les ensembles de phases ne sont pas muables par un appelant ; un échec de lecture
+ne défait pas un succès acquitté et ne l'invente pas.
 
 **Ce que le modèle ne garantit pas** (limites écrites, ADR 0049) :
 
