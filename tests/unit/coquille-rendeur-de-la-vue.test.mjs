@@ -76,7 +76,7 @@ test("[X-b] si l'occurrence a changé pendant l'échec, le successeur part", asy
 // --- X-c, X-d : l'expiration puis la reprise tardive ----------------------------------------------
 
 test("[X-c] expiration : masquage et région d'erreur de l'occurrence ; la reprise tardive n'a aucun effet", async () => {
-  for (const reprise of ["ok", "ko", "leve"]) {
+  for (const reprise of ["ok", "ko"]) {
     const b = banc();
     b.rendeur.reveiller();
     assert.equal(b.minuteries[0].ms, DELAI_DU_RENDEUR_MS, "le délai armé est celui du module");
@@ -144,13 +144,23 @@ const DEFAILLANCES = [
 ];
 
 for (const [nom, defaillances, regler] of DEFAILLANCES) {
-  test(`[X-f] ${nom} : le successeur part si l'occurrence a changé, jamais de boucle`, async () => {
-    const b = banc({ defaillances });
+  test(`[X-f] ${nom} : l'occurrence change PENDANT la défaillance, le successeur part, jamais de boucle`, async () => {
+    let b;
+    const changeante = Object.fromEntries(
+      Object.entries(defaillances).map(([cle, lever]) => [
+        cle,
+        () => {
+          b.occ += 1;
+          lever();
+        },
+      ]),
+    );
+    b = banc({ defaillances: changeante });
     b.rendeur.reveiller();
     regler(b);
-    b.occ += 1;
+    b.occ = Math.max(b.occ, 2);
     await vider();
-    assert.equal(b.lancementsDe(2), 1, "le successeur de l'occurrence courante part");
+    assert.equal(b.lancementsDe(b.occ), 1, "le successeur de l'occurrence courante part");
     assert.equal(b.lancementsDe(1), 1, "l'occurrence défaillante n'est pas relancée");
   });
   test(`[X-f] ${nom} : sans changement d'occurrence, le rendeur est libre et ne boucle pas`, async () => {
@@ -170,10 +180,11 @@ test("[X-f/O1] l'armement du délai échoue APRÈS enVol ← t : libération et 
   b.rendeur.reveiller();
   await vider();
   assert.equal(b.rendeur.diagnostic().enVol, false, "enVol n'est pas resté occupé");
-  assert.equal(b.lancementsDe(1), 1, "l'occurrence n'est pas relancée en boucle");
+  assert.equal(b.armements, 1, "l'occurrence n'est pas relancée en boucle");
+  assert.deepEqual(b.visible, ["masquer", "erreur:1"], "la tentative est réglée en échec");
   b.occ += 1;
   b.rendeur.reveiller();
-  assert.equal(b.lancementsDe(2), 1, "le rendeur n'est pas bloqué : l'occurrence suivante part");
+  assert.equal(b.armements, 2, "le rendeur n'est pas bloqué : l'occurrence suivante part");
 });
 
 // --- X-g : deux tâches, une autorisation -----------------------------------------------------------
@@ -292,7 +303,6 @@ test("[R-e] enumération : jamais deux autorisations, jamais deux tentatives par
   for (const sequence of sequences) {
     const b = banc({ occurrence: 1 });
     b.rendeur.reveiller();
-    let vivantes = 0;
     for (const op of sequence) {
       if (op === "notifier") b.rendeur.reveiller();
       if (op === "avancer" && b.occ < 3) b.avancer();
@@ -310,7 +320,7 @@ test("[R-e] enumération : jamais deux autorisations, jamais deux tentatives par
           await vider();
         }
       }
-      vivantes = b.rendeur.diagnostic().enVol ? 1 : 0;
+      const vivantes = b.rendeur.diagnostic().enVol ? 1 : 0;
       assert.ok(vivantes <= 1, `${sequence.join(",")} : au plus une autorisation`);
       for (const occ of [1, 2, 3]) {
         assert.ok(

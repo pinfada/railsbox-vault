@@ -20,6 +20,7 @@ export function banc({ occurrence = 1, defaillances = {} } = {}) {
     fragments: 0,
     rendeur: null,
     enVolVuAuxEffets: [],
+    armements: 0,
   };
   const defaille = (nom) => defaillances[nom]?.();
   const effet = (nom, ...details) => {
@@ -37,6 +38,8 @@ export function banc({ occurrence = 1, defaillances = {} } = {}) {
     rendre: (occ, fragment) => {
       const tache = { occ, fragment, regle: false };
       b.taches.push(tache);
+      // Garde-fou du banc : un rendeur qui boucle ne fait pas tourner l'épreuve sans fin.
+      if (b.taches.length > 50) return new Promise(() => {});
       defaille("rendre-synchrone");
       if (defaillances["rendre-pret"]) return defaillances["rendre-pret"](tache);
       return new Promise((ok, ko) => {
@@ -53,6 +56,7 @@ export function banc({ occurrence = 1, defaillances = {} } = {}) {
       montrerLaRegionDErreur: (occ) => effet("erreur", occ),
     },
     armer: (ms, fonction) => {
+      b.armements += 1;
       defaille("armer");
       const minuterie = { ms, fonction, annulee: false };
       b.minuteries.push(minuterie);
