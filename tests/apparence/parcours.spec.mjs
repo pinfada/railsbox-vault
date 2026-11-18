@@ -18,6 +18,7 @@ import {
   surveiller,
   test,
   verifier,
+  RAISON_WEBKIT_EPHEMERE,
   TITRE_STOCKAGE_INACCESSIBLE,
 } from "./outils-d-apparence.mjs";
 import { writeFile } from "node:fs/promises";
@@ -42,14 +43,10 @@ for (const theme of ["light", "dark"]) {
       browser,
       browserName,
     }, testInfo) => {
+      test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       await page.setViewportSize({ width: largeur, height: 900 });
-      if ((await ouvrir(page)) === "inaccessible") {
-        // WebKit éphémère (#231) : pas de création. L'écran qui s'y montre est vérifié à ce gabarit.
-        await aucunGroupeSansNom(page, "inaccessible");
-        await verifier(page, testInfo, "inaccessible");
-        return;
-      }
+      await ouvrir(page);
       await aucunGroupeSansNom(page, "création");
       await verifier(page, testInfo, "creation");
       await bouton(page, "Commencer").click();
@@ -77,6 +74,7 @@ for (const theme of ["light", "dark"]) {
           inverse: bouton.color,
         };
       });
+
       const mesures = {
         texte: contraste(couleurs.texte, couleurs.fond),
         secondaire: contraste(couleurs.secondaire, couleurs.fond),
@@ -111,18 +109,34 @@ for (const theme of ["light", "dark"]) {
         await autreAppareil.close();
       }
     });
+
+    test(`${theme}-${largeur} : l'écran « stockage inaccessible » est accessible (WebKit éphémère)`, async ({
+      page,
+      browserName,
+    }, testInfo) => {
+      test.skip(browserName !== "webkit", "épreuve du seul contexte WebKit éphémère mesuré");
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.goto(`${ORIGINE_A}/index.html`);
+      // Le rejet est NATUREL sous ce contexte : si WebKit cessait de rejeter, l'écran ne s'afficherait
+      // plus et l'épreuve ÉCHOUERAIT — c'est voulu. Rien n'y est créé, rien n'y est proposé.
+      await expect(
+        page.getByRole("heading", { name: TITRE_STOCKAGE_INACCESSIBLE, exact: true, level: 2 }),
+      ).toBeVisible({ timeout: 60_000 });
+      await expect(bouton(page, "Réessayer")).toBeVisible();
+      await expect(bouton(page, "Commencer")).toHaveCount(0);
+      await aucunGroupeSansNom(page, "inaccessible");
+      await verifier(page, testInfo, "inaccessible");
+    });
   }
 
   test(`${theme} : feuille réelle, impression, épreuve de la feuille et refus`, async ({
     page,
     browserName,
   }, testInfo) => {
+    test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-    if ((await ouvrir(page)) === "inaccessible") {
-      // WebKit éphémère (#231) : aucun coffre ne se crée, et l'écran n'offre pas de le tenter.
-      await verifier(page, testInfo, "inaccessible-feuille");
-      return;
-    }
+    await ouvrir(page);
     await bouton(page, "Commencer").click();
     await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
     await bouton(page, "Créer mon coffre").click();
@@ -194,15 +208,13 @@ for (const theme of ["light", "dark"]) {
 
 test("la direction utilitaire est servie localement et le focus clavier reste visible", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   const tab = "Tab";
   await page.goto("/index.html");
-  // Sous WebKit éphémère (#231) l'écran est « le stockage ne répond pas » : la direction visuelle se
-  // lit sur l'écran qui s'y montre.
   await expect(
-    page
-      .getByRole("heading", { name: "Créer votre coffre", exact: true })
-      .or(page.getByRole("heading", { name: TITRE_STOCKAGE_INACCESSIBLE, exact: true })),
+    page.getByRole("heading", { name: "Créer votre coffre", exact: true }),
   ).toBeVisible();
   const style = await page.locator("main").evaluate((node) => {
     const css = getComputedStyle(node);
@@ -214,23 +226,6 @@ test("la direction utilitaire est servie localement et le focus clavier reste vi
   await page.keyboard.press(tab);
   await expect(page.getByRole("link", { name: "Aller au parcours" })).toBeFocused();
   await page.keyboard.press("Enter");
-  const inaccessible = page.getByRole("heading", {
-    name: TITRE_STOCKAGE_INACCESSIBLE,
-    exact: true,
-  });
-  if (await inaccessible.isVisible()) {
-    // WebKit éphémère (#231) : le lien d'évitement mène au titre de l'écran, et « Réessayer » est
-    // l'unique action, au clavier et avec un contour visible.
-    await expect(inaccessible).toBeFocused();
-    await page.keyboard.press(tab);
-    const reessayer = page.getByRole("button", { name: "Réessayer", exact: true });
-    await expect(reessayer).toBeFocused();
-    const contourReessayer = await reessayer.evaluate(
-      (node) => getComputedStyle(node).outlineWidth,
-    );
-    expect(parseFloat(contourReessayer)).toBeGreaterThanOrEqual(3);
-    return;
-  }
   await expect(
     page.getByRole("heading", { name: "Créer votre coffre", exact: true }),
   ).toBeFocused();
@@ -243,4 +238,34 @@ test("la direction utilitaire est servie localement et le focus clavier reste vi
   await expect(
     page.getByRole("heading", { name: "Choisir comment l'ouvrir", exact: true }),
   ).toBeFocused();
+});
+
+test("la direction utilitaire et le focus clavier sur l'écran « stockage inaccessible » (WebKit éphémère)", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "webkit", "épreuve du seul contexte WebKit éphémère mesuré");
+  const tab = "Tab";
+  await page.goto("/index.html");
+  const inaccessible = page.getByRole("heading", {
+    name: TITRE_STOCKAGE_INACCESSIBLE,
+    exact: true,
+  });
+  await expect(inaccessible).toBeVisible();
+  const style = await page.locator("main").evaluate((node) => {
+    const css = getComputedStyle(node);
+    return { bord: css.borderTopWidth, rayon: css.borderTopLeftRadius, ombre: css.boxShadow };
+  });
+  expect(style.bord).toBe("1px");
+  expect(style.rayon).toBe("0px");
+  expect(style.ombre).toContain("6px 6px");
+  await page.keyboard.press(tab);
+  await expect(page.getByRole("link", { name: "Aller au parcours" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(inaccessible).toBeFocused();
+  await page.keyboard.press(tab);
+  const reessayer = page.getByRole("button", { name: "Réessayer", exact: true });
+  await expect(reessayer).toBeFocused();
+  const contour = await reessayer.evaluate((node) => getComputedStyle(node).outlineWidth);
+  expect(parseFloat(contour)).toBeGreaterThanOrEqual(3);
 });

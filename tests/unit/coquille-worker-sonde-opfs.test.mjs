@@ -415,12 +415,13 @@ test("un geste dont la lecture rejette UnknownError rend le refus ET retire `ver
   assert.equal(worker.parCorrelation("e1")?.etat, "indetermine");
 });
 
-test("une erreur qui n'est PAS une panne du stockage ne retire pas `verrouille` : elle remonte telle quelle", async () => {
+test("un fichier ABSENT (NotFoundError) n'est PAS une panne : l'inventaire est lu, vide, et l'état reste `verrouille`", async () => {
   const worker = await monterLeWorker((n, appels) => racineDouble(appels));
-  worker.appels.lecture = "TypeError";
+  worker.appels.lecture = "NotFoundError";
   worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
   await attendre(150);
   assert.notEqual(worker.parCorrelation("i1")?.inconnu, true);
+  assert.equal(worker.parCorrelation("i1")?.present, false);
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
   await attendre(60);
   assert.equal(worker.parCorrelation("e1")?.etat, "verrouille");

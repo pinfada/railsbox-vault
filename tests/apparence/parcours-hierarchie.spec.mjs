@@ -2,7 +2,15 @@
 // pourrait savoir, aucun texte ne descend sous 13 px, et un conseil qui change ne déplace pas le bouton
 // que la main vise. Aucun coffre n'est créé ici : les écrans 1 et 2 suffisent.
 
-import { PHRASE, bouton, expect, ouvrir, test, titre } from "./outils-d-apparence.mjs";
+import {
+  PHRASE,
+  RAISON_WEBKIT_EPHEMERE,
+  bouton,
+  expect,
+  ouvrir,
+  test,
+  titre,
+} from "./outils-d-apparence.mjs";
 
 const LARGEURS = [320, 360, 1280];
 const echapper = (texte) => texte.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -24,10 +32,11 @@ const taille = (page, selecteur) =>
 for (const largeur of LARGEURS) {
   test(`${largeur} px : l'action se lit avant l'explication, et rien ne descend sous 13 px (M3)`, async ({
     page,
+    browserName,
   }) => {
+    test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
     await page.setViewportSize({ width: largeur, height: 900 });
-    // Sous WebKit éphémère (#231) l'écran de création n'existe pas : ce gabarit-ci n'a rien à mesurer.
-    if ((await ouvrir(page)) === "inaccessible") return;
+    await ouvrir(page);
     const rang = await taille(page, "#parcours-rang");
     expect(rang.px, "« Étape x sur 9 »").toBeGreaterThanOrEqual(13);
     const explication = await taille(page, "#parcours-ce-qui-va-se-passer");
@@ -52,10 +61,11 @@ for (const largeur of LARGEURS) {
 
   test(`${largeur} px : « Créer mon coffre » ne bouge pas quand le conseil change (B2-4)`, async ({
     page,
+    browserName,
   }) => {
+    test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
     await page.setViewportSize({ width: largeur, height: 900 });
-    // Sous WebKit éphémère (#231) l'écran de création n'existe pas : ce gabarit-ci n'a rien à mesurer.
-    if ((await ouvrir(page)) === "inaccessible") return;
+    await ouvrir(page);
     await bouton(page, "Commencer").click();
     await expect(titre(page, "Choisir comment l'ouvrir")).toBeVisible();
     const champ = page.getByLabel("Votre phrase", { exact: true });
@@ -93,9 +103,10 @@ for (const largeur of LARGEURS) {
 
 test("la description accessible du champ de la phrase porte le constat ET le conseil (création)", async ({
   page,
+  browserName,
 }) => {
-  // Sous WebKit éphémère (#231) l'écran de création n'existe pas : ce gabarit-ci n'a rien à mesurer.
-  if ((await ouvrir(page)) === "inaccessible") return;
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
+  await ouvrir(page);
   await bouton(page, "Commencer").click();
   await expect(titre(page, "Choisir comment l'ouvrir")).toBeVisible();
   const champ = page.getByLabel("Votre phrase", { exact: true });

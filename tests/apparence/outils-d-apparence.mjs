@@ -123,24 +123,22 @@ export async function verifierAux(page, testInfo, nom, largeurs) {
 export const TITRE_STOCKAGE_INACCESSIBLE = "Le stockage du navigateur ne répond pas pour l'instant";
 
 /**
- * Ouvre la coquille et rend l'écran qui s'y montre : `"creer"` — l'écran de création —, ou
- * `"inaccessible"`. Sous WebKit ≥ 26.6 dans le contexte éphémère de la fixture, `getDirectory()` rejette
- * `UnknownError` : l'inventaire du coffre est INCONNU, la coquille n'offre NI la création NI un moyen
- * (ADR 0047), et seul « Réessayer » est proposé. Les épreuves qui mesurent l'écran de création ne
- * s'y jouent pas : la limite est écrite, et l'écran `inaccessible` est, lui, vérifié.
- *
- * @returns {Promise<"creer" | "inaccessible">}
+ * La raison, lisible au rapport, pour laquelle les épreuves de l'écran de CRÉATION ne se jouent pas sous
+ * WebKit : dans le contexte ÉPHÉMÈRE de la fixture, `getDirectory()` y rejette `UnknownError` (mesuré,
+ * `docs/compatibility.md`), l'inventaire est inconnu et la coquille n'offre ni création ni moyen (ADR 0047).
+ * Le moteur est celui du PROJET — jamais ce que la page affiche : sur Chromium et Firefox, un écran
+ * « inaccessible » FAIT ÉCHOUER `ouvrir`.
  */
+export const RAISON_WEBKIT_EPHEMERE =
+  "WebKit éphémère : getDirectory() rejette UnknownError (mesuré), l'écran de création n'existe pas ; l'écran inaccessible a ses épreuves";
+
+/** Ouvre la coquille et attend l'écran de création. Il ÉCHOUE si l'écran est autre chose. */
 export async function ouvrir(page) {
   await page.goto(`${ORIGINE_A}/index.html`);
-  const creer = titre(page, "Créer votre coffre");
-  const inaccessible = titre(page, TITRE_STOCKAGE_INACCESSIBLE);
-  await expect(creer.or(inaccessible)).toBeVisible({ timeout: 60_000 });
-  if (await inaccessible.isVisible()) return "inaccessible";
+  await expect(titre(page, "Créer votre coffre")).toBeVisible({ timeout: 60_000 });
   await expect(page.locator("#parcours-attente-annoncee")).not.toHaveText(/calibration/, {
     timeout: 60_000,
   });
-  return "creer";
 }
 
 /**

@@ -127,7 +127,24 @@ test("fouilleOpfsAdmise : une fouille IMPOSSIBLE n'est pas une fouille vide", ()
   assert.match(ouvre.problemes[0], /impossible/);
   // Le moteur n'ouvre pas de volume (la même épreuve l'a constaté par une ouverture réelle) : la
   // limite est ÉCRITE, et la fouille reste « non réalisée » — jamais « vide ».
-  const nonPorte = fouilleOpfsAdmise({ porte: false, morceaux: impossible });
+  // Même dans le contexte éphémère mesuré : un moteur qui OUVRE un volume n'a pas de limite à écrire.
+  assert.equal(
+    fouilleOpfsAdmise({ porte: true, contexteEphemereMesure: true, morceaux: impossible }).problemes
+      .length,
+    1,
+  );
+  // …sauf dans le seul contexte éphémère mesuré, posé par la FIXTURE : jamais sur un autre moteur.
+  const sansContexte = fouilleOpfsAdmise({ porte: false, morceaux: impossible });
+  assert.equal(
+    sansContexte.problemes.length,
+    1,
+    "un moteur qui n'est pas le contexte mesuré : une panne",
+  );
+  const nonPorte = fouilleOpfsAdmise({
+    porte: false,
+    contexteEphemereMesure: true,
+    morceaux: impossible,
+  });
   assert.deepEqual(nonPorte.problemes, []);
   assert.equal(nonPorte.limites.length, 1);
   assert.match(nonPorte.limites[0], /non (réalisée|fouillée)/);

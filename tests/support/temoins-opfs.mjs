@@ -65,18 +65,20 @@ export function opfsNonMesures(sondes, options = {}) {
 
 /**
  * Ce qu'une fouille de l'OPFS impossible vaut. Une fouille qui ne regarde rien n'est PAS une fouille
- * vide : sur un moteur qui ouvre un volume (`porte`, constaté par une ouverture réelle), c'est une
- * PANNE ; sur un moteur qui n'en ouvre pas, la limite est ÉCRITE et la fouille reste « non réalisée ».
+ * vide : c'est une PANNE, sauf dans le seul contexte éphémère mesuré (`contexteEphemereMesure`, posé par la
+ * FIXTURE de l'épreuve, jamais par ce que la page affiche) où, de surcroît, le moteur n'ouvre aucun volume
+ * (`porte` faux, constaté par une ouverture réelle) : la limite est alors ÉCRITE et la fouille reste « non
+ * réalisée ».
  *
- * @param {{ porte: boolean, morceaux: { ou: string, texte: string, impossible?: string }[] }} fouille
+ * @param {{ porte: boolean, contexteEphemereMesure?: boolean, morceaux: { ou: string, texte: string, impossible?: string }[] }} fouille
  * @returns {{ problemes: string[], limites: string[] }}
  */
-export function fouilleOpfsAdmise({ porte, morceaux }) {
+export function fouilleOpfsAdmise({ porte, morceaux, contexteEphemereMesure = false }) {
   const problemes = [];
   const limites = [];
   for (const morceau of morceaux) {
     if (morceau.impossible === undefined) continue;
-    if (porte) {
+    if (porte || contexteEphemereMesure !== true) {
       problemes.push(
         `fouille OPFS impossible (${morceau.impossible}) alors que le moteur ouvre un volume : ` +
           "une panne, pas une fouille vide",

@@ -1,5 +1,5 @@
 import { expect, test } from "../support/test.mjs";
-import { CODES_DE_REFUS_DE_CAPACITE } from "../support/refus-de-capacite.mjs";
+import { codesDeRefusDeCapacite } from "../support/refus-de-capacite.mjs";
 
 import { LEASE_STATES, LEASE_STATUS } from "../../src/vm/write-lease.mjs";
 
@@ -55,7 +55,7 @@ test("le moteur porte OPFS dans un Worker, ou le bail échoue par une erreur typ
     expect(openCode).toBeNull();
     return;
   }
-  if (openCode !== null) expect(CODES_DE_REFUS_DE_CAPACITE).toContain(openCode);
+  if (openCode !== null) expect(codesDeRefusDeCapacite(page)).toContain(openCode);
 });
 
 test("deux onglets simultanés : un seul acquiert le bail", async ({ context }) => {

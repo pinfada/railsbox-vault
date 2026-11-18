@@ -176,16 +176,16 @@ test("#251, Chromium et WebKit : un geste long pressé pendant un rendu de la pa
   // Firefox : la souris de Playwright n'y livre AUCUN événement de pointeur à ce scénario — ni
   // pointerdown, ni click, sonde du 19/09/2026 —, avec ou sans la garde. La mesure n'y dirait rien.
   test.skip(browserName === "firefox", "appui souris non livré par le pilote sous Firefox");
+  // WebKit éphémère (#231) : `getDirectory()` y rejette `UnknownError` (mesuré), l'écran de création
+  // n'existe pas. Le geste long pressé pendant un rendu n'y est donc PAS mesuré — limite écrite, non un
+  // succès : un contexte WebKit persistant le permettrait, ce dépôt ne le mesure pas (docs/testing.md).
+  test.skip(
+    browserName === "webkit",
+    "WebKit éphémère : pas d'écran de création, geste long non mesuré",
+  );
   test.setTimeout(120_000);
   await page.goto(new URL("/index.html", SHELL_ORIGIN).toString(), { waitUntil: "commit" });
-  // Sous WebKit ≥ 26.6 éphémère, le stockage rejette `UnknownError` : l'inventaire est INCONNU et la page
-  // n'offre pas la création (#231). Le geste mesuré ici n'existe pas sur cet écran, et l'épreuve le dit.
-  const inaccessible = ecran(page, "Le stockage du navigateur ne répond pas pour l'instant");
-  await expect(ecran(page, "Créer votre coffre").or(inaccessible)).toBeVisible({ timeout: DELAI });
-  if (await inaccessible.isVisible()) {
-    await expect(bouton(page, "Commencer")).toHaveCount(0);
-    return;
-  }
+  await expect(ecran(page, "Créer votre coffre")).toBeVisible({ timeout: DELAI });
   await bouton(page, "Commencer").click();
   await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
   const cible = bouton(page, "Créer mon coffre");

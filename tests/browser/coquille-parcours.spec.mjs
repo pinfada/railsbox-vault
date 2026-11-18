@@ -22,7 +22,6 @@
 // rechargements : le produit n'en tient aucun.
 
 import { expect, test } from "../support/test.mjs";
-import { ETATS_SANS_VOLUME } from "../support/refus-de-capacite.mjs";
 
 import { TYPES_PRIVILEGIES } from "../../src/coquille/contrat-de-messages.mjs";
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
@@ -53,8 +52,6 @@ async function installerLeCompteur(page, type) {
 const creations = (page) =>
   page.evaluate(() => Number(sessionStorage.getItem("epreuve-parcours-creations") ?? "0"));
 
-const releve = async (page) => JSON.parse(await page.locator("#coquille-rapport").textContent());
-
 async function ouvrirLaCoquille(page, requete = "") {
   await page.goto(new URL(`/index.html${requete}`, SHELL_ORIGIN).toString(), {
     waitUntil: "commit",
@@ -63,32 +60,15 @@ async function ouvrirLaCoquille(page, requete = "") {
 }
 
 /**
- * WebKit n'offre pas l'OPFS synchrone dans un Worker : aucun coffre ne s'y crée. La convention du
- * dépôt n'est pas un `skip` : l'état DIT l'absence, et le geste de création rend un refus lu par la
- * personne dans l'alerte du parcours.
+ * La raison, lisible au rapport, pour laquelle ces scénarios ne se jouent pas sous WebKit : dans le contexte
+ * ÉPHÉMÈRE de la fixture, `getDirectory()` y rejette `UnknownError` (mesuré, `docs/compatibility.md`),
+ * aucun coffre ne s'y crée et la coquille n'offre pas la création (ADR 0047). Le moteur est celui du
+ * PROJET, jamais ce que la page affiche : sous Chromium et Firefox, ces scénarios sont COMPLETS, et un
+ * écran « inaccessible » les fait ÉCHOUER. L'écran inaccessible a ses épreuves
+ * (`coquille-stockage-indetermine.spec.mjs`).
  */
-async function exigerLaLimiteDuMoteur(page) {
-  await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBeTruthy();
-  const etat = (await releve(page)).etat;
-  if (!ETATS_SANS_VOLUME.includes(etat)) return false;
-  if (etat === "indetermine") {
-    // Sous WebKit ≥ 26.6 éphémère le stockage rejette `UnknownError` : l'inventaire est INCONNU (#231).
-    // L'écran le dit, et n'offre NI la création NI un moyen — c'est la conduite, et la limite écrite.
-    await expect(ecran(page, "Le stockage du navigateur ne répond pas pour l'instant")).toBeVisible(
-      {
-        timeout: DELAI,
-      },
-    );
-    await expect(bouton(page, "Commencer")).toHaveCount(0);
-    await expect(ecran(page, "Créer votre coffre")).toHaveCount(0);
-    return true;
-  }
-  await bouton(page, "Commencer").click();
-  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
-  await bouton(page, "Créer mon coffre").click();
-  await expect(page.getByRole("alert")).toContainText("navigateur", { timeout: DELAI });
-  return true;
-}
+const RAISON_WEBKIT_EPHEMERE =
+  "WebKit éphémère : getDirectory() rejette UnknownError (mesuré), aucun coffre ne s'y crée ; l'écran inaccessible a ses épreuves";
 
 /** Étapes 1 à 3 jusqu'à la feuille : rend le code affiché. */
 async function creerEtAfficherLeCode(page) {
@@ -164,10 +144,11 @@ async function ecrireLaProgression(page, progression) {
 
 test("un rechargement après l'affichage du code ne crée aucun second code : le code rendu rouvre le coffre", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await installerLeCompteur(page, TYPES_PRIVILEGIES.creerRecuperation);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
   expect(await creations(page)).toBe(1);
 
@@ -195,10 +176,11 @@ test("un rechargement après l'affichage du code ne crée aucun second code : le
 
 test("« je n'ai plus cette feuille » affiche un SECOND code, et les DEUX ouvrent le coffre", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await installerLeCompteur(page, TYPES_PRIVILEGIES.creerRecuperation);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   const premier = await creerEtAfficherLeCode(page);
 
   // Le rechargement perd la feuille ET verrouille le coffre. La personne ne l'a plus : elle demande
@@ -292,9 +274,10 @@ async function recupererParLeCode(page, code) {
 
 test("l'URL ne saute pas la confirmation, et la page n'offre aucun lien vers la vue complète", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   await expect(page.getByRole("link", { name: /vue complète/ })).toHaveCount(0);
   await creerEtAfficherLeCode(page);
 
@@ -313,8 +296,8 @@ test("#239 : la feuille s'éprouve UNE fois ; ensuite la phrase rouvre, l'étape
   page,
   browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
   await eprouverLaFeuille(page, code);
   await aucunCodeEnClair(page, "après l'ouverture par le code");
@@ -350,9 +333,10 @@ test("#239 : la feuille s'éprouve UNE fois ; ensuite la phrase rouvre, l'étape
 
 test("QA de #244 : « J'ai oublié ma phrase » ouvre par le code et ramène à l'application, sans rien marquer de la visite", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
   await eprouverLaFeuille(page, code);
   // Verrouillé depuis l'étape 4 : la phrase est oubliée.
@@ -375,8 +359,8 @@ test("#239 : un coffre d'avant la correction demande son code UNE fois, puis la 
   page,
   browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
   await expect.poll(async () => (await lireLaProgression(page)).code.rendu).toBe(true);
   // Le coffre porte un code, mais son secteur 1 n'a jamais été écrit : c'est l'état exact d'un coffre
@@ -406,10 +390,11 @@ test("#239 : un coffre d'avant la correction demande son code UNE fois, puis la 
 
 test("#239 : une enveloppe pleine dit sa sortie, et la révocation fait de la place", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   test.setTimeout(240_000);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   await creerEtAfficherLeCode(page);
   // La phrase et un code : deux emplacements sur huit. Six codes de plus remplissent l'enveloppe ;
   // le suivant est refusé. Chaque code demande une page neuve : un même Worker n'en rend qu'un.
@@ -451,11 +436,10 @@ test("#239 : une enveloppe pleine dit sa sortie, et la révocation fait de la pl
 
 test("une phrase trop courte est refusée avant la création, avec un conseil à chaque saisie", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await ouvrirLaCoquille(page);
-  // Sous WebKit ≥ 26.6 éphémère l'inventaire est INCONNU (#231) : la page n'offre pas la création, donc
-  // la politique de phrase de création n'a rien à juger — elle l'est sous Chromium et Firefox.
-  if (await exigerLaLimiteDuMoteur(page)) return;
   await bouton(page, "Commencer").click();
   const phrase = page.getByLabel("Votre phrase", { exact: true });
   await expect(phrase).toHaveAttribute("minlength", "12");
@@ -478,8 +462,8 @@ test("#239, VULN-04 : falsifier parcours.json n'ouvre aucun écran de travail", 
   page,
   browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
   await expect.poll(async () => (await lireLaProgression(page)).code.rendu).toBe(true);
   await ecrireLaProgression(page, {
@@ -511,9 +495,10 @@ test("#239, VULN-04 : falsifier parcours.json n'ouvre aucun écran de travail", 
 
 test("contre-recette de #244 : « je n'ai plus cette feuille », puis la même feuille ouvre — c'est une preuve, étape 4", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
   await ouvrirLaCoquille(page);
   await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
@@ -527,9 +512,10 @@ test("contre-recette de #244 : « je n'ai plus cette feuille », puis la même f
 
 test("contre-recette de #244 : l'avertissement de révocation dépend du moyen de la séance", async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   await ouvrirLaCoquille(page);
-  if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
   await eprouverLaFeuille(page, code);
   const avertissement = page.locator("#parcours-avertissement-revocation");

@@ -100,7 +100,46 @@ export async function sonderLeStockage(options = {}) {
   return (await sonderLeStockageEnDetail(options)).verdict;
 }
 
-/** ROUGE : stub — aucun échec de lecture n'est classé. */
-export function classerLaLectureEnEchec() {
-  return null;
+/** Les noms de `DOMException` qui signent une panne du SUPPORT en cours de lecture, et leur code. */
+const PANNES_DE_LECTURE_PAR_NOM = Object.freeze({
+  QuotaExceededError: STORAGE_ERROR_CODES.quotaExceeded,
+  InvalidStateError: STORAGE_ERROR_CODES.handleLost,
+  NotReadableError: STORAGE_ERROR_CODES.handleLost,
+});
+
+/** Les codes typés du stockage qui signent, eux aussi, une panne du support (jamais un état du volume). */
+const PANNES_DE_LECTURE_PAR_CODE = new Set([
+  STORAGE_ERROR_CODES.quotaExceeded,
+  STORAGE_ERROR_CODES.handleLost,
+  STORAGE_ERROR_CODES.supportFailure,
+]);
+
+/**
+ * Classe l'ÉCHEC D'UNE LECTURE réelle — inventaire, geste — survenu APRÈS une sonde réussie (revue
+ * complète de la PR #305). Rend `{ verdict: "indetermine", code: null }` pour l'`UnknownError`, brut ou
+ * déjà traduit par `toStorageError` (qui garde son nom dans `context.cause`) ; `{ verdict: "panne", code }`
+ * pour une panne du support ; `null` pour tout le reste. **`null` est le cas courant, et il est voulu** :
+ * une erreur du DOMAINE (refus d'enveloppe, coffre refusé, exclusivité tenue, bug) n'est jamais avalée en
+ * panne de stockage — la page doit la voir telle quelle.
+ *
+ * @param {unknown} cause
+ * @returns {{ verdict: "indetermine" | "panne", code: string | null } | null}
+ */
+export function classerLaLectureEnEchec(cause) {
+  if (cause === null || typeof cause !== "object") return null;
+  const code = typeof cause.code === "string" ? cause.code : null;
+  if (
+    cause.name === REJET_TRANSITOIRE_MESURE ||
+    cause.context?.cause === REJET_TRANSITOIRE_MESURE ||
+    code === STORAGE_ERROR_CODES.indeterminate
+  ) {
+    return { verdict: VERDICTS_DU_STOCKAGE.indetermine, code: null };
+  }
+  if (code !== null) {
+    return PANNES_DE_LECTURE_PAR_CODE.has(code)
+      ? { verdict: VERDICTS_DU_STOCKAGE.panne, code }
+      : null;
+  }
+  const parNom = PANNES_DE_LECTURE_PAR_NOM[cause.name];
+  return parNom === undefined ? null : { verdict: VERDICTS_DU_STOCKAGE.panne, code: parNom };
 }
