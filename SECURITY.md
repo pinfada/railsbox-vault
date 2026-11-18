@@ -1532,10 +1532,97 @@ L'[ADR 0044](docs/decisions/0044-le-magasin-d-artefacts.md) range le rootfs et l
 - **Le hors-ligne gèle la version** : quand l'origine est injoignable, le dernier descripteur
   vérifié fait foi. Une révocation publiée pendant la coupure n'est pas vue avant le retour du
   réseau (gel de version au sens de TUF, accepté par l'amendement du 04/10 de l'ADR 0042 tant que
-  les paquets ne sont pas signés).
+  les paquets ne sont pas signés). **Il n'y a aucune durée maximale avant la signature des paquets
+  (jalon 6)** : une date d'expiration non signée ne protège de rien. La date de la dernière
+  vérification est dite à la personne (« Hors connexion, version du <date>. ») ; elle ne borne rien.
 - **Un adversaire qui écrit dans l'OPFS ET contrôle l'origine** : il peut servir un descripteur dont
   la racine désigne ses propres tranches. Le magasin n'ajoute rien à la confiance faite à l'origine
   (ADR 0042) ; seule la signature du jalon 6 y répondra.
+
+### Le démarrage hors connexion : le descripteur scellé (#247, D1g, ADR 0046)
+
+- **(a) Démarrage hors connexion avec les en-têtes de production : il ne fonctionne PAS.** Le code
+  de la coquille est servi `no-cache` (ADR 0023) ; un Worker neuf créé réseau coupé ne peut pas
+  importer ses modules, et le démarrage échoue en `VAULT_COQUILLE_GESTE_ROMPU` avant de lire la
+  réserve. Le lot 5 vert ne l'éprouve que sous un harnais qui met le code en cache. Décision prise
+  (option b de #299 : un Service Worker de la coquille) ; livraison par la tranche D1h, pas par #298
+  ; suivi #299.
+- **(b) WebKit ignore `only-if-cached`.** Une requête réseau part ; la lecture de `libv86` n'est «
+  hors réseau » que si le réseau est réellement coupé — la requête échoue alors, et le refus typé
+  est le même. Chromium et Firefox ne touchent pas au réseau. Suivi #299/D1h.
+- **(c) Les octets de `libv86` exécutés ne sont pas liés aux octets hachés.** `libv86` a la
+  confiance de l'origine, comme tout le code de la coquille ; la confrontation au manifeste ne
+  protège que de l'accident. Le Service Worker de D1h est la voie décidée pour les lier ; il n'est
+  pas livré. Suivi #299/D1h.
+- **(d) L'atteinte de chaque mutant par le chemin de production n'est pas prouvée**, sauf pour
+  `reserveTientTout` (preuve ciblée, qui traverse `loadRuntime`). Les 72 + 32 mutants tués montrent
+  que les épreuves rougissent, pas que chaque garde est exécutée en production. Suivi #299/D1h : à
+  reprendre avec cette tranche, sans que sa livraison la lève d'elle-même.
+
+Quand l'origine est injoignable, le coffre démarre sur le **descripteur rangé au magasin**. L'OPFS
+n'authentifie rien : ce descripteur est donc **scellé** (HMAC-SHA-256) sous une clé qui descend de
+la clé du coffre par HKDF, dans un domaine dédié (`descripteur`), non extractible, jamais la clé du
+coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est là.
+
+**Ce que le scellement protège.**
+
+- Un adversaire qui écrit dans l'OPFS **sans la clé du coffre** ne peut ni fabriquer ni modifier un
+  descripteur accepté : le sceau couvre la magie (donc la version du format), la date, la longueur
+  et la charge. Un descripteur altéré, fabriqué, d'un autre coffre, non scellé ou d'une autre
+  version du format est **refusé**, avec un code typé
+  (`VAULT_COQUILLE_HORS_LIGNE_DESCRIPTEUR_REFUSE`) et sans repli ; le démarrage en ligne suivant le
+  remplace.
+- **« Injoignable » est uniquement un `TypeError` levé par `fetch`.** Un délai, une réponse HTTP
+  (5xx comprise), un descripteur différent, du HTML de portail captif ou **une redirection**
+  n'ouvrent PAS le repli : l'origine fait foi (ADR 0042), et le descripteur rangé n'est ni lu ni
+  cru. Le descripteur est demandé en `redirect: "manual"` : une boucle de 302 (qui lèverait un
+  `TypeError` indiscernable d'un réseau coupé), un 301 vers une autre origine ou une redirection
+  opaque sont des réponses de l'origine, jamais suivies.
+- **Anti-retour** : le descripteur rangé repasse par la décision de déphasage ; une version
+  antérieure à celle déjà migrée dans le volume est refusée (`APPLICATION_ANTERIEURE`). Sans volume,
+  pas de hors ligne (`HORS_LIGNE_SANS_COFFRE`).
+- Le descripteur n'est rangé qu'après une acquisition complète que la réserve tient tout entière ;
+  sinon le précédent est oublié. Wasm, BIOS, VGA BIOS, noyau, initrd, rootfs et paquet sont lus du
+  magasin, chacun vérifié contre son empreinte épinglée ; hors connexion, rien de ceux-là n'est
+  téléchargé. **Aucun octet de boot n'atteint le guest sans empreinte épinglée** : `boot.empreintes`
+  est obligatoire dans le descripteur servi (un descripteur sans lui, ou scellé avant cette règle,
+  est refusé avant tout boot), `image:manifest` le produit toujours, et l'acquisition refuse une
+  épingle absente avant tout téléchargement.
+- **L'annulation est tenue après chaque attente, À UNE EXCEPTION** : une opération du magasin
+  abandonnée à l'échéance (20 s) ne part plus écrire, renommer ni supprimer d'entrée — pas de
+  renommage qui remplace un descripteur plus récent. **Exception : elle supprime encore SON
+  partiel** (`<sha256>.partiel`, `descripteur.scelle.partiel`) ; ce nom est partagé entre sessions
+  et peut appartenir à une opération plus récente, dont l'admission échoue alors. Risque de
+  disponibilité (un téléchargement de plus), pas d'intégrité : `servir` revérifie tout. Un appel
+  déjà lancé va à son terme (non annulable). ADR 0046 § 8.
+
+**Ce que le scellement ne protège pas.**
+
+- **Le gel de version** et l'**absence de durée maximale** (ci-dessus) jusqu'au jalon 6.
+- **Le rejeu d'un ancien descripteur scellé valide** : accepté s'il n'est pas antérieur à la version
+  du volume ; sa date est authentifiée, pas garantie fraîche.
+- **Le retour arrière complet de l'OPFS ET du volume ensemble** : l'anti-retour perd sa référence
+  (l'ancrage monotone est la question n° 3 de l'ADR 0033, #23).
+- **L'origine qui ment de façon cohérente** et **l'adversaire qui détient la clé du coffre**.
+- **`libv86` n'est pas vérifié au sens où ses octets exécutés seraient ceux qu'on a hachés.** Le
+  module est importé par `import()`, qui refait sa requête : rien ne lie les octets confrontés au
+  manifeste à ceux qui s'exécutent, et le spike `tools/spike-liaison-libv86.mjs` (Chromium, Firefox,
+  WebKit) n'a trouvé, dans un Worker sous la CSP actuelle, aucun mécanisme qui les lie — la carte
+  d'import avec `integrity` n'existe que dans une fenêtre, `import()` n'a pas d'attribut
+  d'intégrité. **`libv86` a la confiance de l'origine, comme tout le code de la coquille** ; la
+  confrontation au manifeste le protège de l'accident, pas d'une origine hostile (ADR 0046 § 6).
+  Décision du mainteneur (#299) : option (b), un Service Worker de la coquille servira la réserve —
+  livré par la tranche suivante D1h (ADR propre, qui révisera § « Aucun Service Worker sur l'origine
+  de confiance », **en vigueur tant que D1h n'est pas fusionnée**) ; rien n'en est livré ici. Hors
+  connexion il est lu du cache HTTP en `only-if-cached` (jamais `force-cache`, qui va au réseau sur
+  un cache vide) — **sauf sous WebKit, qui ignore l'option** (mesuré) : « ne touche pas au réseau »
+  n'est établi que sur Chromium et Firefox. La page ne se recharge pas hors connexion (pas de
+  Service Worker pour l'instant). **En production, le démarrage hors connexion ne fonctionne pas
+  encore** : mesuré sur l'image réelle, avec les en-têtes de production (code de la coquille en
+  `no-cache`), un Worker neuf créé réseau coupé n'importe pas ses modules et le démarrage échoue
+  avant de lire la réserve (`VAULT_COQUILLE_GESTE_ROMPU`). La décision de repli est éprouvée sous un
+  harnais qui donne une fraîcheur au code ; la condition « code disponible sans réseau » sera
+  fournie par D1h (#299, ADR 0046 § 6).
 
 ## L'instantané de reprise contient la RAM invitée (#65)
 

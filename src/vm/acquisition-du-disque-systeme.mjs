@@ -19,6 +19,7 @@
 // qui lit les données du coffre. L'empreinte du BLOC est prise à part, artefact par artefact, parce
 // que c'est celle-là que la liaison de l'instantané porte (ADR 0024, `ARTEFACTS_DE_L_IMAGE`).
 
+import { artefactAbsentHorsConnexion } from "./artefact-absent-hors-connexion.mjs";
 import {
   DISQUE_SYSTEME_MAX_OCTETS,
   composerDisqueSysteme,
@@ -77,10 +78,23 @@ async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
  * Un `servir` en échec ou abandonné à l'échéance a pu copier des tranches dans la plage : le
  * téléchargement la réécrit ENTIÈRE, et le magasin ne la touche plus (jeton annulé, #247).
  */
-async function servirOuTelecharger({ tampon, debut, morceau, nom, recuperer, magasin }) {
+async function servirOuTelecharger({
+  tampon,
+  debut,
+  morceau,
+  nom,
+  recuperer,
+  magasin,
+  horsConnexion = false,
+}) {
   const vue = tampon.subarray(debut, debut + morceau.octets);
   if (magasin && (await magasin.servir(morceau, vue).catch(() => false))) {
     return { transfere: 0, magasin: "servi" };
+  }
+  // Hors connexion, le magasin est la seule source : un manque est un refus typé, jamais un
+  // téléchargement tenté (#247, D1g). La plage a pu être touchée par `servir` : le disque est abandonné.
+  if (horsConnexion) {
+    throw artefactAbsentHorsConnexion(`le ${nom}`, "manque à la réserve");
   }
   const transfere = await verserLeMorceau({ tampon, debut, morceau, nom, recuperer });
   if (!magasin) return { transfere, magasin: "absent" };
@@ -122,13 +136,16 @@ function planSousBudget({ rootfs, paquet }) {
  * @param {{ rootfs: { url: string, octets: number, sha256: string },
  *           paquet: { url: string, octets: number, sha256: string },
  *           recuperer?: typeof fetch,
- *           magasin?: ReturnType<typeof import("./magasin-d-artefacts.mjs").creerMagasinDArtefacts> }} options
+ *           magasin?: ReturnType<typeof import("./magasin-d-artefacts.mjs").creerMagasinDArtefacts>,
+ *           horsConnexion?: boolean }} options
+ *   `horsConnexion` : seul le magasin répond ; un manque est `VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT`.
  */
 export async function acquerirLeDisqueSysteme({
   rootfs,
   paquet,
   recuperer = globalThis.fetch,
   magasin,
+  horsConnexion = false,
 }) {
   const debut = Date.now();
   const plan = planSousBudget({ rootfs, paquet });
@@ -136,7 +153,7 @@ export async function acquerirLeDisqueSysteme({
 
   // En SÉRIE, et non en parallèle : deux flux concurrents doublent la mémoire des morceaux en vol
   // sans rien accélérer sur une origine unique, et le rootfs pèse à lui seul 385 Mio.
-  const commun = { tampon, recuperer, magasin };
+  const commun = { tampon, recuperer, magasin, horsConnexion };
   const parRootfs = await servirOuTelecharger({
     ...commun,
     debut: plan.rootfs.debut,

@@ -27,6 +27,15 @@ import { defineConfig } from "@playwright/test";
 // serveur n'écoute que sur `127.0.0.1`, une attente de port réussirait pendant que le navigateur
 // échouerait — et TOUTE la suite tomberait en délai, y compris les scénarios existants.
 
+/**
+ * La fraîcheur (secondes) que l'E2E hors ligne donne au CODE de la coquille (harnais, `tools/serve.mjs`, #299), ou
+ * « » (le défaut : les en-têtes de production). Seul endroit où `VAULT_E2E_CODE_MAX_AGE` est lue, pour le seul serveur de
+ * la coquille : les autres serveurs de cette config ne la reçoivent pas, et `tools/serve.mjs` ne lit aucune variable.
+ */
+const CACHE_DU_CODE_E2E = /^[1-9][0-9]*$/.test(process.env.VAULT_E2E_CODE_MAX_AGE ?? "")
+  ? process.env.VAULT_E2E_CODE_MAX_AGE
+  : "";
+
 export const E2E_HOST = "127.0.0.1";
 export const E2E_HOST_B = "localhost";
 export const E2E_PORT = 4177;
@@ -119,7 +128,9 @@ export default defineConfig({
       // drapeau elle nomme l'origine par défaut du dépôt (`localhost:4174`) — le cadre vers
       // `localhost:4180` est alors refusé par la politique, et le document applicatif ne se charge
       // jamais. La frontière fonctionnait ; c'est le serveur qui ne servait pas la bonne.
-      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_COQUILLE_PORT} --app-origin ${E2E_ORIGIN_COQUILLE_APP}`,
+      // `--harnais-e2e-hors-ligne <s>` : SEUL ce serveur le reçoit, et seulement si `VAULT_E2E_CODE_MAX_AGE` est posée
+      // (le lot 5 de `reprise.yml`). Cette variable n'est lue qu'ICI : `tools/serve.mjs` ne lit que l'argument (ADR 0046 § 6).
+      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_COQUILLE_PORT} --app-origin ${E2E_ORIGIN_COQUILLE_APP}${CACHE_DU_CODE_E2E ? ` --harnais-e2e-hors-ligne ${CACHE_DU_CODE_E2E}` : ""}`,
       url: `${E2E_ORIGIN_COQUILLE}/index.html`,
       reuseExistingServer: false,
     },

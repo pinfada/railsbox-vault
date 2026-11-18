@@ -27,6 +27,18 @@ import { createSha256Stream } from "./sha256-stream.mjs";
 export const TRANCHE_OCTETS = 8 * 1024 * 1024;
 export const DOSSIER_DU_MAGASIN = "vault-artefacts";
 
+/**
+ * Le nom du DESCRIPTEUR SCELLÉ (#247, D1g ; ADR 0046) : un fichier nommé, pas un artefact. Il ne porte
+ * pas d'empreinte dans son nom, et la rétention le garde par son nom. Ce module n'en lit pas le
+ * contenu : le format et le sceau sont ceux de `src/coquille/descripteur-scelle.mjs`.
+ */
+export const NOM_DU_DESCRIPTEUR_SCELLE = "descripteur.scelle";
+/** Au-delà, ce fichier n'est pas un descripteur (la borne de la charge est de 1 Mio) : il est rendu vide. */
+const TAILLE_MAX_DU_DESCRIPTEUR_RANGE = 1024 * 1024 + 256;
+
+/** Un jeton jamais annulé : l'appelant qui ne borne pas l'opération dans le temps. */
+const SANS_ANNULATION = Object.freeze({ annule: false });
+
 const SUFFIXE_PARTIEL = ".partiel";
 const SUFFIXE_TRANCHES = ".tranches";
 const EMPREINTE = /^[0-9a-f]{64}$/;
@@ -138,14 +150,76 @@ export function creerMagasinDArtefacts({
      */
     admettre: (artefact, jeton) => admettre(contexte, artefact, jeton),
     /** RÉTENTION : oublie toute empreinte hors de `garder` (rootfs courant, paquet courant et précédent). */
-    purger: (garder) => purger(contexte, garder),
+    purger: (garder, jeton) => purger(contexte, garder, jeton),
+    /** Le descripteur scellé rangé, tel quel : `null` s'il n'y en a pas. Le jugement est en aval. */
+    lireLeDescripteurScelle: () => lireLeDescripteurScelle(contexte),
+    /**
+     * Range le descripteur scellé : écrit sous un nom provisoire, puis RENOMME — jamais écrit sur place.
+     * Rend `false` (sans toucher au descripteur déjà rangé) si le jeton est annulé.
+     */
+    ecrireLeDescripteurScelle: (octets, jeton) =>
+      ecrireLeDescripteurScelle(contexte, octets, jeton),
+    /**
+     * Oublie le descripteur rangé : une promesse que la réserve ne tient plus ne doit pas survivre.
+     * Abandonnée (jeton annulé), elle ne supprime plus rien.
+     */
+    oublierLeDescripteurScelle: (jeton) =>
+      oublier(contexte, NOM_DU_DESCRIPTEUR_SCELLE, { nomSeul: true, jeton }),
   };
 }
 
-async function oublier({ primitives }, sha256) {
-  for (const nom of [sha256, sha256 + SUFFIXE_TRANCHES, sha256 + SUFFIXE_PARTIEL]) {
+/**
+ * Oublie une entrée : `<nom>`, `<nom>.tranches`, `<nom>.partiel`. Le jeton est testé AVANT CHAQUE
+ * suppression — il y en a trois, et un seul contrôle en tête laissait une opération abandonnée
+ * supprimer les suivantes (revue de #298, constat 4). Une suppression déjà lancée va à son terme.
+ */
+async function oublier({ primitives }, sha256, { nomSeul = false, jeton = SANS_ANNULATION } = {}) {
+  const noms = nomSeul ? [sha256] : [sha256, sha256 + SUFFIXE_TRANCHES];
+  for (const nom of [...noms, sha256 + SUFFIXE_PARTIEL]) {
+    if (jeton.annule) return; // avant chaque suppression de l'entrée
     await primitives.supprimer(nom);
   }
+}
+
+async function lireLeDescripteurScelle({ primitives }) {
+  const taille = await primitives.taille(NOM_DU_DESCRIPTEUR_SCELLE);
+  if (taille === null) return null;
+  if (taille > TAILLE_MAX_DU_DESCRIPTEUR_RANGE) return new Uint8Array(0);
+  const octets = new Uint8Array(taille);
+  if ((await primitives.lire(NOM_DU_DESCRIPTEUR_SCELLE, 0, octets)) !== taille) {
+    return new Uint8Array(0);
+  }
+  return octets;
+}
+
+/**
+ * Le partiel est écrit ENTIER, puis le nom définitif est remplacé. Les primitives n'ayant pas de
+ * troncature, l'ancien fichier est retiré avant le renommage : une coupure entre les deux laisse
+ * « aucun descripteur ». Le renommage n'est atomique que si l'OPFS offre `move` ; sinon (copie), un
+ * fichier incomplet est possible et c'est le sceau qui le refuse (ADR 0046 § 2).
+ *
+ * Abandonnée (jeton annulé), elle ne renomme ni n'écrit plus ; elle SUPPRIME encore son partiel, dont le nom
+ * est partagé entre sessions : risque de disponibilité seulement (ADR 0046 § 8).
+ */
+async function ecrireLeDescripteurScelle({ primitives }, octets, jeton = SANS_ANNULATION) {
+  const partiel = NOM_DU_DESCRIPTEUR_SCELLE + SUFFIXE_PARTIEL;
+  if (jeton.annule) return false; // avant toute suppression : abandonnée d'emblée
+  await primitives.supprimer(partiel);
+  if (jeton.annule) return false;
+  await primitives.ecrire(partiel, 0, octets);
+  if (jeton.annule) {
+    await primitives.supprimer(partiel);
+    return false;
+  }
+  await primitives.supprimer(NOM_DU_DESCRIPTEUR_SCELLE);
+  // La suppression de l'ancien a pu durer : le jeton est testé DE NOUVEAU avant de renommer. Un
+  // renommage déjà lancé n'est pas annulable ; celui-ci ne part pas (revue de #298, constat 4).
+  if (jeton.annule) {
+    await primitives.supprimer(partiel);
+    return false;
+  }
+  await primitives.renommer(partiel, NOM_DU_DESCRIPTEUR_SCELLE);
+  return true;
 }
 
 async function lireLaListe({ primitives }, sha256, octets) {
@@ -164,9 +238,6 @@ async function lireLaListe({ primitives }, sha256, octets) {
     return null;
   }
 }
-
-/** Un jeton jamais annulé : l'appelant qui ne borne pas l'opération dans le temps. */
-const SANS_ANNULATION = Object.freeze({ annule: false });
 
 /**
  * Lit et vérifie l'artefact rangé, tranche par tranche, dans un TAMPON PRIVÉ de 8 Mio ; une tranche
@@ -197,20 +268,21 @@ async function servir(contexte, morceau, cible, jeton = SANS_ANNULATION) {
   if (!EMPREINTE.test(morceau.sha256) || cible.byteLength !== morceau.octets) return false;
   if ((await primitives.taille(morceau.sha256)) !== morceau.octets) {
     const restes = (await primitives.lister()).some((nom) => nom.startsWith(morceau.sha256));
-    if (restes) await oublier(contexte, morceau.sha256);
+    if (restes) await oublier(contexte, morceau.sha256, { jeton });
     return false;
   }
   let tranches = null;
   if (morceau.racine !== undefined) {
     tranches = await lireLaListe(contexte, morceau.sha256, morceau.octets);
     if (tranches === null || (await racineDesTranches(tranches, hacher)) !== morceau.racine) {
-      await oublier(contexte, morceau.sha256);
+      await oublier(contexte, morceau.sha256, { jeton });
       return false;
     }
   }
   if (await verserEtVerifier(contexte, morceau, cible, tranches, jeton)) return true;
-  // Abandonnée, l'opération n'a rien jugé : l'entrée n'est pas en cause, elle reste rangée.
-  if (!jeton.annule) await oublier(contexte, morceau.sha256);
+  // Abandonnée, l'opération n'a rien jugé : l'entrée n'est pas en cause, elle reste rangée — et
+  // `oublier` ne supprime plus rien une fois le jeton annulé.
+  await oublier(contexte, morceau.sha256, { jeton });
   return false;
 }
 
@@ -227,6 +299,7 @@ async function ecrireLePartiel({ primitives, hacher }, partiel, octets, jeton) {
     const vue = prive.subarray(0, fin - debut);
     vue.set(octets.subarray(debut, fin));
     tranches.push(await hacher(vue));
+    if (jeton.annule) return null; // après le hachage de la tranche, avant de l'écrire
     await primitives.ecrire(partiel, debut, vue);
   }
   return jeton.annule ? null : tranches;
@@ -250,11 +323,21 @@ async function admettre(contexte, { sha256, octets, racine }, jeton = SANS_ANNUL
       `Artefact ${sha256} non rangé : ${octets.byteLength} octets refusés par le budget de stockage.`,
     );
   }
-  await oublier(contexte, sha256);
+  if (jeton.annule) return null; // après le budget, avant d'oublier l'ancienne entrée
+  await oublier(contexte, sha256, { jeton });
   const partiel = sha256 + SUFFIXE_PARTIEL;
   const tranches = await ecrireLePartiel(contexte, partiel, octets, jeton);
-  if (tranches === null) return null;
+  if (tranches === null) {
+    // Abandonnée à l'échéance : son partiel n'a plus d'auteur qui le renommera (revue de #292).
+    await primitives.supprimer(partiel);
+    return null;
+  }
   const calculee = await racineDesTranches(tranches, hacher);
+  if (jeton.annule) {
+    // Après le hachage de la racine : ni le refus de racine, ni la liste, ni le nom définitif.
+    await primitives.supprimer(partiel);
+    return null;
+  }
   // Une racine fausse à la fabrication ferait réécrire l'artefact à CHAQUE démarrage, en silence :
   // rien n'est rangé, et le refus est typé et journalisé (revue du 04/10/2026, constat 2).
   if (racine !== undefined && calculee !== racine) {
@@ -266,19 +349,30 @@ async function admettre(contexte, { sha256, octets, racine }, jeton = SANS_ANNUL
   const liste = JSON.stringify({ sha256, octets: octets.byteLength, tranches });
   await primitives.ecrire(sha256 + SUFFIXE_TRANCHES, 0, new TextEncoder().encode(liste));
   // EN DERNIER : le nom définitif est le marqueur « complet ».
-  if (jeton.annule) return null;
+  if (jeton.annule) {
+    await primitives.supprimer(partiel);
+    return null;
+  }
   await primitives.renommer(partiel, sha256);
   return { tranches, racine: calculee };
 }
 
-async function purger(contexte, garder) {
-  const gardees = new Set(garder);
+/**
+ * RÉTENTION : oublie toute empreinte hors de `garder`. Le jeton est testé avant chaque oubli : une
+ * rétention abandonnée à l'échéance ne purge plus rien (revue de #292). Un `.partiel` d'une empreinte
+ * NON gardée est retiré aussi, même s'il appartient à l'admission d'un autre onglet — limite écrite
+ * (ADR 0044, amendement D1g) : le coût est un téléchargement de plus, jamais un octet servi.
+ */
+async function purger(contexte, garder, jeton = SANS_ANNULATION) {
+  // Le descripteur rangé n'est pas un artefact : la rétention des artefacts ne le juge pas.
+  const gardees = new Set([...garder, NOM_DU_DESCRIPTEUR_SCELLE]);
   const oubliees = new Set();
   for (const nom of await contexte.primitives.lister()) {
+    if (jeton.annule) break;
     const sha256 = nom.slice(0, 64);
     if (!gardees.has(sha256) && !oubliees.has(sha256)) {
       oubliees.add(sha256);
-      await oublier(contexte, sha256);
+      await oublier(contexte, sha256, { jeton });
     }
   }
   return [...oubliees];

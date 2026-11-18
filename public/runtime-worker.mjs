@@ -476,7 +476,11 @@ async function demarrerLApplication(message, correlation) {
 /** Le DÉPHASAGE, lu pour la page après le déverrouillage, sans rien écrire ni booter (#236 T2). */
 async function constaterLeDephasage(correlation) {
   exigerLeBackend({ etatDuVolume: interne.etat });
-  return repondre(TYPES_PRIVILEGIES.dephasageReponse, correlation, await dephasagePourLaPage());
+  return repondre(
+    TYPES_PRIVILEGIES.dephasageReponse,
+    correlation,
+    await dephasagePourLaPage({ cleDeVolume }),
+  );
 }
 
 /**

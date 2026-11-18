@@ -323,6 +323,33 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
   parametreDuGuestRefuse: "VAULT_COQUILLE_PARAMETRE_DU_GUEST_REFUSE",
   /** Le paquet dépasse les données, mais aucune migration n'a été autorisée par le geste (revue de #249, 4). */
   migrationNonAutorisee: "VAULT_COQUILLE_MIGRATION_NON_AUTORISEE",
+
+  // --- Le démarrage HORS CONNEXION (#247, D1g ; ADR 0044 § 6, ADR 0046) -------------------------
+  //
+  // Rendus seulement quand l'origine est INJOIGNABLE — `fetch` a levé un `TypeError` sur le
+  // descripteur. Aucun ne boote, aucun n'écrit un octet du volume. Dès que l'origine RÉPOND, quoi
+  // qu'elle réponde, ces codes n'existent plus : l'ADR 0042 s'applique, l'origine fait foi.
+  /**
+   * L'origine est injoignable et le magasin ne garde AUCUN descripteur vérifié : ce coffre n'a jamais
+   * été démarré avec succès sur cet appareil, ou le magasin a été vidé. Rien n'est devinable.
+   */
+  horsLigneSansCopie: "VAULT_COQUILLE_HORS_LIGNE_SANS_COPIE",
+  /**
+   * Le magasin garde un descripteur, mais il n'est pas accepté : altéré, fabriqué sans la clé du
+   * coffre, scellé par un autre coffre, d'un format inconnu ou non scellé. Aucun repli.
+   */
+  horsLigneDescripteurRefuse: "VAULT_COQUILLE_HORS_LIGNE_DESCRIPTEUR_REFUSE",
+  /**
+   * Hors connexion, il n'y a pas de volume à rouvrir : installer demande la graine, que le magasin ne
+   * garde pas. La version « déjà migrée dans le volume » n'existe pas, donc aucune garde ne tient.
+   */
+  horsLigneSansCoffre: "VAULT_COQUILLE_HORS_LIGNE_SANS_COFFRE",
+  /**
+   * Un artefact du démarrage manque au magasin, et hors connexion rien ne le télécharge. Levé côté
+   * `src/vm/` (`artefact-absent-hors-connexion.mjs`), qui en porte la même chaîne : la coquille ne
+   * peut pas l'importer sans publier du code de moteur à l'origine applicative ; une épreuve les égale.
+   */
+  horsLigneArtefactAbsent: "VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -430,6 +457,14 @@ const MESSAGES = Object.freeze({
     "La ligne de commande du guest porte deux fois un paramètre réservé au Worker de confiance : Rails n'est pas lancé.",
   [CODES_REFUS_COQUILLE.migrationNonAutorisee]:
     "Le paquet booté dépasse le schéma des données, mais aucune mise à jour n'a été demandée : Rails n'est pas lancé, rien n'est migré.",
+  [CODES_REFUS_COQUILLE.horsLigneSansCopie]:
+    "L'origine est injoignable et aucune version vérifiée de l'application n'est gardée sur cet appareil : rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.horsLigneDescripteurRefuse]:
+    "L'origine est injoignable, et la version gardée sur cet appareil n'a pas passé la vérification : elle n'est pas utilisée, rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.horsLigneSansCoffre]:
+    "L'origine est injoignable et ce coffre n'a pas encore de données à rouvrir : une installation demande le réseau, rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.horsLigneArtefactAbsent]:
+    "L'origine est injoignable et un fichier du démarrage manque à la réserve de cet appareil : rien n'est démarré, aucune donnée n'est touchée.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

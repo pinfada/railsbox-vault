@@ -50,13 +50,14 @@ import {
   sourceDuVolume,
   supportDe,
 } from "./support-archive-recuperation.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 const OCTETS = 8 * SECTOR_SIZE;
 const MOTIF = 0x5b;
 
 function descripteur() {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260815120000" },
     runtime: { version: "0.1.0" },
     rootfs: {
@@ -82,6 +83,7 @@ function descripteur() {
       initrd: "i",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
     },
     prefixeDesArtefacts: "/artifacts/epreuve/",
   };

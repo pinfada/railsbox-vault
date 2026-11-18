@@ -18,7 +18,9 @@ import {
   ouvrirLeMagasinOpfs,
   purgerToutLeMagasin,
 } from "../../src/vm/magasin-opfs.mjs";
+import { creerMagasinDArtefacts } from "../../src/vm/magasin-d-artefacts.mjs";
 import { createStorageBudget } from "../../src/vm/storage-budget.mjs";
+import { primitivesEnMemoire } from "./magasin-en-memoire.mjs";
 
 const empreinteDe = (octets) => createHash("sha256").update(octets).digest("hex");
 
@@ -146,6 +148,76 @@ test("à l'échéance, le jeton passé à servir et à admettre est annulé avan
   assert.equal(jetons[1].annule, true);
 });
 
+test("à l'échéance, le jeton passé à retenir est annulé avant que l'appelant reprenne (revue de #292)", async () => {
+  const jetons = [];
+  const jamais = new Promise(() => {});
+  const lent = borneDansLeTemps({ retenir: (_courants, jeton) => (jetons.push(jeton), jamais) }, 5);
+  await assert.rejects(lent.retenir({}), { code: "MAGASIN_LENT" });
+  assert.equal(jetons[0].annule, true);
+});
+
+/**
+ * Un magasin dont le PREMIER appel de `methode` (du dossier) reste suspendu jusqu'à `liberer()` :
+ * l'échéance tombe donc exactement à ce point du déroulement, sans compter sur une minuterie de plus.
+ */
+function stockageSuspendu(stockage, methode) {
+  let liberer;
+  const porte = new Promise((resoudre) => (liberer = resoudre));
+  let suspendu = false;
+  const ouvrir = stockage.getDirectory;
+  stockage.getDirectory = async () => {
+    const racine = await ouvrir();
+    return {
+      getDirectoryHandle: async (...args) => {
+        const dossier = await racine.getDirectoryHandle(...args);
+        return {
+          getFileHandle: (...a) => dossier.getFileHandle(...a),
+          removeEntry: (...a) => dossier.removeEntry(...a),
+          entries: () => dossier.entries(),
+          ...{
+            [methode]: async (...a) => {
+              if (!suspendu) {
+                suspendu = true;
+                await porte;
+              }
+              return dossier[methode](...a);
+            },
+          },
+        };
+      },
+    };
+  };
+  return liberer;
+}
+
+const attendre = (ms) => new Promise((resoudre) => setTimeout(resoudre, ms));
+const COURANTS = { rootfs: "a".repeat(64), paquet: "b".repeat(64) };
+const ANCIEN_JOURNAL = JSON.stringify({ paquets: ["c".repeat(64)] });
+
+for (const [methode, vu] of [
+  ["getFileHandle", "avant d'effacer le journal"],
+  ["removeEntry", "avant de réécrire le journal"],
+]) {
+  test(`une rétention abandonnée à l'échéance ${vu} n'écrit plus rien et ne purge rien (revue de #292)`, async () => {
+    const { stockage, fichiers } = fauxStockage({ synchrone: true });
+    const orphelin = "e".repeat(64);
+    fichiers.set(orphelin, new Uint8Array(10));
+    fichiers.set("retention.json", new TextEncoder().encode(ANCIEN_JOURNAL));
+    const liberer = stockageSuspendu(stockage, methode);
+    const magasin = ouvrirLeMagasinOpfs({ stockage, delaiMs: 20 });
+    await assert.rejects(magasin.retenir(COURANTS), { code: "MAGASIN_LENT" });
+    liberer(); // l'opération abandonnée reprend, APRÈS l'échéance
+    await attendre(100);
+    assert.ok(fichiers.has(orphelin), "l'abandon ne purge plus rien");
+    const journal = fichiers.get("retention.json");
+    if (methode === "getFileHandle") {
+      assert.equal(new TextDecoder().decode(journal), ANCIEN_JOURNAL, "le journal est intact");
+    } else {
+      assert.equal(journal, undefined, "effacé avant l'échéance, jamais réécrit après");
+    }
+  });
+}
+
 test("le délai du magasin est de 20 s : au-delà, le démarrage retombe sur le téléchargement", () => {
   assert.equal(DELAI_DU_MAGASIN_MS, 20_000);
 });
@@ -269,4 +341,82 @@ test("budget serré : l'admission est refusée, typée, avant toute écriture", 
   });
   assert.equal(await admissionSelonLeBudget(large)(octets.byteLength), true);
   assert.equal(await admissionSelonLeBudget(createStorageBudget({}))(octets.byteLength), false);
+});
+
+test("le descripteur rangé est borné dans le temps comme le reste : un magasin lent cède", async () => {
+  const jamais = new Promise(() => {});
+  const jetons = [];
+  const lent = borneDansLeTemps(
+    {
+      servir: () => jamais,
+      lireLeDescripteurScelle: () => jamais,
+      ecrireLeDescripteurScelle: (_octets, jeton) => (jetons.push(jeton), jamais),
+      oublierLeDescripteurScelle: (jeton) => (jetons.push(jeton), jamais),
+    },
+    5,
+  );
+  assert.equal(await lent.lireLeDescripteurScelle(), null, "lent : comme absent");
+  await assert.rejects(lent.ecrireLeDescripteurScelle(new Uint8Array(1)), { code: "MAGASIN_LENT" });
+  assert.equal(jetons[0].annule, true, "l'échéance annule le jeton du rangement");
+  await assert.rejects(lent.oublierLeDescripteurScelle(), { code: "MAGASIN_LENT" });
+  assert.equal(jetons[1]?.annule, true, "l'échéance annule le jeton de l'oubli (revue de #298, 4)");
+});
+
+test("la rétention garde le descripteur rangé, et les artefacts nommés en plus", async () => {
+  const { stockage, fichiers } = fauxStockage({ synchrone: true });
+  const magasin = ouvrirLeMagasinOpfs({ stockage });
+  const petit = new Uint8Array(64).fill(5);
+  const autre = new Uint8Array(64).fill(6);
+  await magasin.admettre({ sha256: empreinteDe(petit), octets: petit });
+  await magasin.admettre({ sha256: empreinteDe(autre), octets: autre });
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(20));
+  await magasin.retenir({
+    rootfs: "a".repeat(64),
+    paquet: "b".repeat(64),
+    autres: [empreinteDe(petit)],
+  });
+  assert.ok(fichiers.has(empreinteDe(petit)), "l'artefact nommé en plus survit");
+  assert.ok(!fichiers.has(empreinteDe(autre)), "l'autre est oublié");
+  assert.ok(fichiers.has("descripteur.scelle"), "le descripteur rangé survit");
+});
+
+// --- Le descripteur rangé, sur le vrai chemin OPFS (sans `move` : copie puis suppression) ----------
+
+test("un descripteur rangé plus court REMPLACE le précédent sur le chemin OPFS sans move", async () => {
+  const { stockage, fichiers } = fauxStockage({ synchrone: false });
+  const magasin = ouvrirLeMagasinOpfs({ stockage });
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(500).fill(1));
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(100).fill(2));
+  assert.equal(
+    fichiers.get("descripteur.scelle").byteLength,
+    100,
+    "aucun octet de l'ancien fichier",
+  );
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(100).fill(2));
+});
+
+test("un partiel de descripteur laissé par une coupure est repris à zéro", async () => {
+  const { stockage, fichiers } = fauxStockage({ synchrone: true });
+  const magasin = ouvrirLeMagasinOpfs({ stockage });
+  fichiers.set("descripteur.scelle.partiel", new Uint8Array(500).fill(9));
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(100).fill(2));
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(100).fill(2));
+});
+
+test("un rangement déjà annulé n'écrit rien, et rend false", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  assert.equal(
+    await magasin.ecrireLeDescripteurScelle(new Uint8Array(10), { annule: true }),
+    false,
+  );
+  assert.equal(primitives.ecritures.length, 0);
+});
+
+test("une lecture courte du descripteur rangé le rend vide : refusé en aval, jamais tronqué", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  primitives.fichiers.set("descripteur.scelle", new Uint8Array(100).fill(1));
+  primitives.lire = async () => 10;
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(0));
 });

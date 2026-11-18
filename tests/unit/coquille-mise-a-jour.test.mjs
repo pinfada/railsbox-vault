@@ -29,7 +29,7 @@ const E = (lettre) => lettre.repeat(64);
 
 function descripteur() {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "ref", version: "1.1.0", schema: N },
     runtime: { version: "0.1.0" },
     rootfs: { nom: "r", octets: 4096, sha256: E("a") },

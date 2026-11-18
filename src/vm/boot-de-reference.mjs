@@ -527,7 +527,9 @@ export async function preparerLeBoot({ manifest, runtime, runtimeBundle = null, 
   timeline.marquer("debut");
   const acquis = runtimeBundle ?? (await acquerirRuntime(runtime));
   timeline.marquer("runtimePret");
-  await avantLeBoot?.();
+  // Le crochet apprend si la réserve tient TOUT ce que le boot vient de lire : seul ce cas autorise
+  // à ranger le descripteur (#247, D1g).
+  await avantLeBoot?.({ reserveComplete: acquis.reserveComplete === true });
   return { attentes, timeline, ...acquis, online: navigator.onLine };
 }
 

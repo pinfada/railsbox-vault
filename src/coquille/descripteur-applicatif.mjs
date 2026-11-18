@@ -22,15 +22,31 @@ import { comparerSchemas, comparerVersions, estUneVersion } from "./dephasage.mj
 export const ADRESSE_DESCRIPTEUR = "/artifacts/application.json";
 
 /**
+ * « Injoignable » : un `TypeError` levé par `fetch`, et RIEN d'autre (décision du superviseur du
+ * 04/10/2026, n° 3 ; ADR 0044 § 6). `fetch` lève un `TypeError` quand il n'a obtenu aucune réponse ;
+ * un délai (`AbortError`), une réponse HTTP — 5xx comprise — ou du HTML de portail captif n'en sont pas.
+ */
+export const estInjoignable = (erreur) => erreur instanceof TypeError;
+
+/**
+ * Une REDIRECTION, vue du navigateur ou de Node : `opaqueredirect` (statut 0) en mode manuel côté
+ * navigateur, un statut 3xx côté Node. Dans les deux cas l'origine a répondu (ADR 0042).
+ */
+export const estUneRedirection = (reponse) =>
+  reponse.type === "opaqueredirect" || (reponse.status >= 300 && reponse.status < 400);
+
+/**
  * Version de descripteur que ce module sait lire. Une autre est refusée, jamais devinée.
  *
- * **v2 depuis #236 (ADR 0041), et la v1 n'est PAS portée.** La v1 décrivait UN disque — code et
- * données mêlés — par son nom et sa taille, sans empreinte. La v2 décrit trois morceaux (`rootfs`,
- * `paquet`, `graine`), chacun avec la sienne. Accepter les deux formes reviendrait à garder un
- * chemin d'installation qui ne vérifie aucune empreinte, pour des déploiements qui n'existent pas :
- * aucune origine ne sert encore ce produit.
+ * **v3 depuis #298 (ADR 0046 § 6), et les v1 et v2 ne sont PAS portées.** La v1 décrivait UN disque sans
+ * empreinte (#236). La v2 décrit trois morceaux avec leurs empreintes, mais `boot.empreintes` — le noyau,
+ * l'initrd et les deux BIOS — y était absent ou facultatif ; la v3 le rend OBLIGATOIRE. Le numéro change
+ * parce que le contrat change : un lecteur d'avant, qui accepte la v2 et ignore `boot.empreintes`, aurait
+ * démarré sans la vérification que le nouveau contrat exige. Il refuse la v3 (« version de descripteur
+ * inconnue »), ce que `tests/unit/coquille-compatibilite-ancien-lecteur.test.mjs` éprouve avec le lecteur
+ * d'avant importé tel quel. Un descripteur v2 rangé et scellé avant la règle est refusé à l'ouverture.
  */
-export const DESCRIPTEUR_VERSION_ATTENDUE = 2;
+export const DESCRIPTEUR_VERSION_ATTENDUE = 3;
 
 /**
  * Le NOM d'un artefact servi : une lettre ou un chiffre, puis des caractères de nom de fichier.
@@ -157,11 +173,48 @@ export function formeDuDescripteur(descripteur) {
       return refus(`nom d'artefact refusé : ${cle}`);
     }
   }
+  const empreintes = formeDesEmpreintesDuBoot(descripteur.boot.empreintes);
+  if (empreintes !== null) return refus(empreintes);
   return { valide: true, motif: null };
 }
 
 /** Une EMPREINTE SHA-256, en hexadécimal minuscule. Sans elle, un morceau n'est pas vérifiable. */
 const EMPREINTE = /^[0-9a-f]{64}$/;
+
+/** Plafond d'un artefact du démarrage hors disque (noyau, initrd, BIOS) : large, il ne refuse que l'absurde. */
+const ARTEFACT_DE_BOOT_MAX = 256 * 1024 * 1024;
+
+/**
+ * Les EMPREINTES du noyau, de l'initrd et des deux BIOS (#247, D1g), OBLIGATOIRES et TOUT OU RIEN :
+ * **aucun octet n'atteint le guest sans empreinte épinglée** (revue de sécurité de #298, constat 2 ;
+ * ADR 0046). Un descripteur qui n'en porte pas n'est pas une application : il est refusé ICI, avant
+ * tout boot — il n'y a plus de « descripteur ancien » toléré, et un descripteur scellé avant cette
+ * règle est refusé à l'ouverture (`ouvrirLeDescripteurScelle` rejoue cette forme). Un champ de plus,
+ * ou une URL, est refusé : l'adresse d'un artefact vient du NOM, jamais d'ici.
+ *
+ * @param {unknown} empreintes @returns {string | null} le motif, ou `null`
+ */
+function formeDesEmpreintesDuBoot(empreintes) {
+  if (empreintes === undefined) return "empreintes du boot absentes : aucun octet sans épingle";
+  const cles = ["kernel", "initrd", "bios", "vgaBios"];
+  if (typeof empreintes !== "object" || empreintes === null || Array.isArray(empreintes)) {
+    return "empreintes du boot illisibles";
+  }
+  if (Object.keys(empreintes).some((cle) => !cles.includes(cle))) {
+    return "empreintes du boot : un artefact inconnu";
+  }
+  for (const cle of cles) {
+    const pin = empreintes[cle];
+    if (typeof pin !== "object" || pin === null) return `empreinte du boot absente : ${cle}`;
+    if (Object.keys(pin).some((champ) => champ !== "sha256" && champ !== "octets")) {
+      return `empreinte du boot : champ inconnu : ${cle}`;
+    }
+    if (!EMPREINTE.test(String(pin.sha256 ?? ""))) return `empreinte du boot mal formée : ${cle}`;
+    if (!entierBorne(pin.octets, ARTEFACT_DE_BOOT_MAX))
+      return `taille du boot hors bornes : ${cle}`;
+  }
+  return null;
+}
 
 /**
  * Le SCHÉMA et la VERSION d'une application servie (#236 T2, ADR 0042) : la décision de déphasage
@@ -285,15 +338,33 @@ function formeDesMorceaux(descripteur) {
  * référence, et la coquille doit alors se déclarer sans application plutôt qu'échouer. C'est la même
  * règle que l'état `indisponible` — nommer l'absence au lieu de la traiter comme une panne.
  *
- * @param {{ recuperer?: typeof fetch }} [options]
- * @returns {Promise<{ present: boolean, descripteur?: object, motif?: string }>}
+ * **Injoignable = un `TypeError` de `fetch`, et rien d'autre** (#247, D1g ; ADR 0044 § 6) : seul ce cas
+ * appelle `repliHorsConnexion`, qui rend le descripteur rangé et vérifié (`hors-connexion.mjs`). Un
+ * délai, une réponse HTTP — 5xx comprise — ou du HTML de portail captif n'y mènent jamais : l'origine
+ * fait foi. Sans repli fourni, le comportement est celui d'avant : « inatteignable », rien à démarrer.
+ *
+ * @param {{ recuperer?: typeof fetch, repliHorsConnexion?: () => Promise<object> }} [options]
+ * @returns {Promise<{ present: boolean, descripteur?: object, motif?: string,
+ *                     horsConnexion?: object | boolean, code?: string }>}
  */
-export async function lireLeDescripteur({ recuperer = globalThis.fetch } = {}) {
+export async function lireLeDescripteur({ recuperer = globalThis.fetch, repliHorsConnexion } = {}) {
   let reponse;
   try {
-    reponse = await recuperer(ADRESSE_DESCRIPTEUR, { cache: "no-store" });
+    // `redirect: "manual"` : une redirection est une RÉPONSE de l'origine, jamais suivie. Suivie, une
+    // boucle lèverait un `TypeError` — le signal de « pas de réseau » — et ouvrirait le repli alors
+    // que l'origine a répondu ; un 301 vers une autre origine ferait lire le descripteur d'ailleurs.
+    reponse = await recuperer(ADRESSE_DESCRIPTEUR, { cache: "no-store", redirect: "manual" });
   } catch (erreur) {
+    if (estInjoignable(erreur) && repliHorsConnexion !== undefined) {
+      return repliHorsConnexion();
+    }
     return { present: false, motif: `descripteur inatteignable : ${erreur.message}` };
+  }
+  if (estUneRedirection(reponse)) {
+    return {
+      present: false,
+      motif: "descripteur redirigé : l'origine a répondu par une redirection",
+    };
   }
   if (!reponse.ok) {
     return { present: false, motif: `aucun descripteur servi (${reponse.status})` };

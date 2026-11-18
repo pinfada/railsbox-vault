@@ -26,6 +26,7 @@ import { SHELL_ORIGIN, SHELL_PORT } from "../../src/spike/origin-topology.mjs";
 import { ARCHIVE_ERROR_CODES } from "../../src/vm/archive-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 /** L'AUTRE origine de confiance : le même serveur, un autre nom, donc un autre OPFS. */
 const AUTRE_ORIGINE = `http://localhost:${SHELL_PORT}`;
@@ -38,7 +39,7 @@ const GRAINE = Buffer.alloc(OCTETS_DU_DISQUE, 0x42);
 const EMPREINTE_DE_LA_GRAINE = createHash("sha256").update(GRAINE).digest("hex");
 
 const DESCRIPTEUR = {
-  descripteurVersion: 2,
+  descripteurVersion: 3,
   application: { id: "portabilite-test", version: "1.0.0", schema: "20260101000002" },
   runtime: { version: "0.1.0" },
   // Les DEUX morceaux du disque système : ces épreuves ne bootent aucune VM, mais le descripteur
@@ -58,6 +59,7 @@ const DESCRIPTEUR = {
     initrd: "i",
     bios: "seabios.bin",
     vgaBios: "vgabios.bin",
+    empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
   },
   prefixeDesArtefacts: "/artifacts/portabilite-test/",
 };

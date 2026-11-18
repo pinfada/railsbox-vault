@@ -54,6 +54,7 @@ import { adressesServiesV86, artefactsV86Absents } from "./v86-paths.mjs";
 import {
   disqueSystemeDuManifeste,
   graineDuManifeste,
+  empreintesDuBootDuManifeste,
 } from "../tests/support/image-de-reference.mjs";
 
 const RACINE = resolve(import.meta.dirname, "..");
@@ -297,6 +298,7 @@ function configurationDeBoot() {
         vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
         kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
         initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+        empreintes: empreintesDuBootDuManifeste(manifeste),
         disqueSysteme: disqueSystemeDuManifeste(manifeste),
       },
       manifest,

@@ -148,9 +148,35 @@ export function borneDansLeTemps(magasin, delaiMs = DELAI_DU_MAGASIN_MS) {
         magasinLent("admission"),
       ),
   };
+  // Le descripteur rangé : lu, écrit, oublié — trois gestes, tous bornés (#247, D1g). Lent, il est
+  // « absent » ; écrit trop lentement, son rangement est abandonné par jeton, comme une admission.
+  if (magasin.lireLeDescripteurScelle) {
+    borne.lireLeDescripteurScelle = () =>
+      avantLEcheance(
+        () => magasin.lireLeDescripteurScelle(),
+        delaiMs,
+        () => null,
+      );
+    borne.ecrireLeDescripteurScelle = (octets) =>
+      avantLEcheance(
+        (jeton) => magasin.ecrireLeDescripteurScelle(octets, jeton),
+        delaiMs,
+        magasinLent("rangement du descripteur"),
+      );
+    borne.oublierLeDescripteurScelle = () =>
+      avantLEcheance(
+        (jeton) => magasin.oublierLeDescripteurScelle(jeton),
+        delaiMs,
+        magasinLent("oubli du descripteur"),
+      );
+  }
   if (magasin.retenir) {
     borne.retenir = (courants) =>
-      avantLEcheance(() => magasin.retenir(courants), delaiMs, magasinLent("rétention"));
+      avantLEcheance(
+        (jeton) => magasin.retenir(courants, jeton),
+        delaiMs,
+        magasinLent("rétention"),
+      );
   }
   return borne;
 }
@@ -265,7 +291,7 @@ export function ouvrirLeMagasinOpfs({
     ...(peutAdmettre ? { peutAdmettre } : {}),
   });
   return borneDansLeTemps(
-    { ...magasin, retenir: (courants) => retenir(primitives, magasin, courants) },
+    { ...magasin, retenir: (courants, jeton) => retenir(primitives, magasin, courants, jeton) },
     delaiMs,
   );
 }
@@ -292,15 +318,24 @@ async function lireLeJournal(primitives) {
  * le paquet courant et le paquet PRÉCÉDENT — celui d'avant la dernière mise à jour —, oublie le reste.
  * Un journal altéré ne coûte au pire qu'un téléchargement : il ne sert jamais un octet.
  */
-async function retenir(primitives, magasin, { rootfs, paquet }) {
+async function retenir(
+  primitives,
+  magasin,
+  { rootfs, paquet, autres = [] },
+  jeton = { annule: false },
+) {
   const [courant, precedent] = await lireLeJournal(primitives);
   const paquets =
     courant && courant !== paquet ? [paquet, courant] : [paquet, precedent].filter(Boolean);
+  // Le jeton est testé avant chaque geste visible : abandonnée à l'échéance, la rétention n'écrit
+  // plus le journal et ne purge plus rien (revue de #292).
+  if (jeton.annule) return [];
   await primitives.supprimer(JOURNAL_DE_RETENTION);
+  if (jeton.annule) return [];
   await primitives.ecrire(
     JOURNAL_DE_RETENTION,
     0,
     new TextEncoder().encode(JSON.stringify({ paquets })),
   );
-  return magasin.purger([rootfs, ...paquets, JOURNAL_DE_RETENTION]);
+  return magasin.purger([rootfs, ...paquets, ...autres, JOURNAL_DE_RETENTION], jeton);
 }

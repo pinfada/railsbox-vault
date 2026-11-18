@@ -540,6 +540,9 @@ export const MESSAGES = Object.freeze({
   sauvegardeEnCours: "Sauvegarde en cours… Ne fermez pas l'onglet.",
   restaurationEnCours: "Restauration en cours… Ne fermez pas l'onglet.",
   applicationDemarree: "L'application est démarrée.",
+  // Démarrée sans l'origine, depuis la version gardée sur l'appareil : la date de sa dernière
+  // vérification (#247, D1g ; ADR 0046 § 7). Elle dit l'âge de la version, elle ne le borne pas.
+  horsConnexionVersionDu: (date) => `Hors connexion, version du ${date}.`,
   applicationEnAttente:
     "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
     "Démarrer l'application ».",

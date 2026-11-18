@@ -18,6 +18,7 @@
 // mesuré ici est l'ORDRE — et l'ordre se prouve par le refus de son inverse, qui ne demande aucun
 // artefact.
 
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
@@ -807,7 +808,7 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({
-      descripteurVersion: 2,
+      descripteurVersion: 3,
       application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260101000002" },
       runtime: { version: "0.1.0" },
       rootfs: { nom: "reference-rootfs.ext4", octets: 403701760, sha256: "a".repeat(64) },
@@ -825,6 +826,7 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
         initrd: "reference-rootfs-initrd",
         bios: "seabios.bin",
         vgaBios: "vgabios.bin",
+        empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
       },
       prefixeDesArtefacts: "https://ailleurs.test/",
     }),
@@ -863,7 +865,7 @@ async function servirLeDisque(page, descripteur, octets) {
 /** Un descripteur minimal et VALIDE, de la forme que ces épreuves versent. */
 function descripteurDeReprise(octets) {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "reprise-installation-test", version: "1.0.0", schema: "20260101000002" },
     runtime: { version: "0.1.0" },
     rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },
@@ -881,6 +883,7 @@ function descripteurDeReprise(octets) {
       initrd: "i",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
     },
     prefixeDesArtefacts: "/artifacts/reprise-test/",
   };

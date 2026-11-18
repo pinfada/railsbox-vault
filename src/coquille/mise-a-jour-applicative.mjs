@@ -195,8 +195,15 @@ export async function preparerLeDemarrage({ lu, nom, miseAJour = false, delaiMs,
  *
  * @param {{ nom: string, prepare: object, inscrire?: typeof writeVolumeManifest }} entrees
  */
-export function avantLeBootDuPaquet({ nom, prepare, inscrire = writeVolumeManifest }) {
-  return async () => {
+export function avantLeBootDuPaquet({
+  nom,
+  prepare,
+  inscrire = writeVolumeManifest,
+  avantLIntention,
+}) {
+  return async (acquisition) => {
+    // Ce qui précède l'intention : le rangement du descripteur, une fois TOUT acquis (#247, D1g).
+    await avantLIntention?.(acquisition);
     poserLaPhase(PHASES_DU_BOOT.demarrage);
     // « Mise à jour de vos données » ne s'affiche que sous le geste qui migre (contre-recette, 1).
     autoriserLaPhaseDesDonnees(prepare.migration === true);

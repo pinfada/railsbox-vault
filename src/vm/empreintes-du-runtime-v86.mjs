@@ -31,11 +31,13 @@ const TAMPONS_DU_RUNTIME = ["wasm", "bios", "vgaBios", "kernel", "initrd", "root
  *
  * @param {Record<string, string>} runtime adresses, telles que l'appelant les a reçues
  * @param {Record<string, Uint8Array>} artifacts octets correspondants
+ * @param {{ manifeste?: object }} [options] le manifeste DÉJÀ lu — hors connexion, il vient du
+ *   descripteur scellé (#247, D1g) et rien n'est relu sur le réseau
  * @returns {Promise<number>} millisecondes passées à hacher
  */
-export async function verifierEmpreintesV86(runtime, artifacts) {
+export async function verifierEmpreintesV86(runtime, artifacts, { manifeste: fourni } = {}) {
   const debut = performance.now();
-  const { manifeste } = await chargerAdressesV86();
+  const manifeste = fourni ?? (await chargerAdressesV86()).manifeste;
   for (const cle of TAMPONS_DU_RUNTIME) {
     const artefact = artefactALAdresse(manifeste, runtime[cle]);
     if (artefact !== null) await verifierOctetsV86(artifacts[cle], artefact, runtime[cle]);
@@ -57,8 +59,8 @@ export async function verifierEmpreintesV86(runtime, artifacts) {
  * @param {string} adresse
  * @param {(url: string) => Promise<Uint8Array>} lireOctets
  */
-export async function verifierLeModuleV86(adresse, lireOctets) {
-  const { manifeste } = await chargerAdressesV86();
+export async function verifierLeModuleV86(adresse, lireOctets, { manifeste: fourni } = {}) {
+  const manifeste = fourni ?? (await chargerAdressesV86()).manifeste;
   const artefact = artefactALAdresse(manifeste, adresse);
   if (artefact === null) return null;
   return verifierOctetsV86(await lireOctets(adresse), artefact, adresse);

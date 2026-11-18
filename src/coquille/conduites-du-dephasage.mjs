@@ -25,6 +25,11 @@ export const CODES_DU_DEPHASAGE = Object.freeze([
   C.marqueurDeSchemaInvalide,
   C.parametreDuGuestRefuse,
   C.migrationNonAutorisee,
+  // Le démarrage hors connexion (#247, D1g) : l'origine est injoignable, et rien de sûr ne permet de démarrer.
+  C.horsLigneSansCopie,
+  C.horsLigneDescripteurRefuse,
+  C.horsLigneSansCoffre,
+  C.horsLigneArtefactAbsent,
 ]);
 
 const SAUVEGARDE_SANS_DEMARRER =
@@ -76,7 +81,49 @@ export function conduitesDuDephasage(K, RIEN_PERDU) {
         SAUVEGARDE_SANS_DEMARRER,
     ],
     [C.miseAJourAReprendre]: [K.autre, MESSAGES.miseAJourAReprendre],
+    ...conduitesHorsConnexion(K, RIEN_PERDU),
     ...conduitesDuGuest(K, RIEN_PERDU),
+  };
+}
+
+/**
+ * Les conduites du DÉMARRAGE HORS CONNEXION (#247, D1g) : l'adresse ne répond pas, et ce que cet
+ * appareil garde ne suffit pas, ou ne peut pas être cru. Chacune dit que les données sont intactes
+ * et que la suite est de se reconnecter — jamais d'effacer quoi que ce soit.
+ *
+ * @param {Record<string, string>} K @param {string} RIEN_PERDU
+ */
+function conduitesHorsConnexion(K, RIEN_PERDU) {
+  return {
+    [C.horsLigneSansCopie]: [
+      K.attendre,
+      "Cette adresse ne répond pas, et aucune version de l'application n'est gardée sur cet appareil " +
+        "pour travailler sans connexion : elle n'a jamais été démarrée ici avec succès, ou la " +
+        "réserve a été vidée. " +
+        RIEN_PERDU +
+        " Reconnectez-vous, puis rouvrez le coffre.",
+    ],
+    [C.horsLigneDescripteurRefuse]: [
+      K.attendre,
+      "Cette adresse ne répond pas, et la version de l'application gardée sur cet appareil n'a pas " +
+        "pu être vérifiée : elle n'est pas utilisée. " +
+        RIEN_PERDU +
+        " Reconnectez-vous, puis rouvrez le coffre : la version gardée sera refaite.",
+    ],
+    [C.horsLigneSansCoffre]: [
+      K.attendre,
+      "Cette adresse ne répond pas, et ce coffre n'a encore jamais servi sur cet appareil : sa " +
+        "première ouverture demande une connexion. " +
+        RIEN_PERDU +
+        " Reconnectez-vous, puis rouvrez le coffre.",
+    ],
+    [C.horsLigneArtefactAbsent]: [
+      K.attendre,
+      "Cette adresse ne répond pas, et il manque à cet appareil un fichier nécessaire au démarrage : " +
+        "la réserve a été vidée en partie. " +
+        RIEN_PERDU +
+        " Reconnectez-vous, puis rouvrez le coffre.",
+    ],
   };
 }
 

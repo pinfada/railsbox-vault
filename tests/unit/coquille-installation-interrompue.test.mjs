@@ -45,6 +45,7 @@ import {
   MARQUEUR_SCELLEMENT_COMPLET,
   SCELLEMENT_COMPLET_OFFSET,
 } from "../../src/vm/volume-chiffre-format.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 const NOM = "application";
 const TAILLE = 8 * SECTOR_SIZE;
@@ -62,7 +63,7 @@ const EMPREINTE = createHash("sha256").update(GRAINE).digest("hex");
 
 function descripteur() {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "installation-interrompue", version: "1.0.0", schema: "20260101000002" },
     runtime: { version: "0.1.0" },
     rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },
@@ -75,6 +76,7 @@ function descripteur() {
       initrd: "i",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
     },
     prefixeDesArtefacts: "/artifacts/essai/",
   };

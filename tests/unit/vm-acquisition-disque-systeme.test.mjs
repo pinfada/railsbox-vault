@@ -221,3 +221,63 @@ test("après purge du magasin, le boot retélécharge sans perte", async () => {
   assert.equal(second.mesures.transfereOctets, 6 * MIO);
   assert.deepEqual(second.tampon, premier.tampon);
 });
+
+// --- Hors connexion (#247, D1g) : seul le magasin répond -----------------------------------------
+
+test("hors connexion, le disque vient du magasin et fetch n'est jamais appelé", async () => {
+  const { recuperer, description } = cas();
+  const magasin = creerMagasinDArtefacts({ primitives: primitivesEnMemoire() });
+  const premier = await acquerirLeDisqueSysteme({ ...description, recuperer, magasin });
+  const second = await acquerirLeDisqueSysteme({
+    ...description,
+    recuperer: () => assert.fail("aucune requête hors connexion"),
+    magasin,
+    horsConnexion: true,
+  });
+  assert.deepEqual(second.tampon, premier.tampon);
+  assert.deepEqual(second.mesures.magasin, { rootfs: "servi", paquet: "servi" });
+});
+
+for (const manque of ["rootfs", "paquet"]) {
+  test(`hors connexion, le ${manque} absent du magasin : refus typé, rien n'est téléchargé`, async () => {
+    const { recuperer, description, rootfs, paquet } = cas();
+    const primitives = primitivesEnMemoire();
+    const magasin = creerMagasinDArtefacts({ primitives });
+    await acquerirLeDisqueSysteme({ ...description, recuperer, magasin });
+    primitives.fichiers.delete((manque === "rootfs" ? rootfs : paquet).sha256);
+    await assert.rejects(
+      acquerirLeDisqueSysteme({
+        ...description,
+        recuperer: () => assert.fail("aucune requête hors connexion"),
+        magasin,
+        horsConnexion: true,
+      }),
+      { code: "VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT" },
+    );
+  });
+}
+
+test("hors connexion, un morceau altéré dans le magasin est refusé, jamais servi", async () => {
+  const { recuperer, description, rootfs } = cas();
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  await acquerirLeDisqueSysteme({ ...description, recuperer, magasin });
+  primitives.fichiers.get(rootfs.sha256)[1234] ^= 0x10;
+  await assert.rejects(
+    acquerirLeDisqueSysteme({
+      ...description,
+      recuperer: () => assert.fail("aucune requête"),
+      magasin,
+      horsConnexion: true,
+    }),
+    { code: "VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT" },
+  );
+});
+
+test("hors connexion sans magasin : refus typé", async () => {
+  const { description } = cas();
+  await assert.rejects(
+    acquerirLeDisqueSysteme({ ...description, recuperer: injoignable, horsConnexion: true }),
+    { code: "VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT" },
+  );
+});

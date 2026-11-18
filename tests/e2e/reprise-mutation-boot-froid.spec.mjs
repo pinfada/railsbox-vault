@@ -18,7 +18,11 @@ import { fileURLToPath } from "node:url";
 import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
-import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
+import {
+  disqueSystemeDuManifeste,
+  graineDuManifeste,
+  empreintesDuBootDuManifeste,
+} from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -130,6 +134,7 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+    empreintes: empreintesDuBootDuManifeste(manifeste),
     disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   // Identités portées par le manifeste du volume (#10). Depuis #12, un volume ne s'ouvre en écriture
