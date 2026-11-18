@@ -243,7 +243,7 @@ test("WORKER : la preuve est lue et inscrite APRÈS l'ouverture du volume, AVANT
     assert.notEqual(trouve, -1, `« ${texte} » absent de deverrouiller`);
     return trouve;
   };
-  assert.ok(rang("await ouvrirLeVolume(ouverte.dek)") < rang("await constaterALOuverture("));
+  assert.ok(rang("await ouvrirLeVolume(ouverte)") < rang("await constaterALOuverture("));
   assert.ok(rang("await constaterALOuverture(") < rang("interne.etat = ETATS_DU_VOLUME.ouvert"));
   assert.ok(rang("interne.etat = ETATS_DU_VOLUME.ouvert") < rang("await ecrireEtAcquitter()"));
   assert.match(corps, /feuilleEprouvee: feuille\.eprouvee,/);
@@ -255,7 +255,7 @@ test("WORKER : la preuve est lue et inscrite APRÈS l'ouverture du volume, AVANT
     source,
     /identifiantEprouve: moyen\.derivePar === "page" \? null : ouverte\.identifiantEmplacement,/,
   );
-  assert.match(source, /return \{ dek, kek, version: creee\.version, identifiantEprouve: null \};/);
+  assert.match(source, /version: creee\.version,\s+identifiantEprouve: null,/);
   // L'inventaire relit la preuve contre l'enveloppe du moment, et seulement coffre ouvert.
   assert.match(
     principal,

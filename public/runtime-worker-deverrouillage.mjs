@@ -21,6 +21,10 @@ import {
   moyenParNom,
 } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { ouvrirParLeCode } from "/src/coquille/ouverture-par-le-code.mjs";
+import {
+  enLectureSeule,
+  revaliderSousLeHandle,
+} from "/src/coquille/revalidation-sous-le-handle.mjs";
 import { constaterALOuverture, feuilleConstatee } from "/src/coquille/preuve-de-la-feuille.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
 import {
@@ -35,7 +39,6 @@ import {
   inventorierEnveloppe,
   ouvrirEnveloppe,
 } from "/src/vm/enveloppe-de-cle.mjs";
-import { cleRefusee } from "/src/vm/enveloppe/enveloppe-errors.mjs";
 import {
   TYPES_KEK,
   tirerCleDeVolume,
@@ -163,13 +166,13 @@ export async function deverrouiller(message, correlation) {
     ? await ouvrirLExistante(moyen, message, versionMinimale)
     : await creerLeCoffre(moyen, message);
 
-  // La DEK de la passe 1 est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le chemin d'ÉCHEC est
-  // celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
-  // (`VAULT_STORAGE_BUSY`), et les octets en clair de la clé de volume restaient alors dans le tas
-  // du Worker. Un second clic sur « Ouvrir par la phrase » y suffisait — un geste ordinaire, pas un
+  // La DEK (celle de la passe 1) est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le
+  // chemin d'ÉCHEC est celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
+  // (`VAULT_STORAGE_BUSY`) ou quand la revalidation refuse (#311), et les octets en clair de la clé
+  // de volume restaient alors dans le tas du Worker. Un second clic sur « Ouvrir par la phrase » y suffisait — un geste ordinaire, pas un
   // scénario. C'est le constat 5 de la revue de sécurité de la PR #167.
   try {
-    await ouvrirLeVolume(ouverte.dek, () => revaliderSousLeHandle(ouverte));
+    await ouvrirLeVolume(ouverte);
   } finally {
     ouverte.dek.fill(0);
   }
@@ -200,8 +203,12 @@ export async function deverrouiller(message, correlation) {
  * Le backend précédent était ÉCRASÉ sans être fermé : le handle exclusif restait tenu par un objet
  * que plus personne ne référençait, et l'ouverture suivante rendait `VAULT_STORAGE_BUSY` — sur le
  * volume que l'utilisateur venait d'ouvrir lui-même. Constat 6 de la même revue.
+ *
+ * `sousLeHandle` est la PASSE 2 de #311 (`revalidation-sous-le-handle.mjs`) : l'ouvreur l'appelle une
+ * fois le handle exclusif pris, avant d'écrire ou d'authentifier quoi que ce soit, et rend le handle
+ * si elle refuse. Ce n'est qu'après elle que l'état peut devenir « ouvert ».
  */
-async function ouvrirLeVolume(dek, revalider) {
+async function ouvrirLeVolume(ouverte) {
   const precedent = interne.backend;
   interne.backend = null;
   interne.etat = ETATS_DU_VOLUME.verrouille;
@@ -210,69 +217,12 @@ async function ouvrirLeVolume(dek, revalider) {
   interne.backend = await openOpfsVolume({
     name: volume,
     size: TAILLE,
-    cle: dek,
+    cle: ouverte.dek,
     identifiantVolume: IDENTIFIANT_DU_VOLUME_COQUILLE,
     transactionnel: false,
-    sousLeHandle: revalider,
+    sousLeHandle: () =>
+      revaliderSousLeHandle({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME, ouverte }),
   });
-}
-
-/**
- * LA REVALIDATION de #311, sous le handle exclusif du volume.
- *
- * La passe 1 a obtenu la clé de volume AVANT que ce Worker soit seul : entre elle et la prise du
- * handle, un autre onglet qui tenait le volume a pu révoquer l'emplacement, puis fermer. Ouvrir
- * alors le volume publiait « ouvert » sous une KEK que l'enveloppe refuse. Ici l'enveloppe est
- * OUVERTE UNE SECONDE FOIS, sous le handle — plus personne ne peut en retirer une clé tant que ce
- * Worker le tient —, et deux choses sont exigées de la réponse : le MÊME emplacement, et la MÊME clé
- * de volume. Le refus est celui de la clé inconnue (`VAULT_ENVELOPPE_CLE_REFUSEE`) ; l'ouvreur
- * rend le handle, `deverrouiller` efface la clé de la passe 1, et rien n'est publié.
- *
- * C'est aussi ICI que la migration de page v1→v2 a lieu : une écriture d'enveloppe ne se fait que
- * sous le handle, sans quoi un onglet en retard pouvait republier l'ANCIENNE liste d'emplacements
- * par-dessus une révocation. `version` et `migree` publiés sont ceux de cette passe, l'autoritaire.
- *
- * **Ce que cela ne fait pas** : retirer la clé de volume à qui l'a déjà eue (SECURITY.md, limite 12).
- */
-async function revaliderSousLeHandle(ouverte) {
-  const sous = await ouvrirEnveloppe({
-    support: support(),
-    identifiantVolume: IDENTIFIANT_VOLUME,
-    kek: ouverte.kek,
-    versionMinimale: ouverte.versionMinimale,
-  });
-  try {
-    if (
-      sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||
-      !memesOctets(sous.dek, ouverte.dek)
-    ) {
-      throw cleRefusee({ volume: IDENTIFIANT_VOLUME });
-    }
-    ouverte.version = sous.version;
-    ouverte.migree = sous.migration?.faite === true;
-  } finally {
-    sous.dek.fill(0);
-  }
-}
-
-/** Égalité sans court-circuit : le temps ne dépend pas du rang du premier octet qui diffère. */
-function memesOctets(a, b) {
-  let ecart = a.length ^ b.length;
-  for (let index = 0; index < a.length; index += 1) ecart |= a[index] ^ (b[index] ?? 0);
-  return ecart === 0;
-}
-
-/**
- * Le support de la PASSE 1 : l'enveloppe se LIT, elle ne s'écrit pas. `ouvrirEnveloppe` migre une
- * page v1 en l'écrivant, et une écriture faite avant la prise du handle est exactement ce que #311
- * interdit ; l'écriture refusée ici est avalée par la migration, qui rend « non faite » et que la
- * passe 2 rejoue sous le handle.
- */
-function enLectureSeule(support) {
-  const refuser = () => {
-    throw new Error("L'enveloppe est en lecture seule avant la prise du handle du volume (#311).");
-  };
-  return Object.freeze({ ...support, allouer: refuser, ecrire: refuser, barriere: refuser });
 }
 
 /**
