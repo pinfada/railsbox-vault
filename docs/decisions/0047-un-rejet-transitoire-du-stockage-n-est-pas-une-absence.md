@@ -1,4 +1,4 @@
-# ADR 0046 — Un rejet « transitoire » du stockage n'est pas une absence : état et refus indéterminés, réessayables
+# ADR 0047 — Un rejet « transitoire » du stockage n'est pas une absence : état et refus indéterminés, réessayables
 
 - Statut : accepté
 - Date : 2026-11-18
