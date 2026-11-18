@@ -39,6 +39,15 @@
 [hidden] {
   display: none !important;
 }
+/* L'AFFICHAGE du coffre (#265, ADR 0049) : MASQUÉ PAR DÉFAUT, par cette règle et non par le script. Sans
+   l'estampille `data-vue`, posée en dernier par le rendeur, le conteneur n'est jamais visible, même
+   `hidden` retiré ; l'espace réservé, statique, ne cède la place qu'à lui. */
+#affichage:not([data-vue]) {
+  display: none !important;
+}
+#affichage[data-vue] + #affichage-attente {
+  display: none;
+}
 html {
   background: var(--fond-page);
 }

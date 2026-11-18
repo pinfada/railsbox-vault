@@ -21,6 +21,7 @@ export function banc({ occurrence = 1, defaillances = {} } = {}) {
     rendeur: null,
     enVolVuAuxEffets: [],
     armements: 0,
+    valeursEstampillees: [],
   };
   const defaille = (nom) => defaillances[nom]?.();
   const effet = (nom, ...details) => {
@@ -51,7 +52,10 @@ export function banc({ occurrence = 1, defaillances = {} } = {}) {
       remplacerLeContenu: (fragment) => effet("remplacer", fragment.id),
       retirerLaRegionDErreur: () => effet("retirer-erreur"),
       demasquer: () => effet("demasquer"),
-      estamper: (occ) => effet("estampe", occ),
+      estamper: (occ, valeur) => {
+        b.valeursEstampillees.push(valeur);
+        effet("estampe", occ);
+      },
       masquer: () => effet("masquer"),
       montrerLaRegionDErreur: (occ) => effet("erreur", occ),
     },

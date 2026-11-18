@@ -35,6 +35,13 @@ test("[X-a] succès : quatre effets dans l'ordre, enVol tenu pendant tout le blo
   assert.equal(d.derniereOccurrenceTraitee, 1);
 });
 
+test("[X-a] l'estampille reçoit la valeur que le rendu a rendue (l'empreinte de CETTE tentative)", async () => {
+  const b = banc({ defaillances: { "rendre-pret": () => ({ empreinte: "e-1" }) } });
+  b.rendeur.reveiller();
+  await vider();
+  assert.deepEqual(b.valeursEstampillees, [{ empreinte: "e-1" }]);
+});
+
 test("[X-a] rien n'est refait pour une occurrence déjà traitée", async () => {
   const b = banc();
   b.rendeur.reveiller();

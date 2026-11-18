@@ -27,7 +27,7 @@ export const DELAI_DU_RENDEUR_MS = 2000;
  * @param {{ occurrence: () => number, nouveauFragment: () => object,
  *           rendre: (occurrence: number, fragment: object) => unknown,
  *           effets: { remplacerLeContenu: Function, retirerLaRegionDErreur: Function,
- *                     demasquer: Function, estamper: Function, masquer: Function,
+ *                     demasquer: Function, estamper: (occurrence: number, valeur: unknown) => void, masquer: Function,
  *                     montrerLaRegionDErreur: Function },
  *           armer: (ms: number, fonction: Function) => unknown, desarmer: (poignee: unknown) => void,
  *           consigner: (code: string, detail?: unknown) => void }} dependances
@@ -124,7 +124,7 @@ export function creerLeRendeur({
     try {
       if (occurrence() !== occ) {
         // JETER : aucun effet visible ; le successeur suit dans le `finally`.
-      } else if ("ok" in resultat) publier(t, occ);
+      } else if ("ok" in resultat) publier(t, occ, resultat.ok);
       else echouer(t, occ);
     } catch (erreur) {
       noter("regler-en-echec", erreur);
@@ -141,7 +141,7 @@ export function creerLeRendeur({
   }
 
   /** Bloc SYNCHRONE : l'estampille est l'UNIQUE acte qui rend le contenu visible, donc le dernier. */
-  function publier(t, occ) {
+  function publier(t, occ, valeur) {
     if (!autorise(t, occ)) return;
     effets.remplacerLeContenu(t.fragment);
     if (!autorise(t, occ)) return;
@@ -149,7 +149,7 @@ export function creerLeRendeur({
     if (!autorise(t, occ)) return;
     effets.demasquer();
     if (!autorise(t, occ)) return;
-    effets.estamper(occ);
+    effets.estamper(occ, valeur);
     occurrencePubliee = occ;
   }
 

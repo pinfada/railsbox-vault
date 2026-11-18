@@ -110,6 +110,25 @@
         </p>
       </section>
 
+      <!--
+        L'AFFICHAGE du coffre (#265, ADR 0049 § C2) : tout ce que la page AFFIRME du coffre et de la
+        révocation — moyens, nombre de codes, constat de la feuille, confirmation, écrans imposés par
+        l'état, région d'annonce — est écrit ICI, et ici seulement, par un rendeur unique, à partir d'une
+        projection de l'état. Le conteneur est MASQUÉ PAR DÉFAUT par la feuille de style, sans script :
+        il ne devient visible que par l'estampille `data-vue`, posée en dernier. Tant qu'il ne l'est pas,
+        l'espace réservé ci-dessous, statique, est la seule chose montrée ; il n'affirme rien du coffre.
+        La région d'erreur est HORS du conteneur : elle dit que l'affichage n'a pas pu être actualisé, et
+        n'affirme jamais le contraire.
+      -->
+      <section id="affichage-du-coffre" aria-label="Ce que la page sait de votre coffre">
+        <div id="affichage" hidden></div>
+        <p id="affichage-attente">Préparation de l'affichage de votre coffre…</p>
+        <p id="affichage-erreur" role="status" aria-live="assertive" hidden>
+          L'affichage de votre coffre n'a pas pu être actualisé : ce qui s'affiche ici peut ne pas
+          être exact. Rechargez la page.
+        </p>
+      </section>
+
       <div data-bloc="commencer" hidden>
         <p>
           <button id="parcours-commencer" type="button">Commencer</button>
@@ -382,6 +401,9 @@
 
       <details id="details-techniques">
         <summary>Détails techniques</summary>
+        <p id="details-mention">
+          Relevé de diagnostic : il peut être périmé et ne prouve rien de l'état de votre coffre.
+        </p>
         <p id="coquille-etat" role="status">coquille:demarrage</p>
         <p id="parcours-progression-etat">progression:non-lue</p>
         <p id="deverrouillage-moyens" role="status"></p>
