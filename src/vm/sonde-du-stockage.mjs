@@ -61,32 +61,41 @@ export function classerLeRejetDeRacine(cause) {
 const attendreReel = (ms) => new Promise((fini) => setTimeout(fini, ms));
 
 /**
- * Sonde le stockage. Ne lève jamais.
+ * Sonde le stockage et rend le verdict ET, pour une `panne`, le code PRÉCIS du rejet (`quotaExceeded`,
+ * `handleLost`, `supportFailure`…). Ne lève jamais.
  *
  * @param {{ storage?: { getDirectory?: Function }, essais?: number, delaiMs?: number,
  *           attendre?: (ms: number) => Promise<unknown> }} [options]
- * @returns {Promise<"atteignable" | "absente" | "indetermine" | "panne">}
+ * @returns {Promise<{ verdict: "atteignable" | "absente" | "indetermine" | "panne", code: string | null }>}
  */
-export async function sonderLeStockage({
+export async function sonderLeStockageEnDetail({
   storage = globalThis.navigator?.storage,
   essais = ESSAIS_DE_LA_SONDE,
   delaiMs = DELAI_ENTRE_ESSAIS_MS,
   attendre = attendreReel,
 } = {}) {
-  if (typeof storage?.getDirectory !== "function") return VERDICTS_DU_STOCKAGE.absente;
+  if (typeof storage?.getDirectory !== "function") {
+    return { verdict: VERDICTS_DU_STOCKAGE.absente, code: null };
+  }
   for (let essai = 1; ; essai += 1) {
     try {
       await storage.getDirectory();
-      return VERDICTS_DU_STOCKAGE.atteignable;
+      return { verdict: VERDICTS_DU_STOCKAGE.atteignable, code: null };
     } catch (cause) {
       const verdict = classerLeRejetDeRacine(cause);
-      if (verdict !== VERDICTS_DU_STOCKAGE.indetermine || essai >= essais) return verdict;
+      if (verdict !== VERDICTS_DU_STOCKAGE.indetermine || essai >= essais) {
+        const code =
+          verdict === VERDICTS_DU_STOCKAGE.panne
+            ? toStorageError(cause, { operation: "open-directory", volume: "-" }).code
+            : null;
+        return { verdict, code };
+      }
     }
     await attendre(delaiMs);
   }
 }
 
-/** ROUGE : le détail n'est pas encore rendu. */
-export async function sonderLeStockageEnDetail(options = {}) {
-  return { verdict: await sonderLeStockage(options), code: null };
+/** Le verdict seul. Ne lève jamais. */
+export async function sonderLeStockage(options = {}) {
+  return (await sonderLeStockageEnDetail(options)).verdict;
 }

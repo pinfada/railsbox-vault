@@ -47,6 +47,16 @@ Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 >
 > Ce que vous avez à faire : Suivez les indications du message.
 
+### Écran : Le stockage du navigateur ne répond pas pour l'instant
+
+> RailsBox Vault ne peut pas lire ce que cet appareil contient : le navigateur ne répond pas pour
+> l'instant, et la cause n'est pas établie. Rien n'est proposé tant qu'il ne répond pas, pour ne pas
+> vous faire créer un coffre à la place de celui que vous avez peut-être déjà.
+>
+> Ce que vous avez à faire : Cliquez sur « Réessayer ».
+
+Boutons et champs : « Réessayer ».
+
 ### Écran : Créer votre coffre
 
 > Votre coffre garde une application et ses données sur cet appareil, dans ce navigateur, protégées

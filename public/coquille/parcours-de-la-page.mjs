@@ -448,7 +448,9 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       ecranId === "code-a-verrouiller";
     if (ecran.etape === 3 && !(verification && etat.pointeur > 3)) allerA(3);
     if (ecran.etape === 4 && etat.pointeur === 3) allerA(4);
-    if (ecranId === "refuse") dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
+    if (ecranId === "refuse" || ecranId === "inaccessible") {
+      dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
+    }
     const precedent = etat.ecran;
     etat.ecran = ecranId;
     // Une réussite ne reste pas affichée hors contexte (#266 m6) : elle accompagne l'écran où son

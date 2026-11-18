@@ -69,7 +69,20 @@ async function ouvrirLaCoquille(page, requete = "") {
  */
 async function exigerLaLimiteDuMoteur(page) {
   await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBeTruthy();
-  if (!ETATS_SANS_VOLUME.includes((await releve(page)).etat)) return false;
+  const etat = (await releve(page)).etat;
+  if (!ETATS_SANS_VOLUME.includes(etat)) return false;
+  if (etat === "indetermine") {
+    // Sous WebKit ≥ 26.6 éphémère le stockage rejette `UnknownError` : l'inventaire est INCONNU (#231).
+    // L'écran le dit, et n'offre NI la création NI un moyen — c'est la conduite, et la limite écrite.
+    await expect(ecran(page, "Le stockage du navigateur ne répond pas pour l'instant")).toBeVisible(
+      {
+        timeout: DELAI,
+      },
+    );
+    await expect(bouton(page, "Commencer")).toHaveCount(0);
+    await expect(ecran(page, "Créer votre coffre")).toHaveCount(0);
+    return true;
+  }
   await bouton(page, "Commencer").click();
   await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
   await bouton(page, "Créer mon coffre").click();
@@ -440,6 +453,9 @@ test("une phrase trop courte est refusée avant la création, avec un conseil à
   page,
 }) => {
   await ouvrirLaCoquille(page);
+  // Sous WebKit ≥ 26.6 éphémère l'inventaire est INCONNU (#231) : la page n'offre pas la création, donc
+  // la politique de phrase de création n'a rien à juger — elle l'est sous Chromium et Firefox.
+  if (await exigerLaLimiteDuMoteur(page)) return;
   await bouton(page, "Commencer").click();
   const phrase = page.getByLabel("Votre phrase", { exact: true });
   await expect(phrase).toHaveAttribute("minlength", "12");

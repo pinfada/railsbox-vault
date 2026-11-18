@@ -18,6 +18,7 @@ import {
   surveiller,
   test,
   verifier,
+  TITRE_STOCKAGE_INACCESSIBLE,
 } from "./outils-d-apparence.mjs";
 import { writeFile } from "node:fs/promises";
 
@@ -43,7 +44,12 @@ for (const theme of ["light", "dark"]) {
     }, testInfo) => {
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
       await page.setViewportSize({ width: largeur, height: 900 });
-      await ouvrir(page);
+      if ((await ouvrir(page)) === "inaccessible") {
+        // WebKit éphémère (#231) : pas de création. L'écran qui s'y montre est vérifié à ce gabarit.
+        await aucunGroupeSansNom(page, "inaccessible");
+        await verifier(page, testInfo, "inaccessible");
+        return;
+      }
       await aucunGroupeSansNom(page, "création");
       await verifier(page, testInfo, "creation");
       await bouton(page, "Commencer").click();
@@ -112,7 +118,11 @@ for (const theme of ["light", "dark"]) {
     browserName,
   }, testInfo) => {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-    await ouvrir(page);
+    if ((await ouvrir(page)) === "inaccessible") {
+      // WebKit éphémère (#231) : aucun coffre ne se crée, et l'écran n'offre pas de le tenter.
+      await verifier(page, testInfo, "inaccessible-feuille");
+      return;
+    }
     await bouton(page, "Commencer").click();
     await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
     await bouton(page, "Créer mon coffre").click();
@@ -187,8 +197,12 @@ test("la direction utilitaire est servie localement et le focus clavier reste vi
 }) => {
   const tab = "Tab";
   await page.goto("/index.html");
+  // Sous WebKit éphémère (#231) l'écran est « le stockage ne répond pas » : la direction visuelle se
+  // lit sur l'écran qui s'y montre.
   await expect(
-    page.getByRole("heading", { name: "Créer votre coffre", exact: true }),
+    page
+      .getByRole("heading", { name: "Créer votre coffre", exact: true })
+      .or(page.getByRole("heading", { name: TITRE_STOCKAGE_INACCESSIBLE, exact: true })),
   ).toBeVisible();
   const style = await page.locator("main").evaluate((node) => {
     const css = getComputedStyle(node);
@@ -200,6 +214,23 @@ test("la direction utilitaire est servie localement et le focus clavier reste vi
   await page.keyboard.press(tab);
   await expect(page.getByRole("link", { name: "Aller au parcours" })).toBeFocused();
   await page.keyboard.press("Enter");
+  const inaccessible = page.getByRole("heading", {
+    name: TITRE_STOCKAGE_INACCESSIBLE,
+    exact: true,
+  });
+  if (await inaccessible.isVisible()) {
+    // WebKit éphémère (#231) : le lien d'évitement mène au titre de l'écran, et « Réessayer » est
+    // l'unique action, au clavier et avec un contour visible.
+    await expect(inaccessible).toBeFocused();
+    await page.keyboard.press(tab);
+    const reessayer = page.getByRole("button", { name: "Réessayer", exact: true });
+    await expect(reessayer).toBeFocused();
+    const contourReessayer = await reessayer.evaluate(
+      (node) => getComputedStyle(node).outlineWidth,
+    );
+    expect(parseFloat(contourReessayer)).toBeGreaterThanOrEqual(3);
+    return;
+  }
   await expect(
     page.getByRole("heading", { name: "Créer votre coffre", exact: true }),
   ).toBeFocused();

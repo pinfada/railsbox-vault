@@ -178,7 +178,14 @@ test("#251, Chromium et WebKit : un geste long pressé pendant un rendu de la pa
   test.skip(browserName === "firefox", "appui souris non livré par le pilote sous Firefox");
   test.setTimeout(120_000);
   await page.goto(new URL("/index.html", SHELL_ORIGIN).toString(), { waitUntil: "commit" });
-  await expect(ecran(page, "Créer votre coffre")).toBeVisible({ timeout: DELAI });
+  // Sous WebKit ≥ 26.6 éphémère, le stockage rejette `UnknownError` : l'inventaire est INCONNU et la page
+  // n'offre pas la création (#231). Le geste mesuré ici n'existe pas sur cet écran, et l'épreuve le dit.
+  const inaccessible = ecran(page, "Le stockage du navigateur ne répond pas pour l'instant");
+  await expect(ecran(page, "Créer votre coffre").or(inaccessible)).toBeVisible({ timeout: DELAI });
+  if (await inaccessible.isVisible()) {
+    await expect(bouton(page, "Commencer")).toHaveCount(0);
+    return;
+  }
   await bouton(page, "Commencer").click();
   await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
   const cible = bouton(page, "Créer mon coffre");

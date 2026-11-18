@@ -269,19 +269,15 @@ test("une PANNE d'emblée (autre rejet) : état `indetermine`, refus à son code
     ["Error", STORAGE_ERROR_CODES.supportFailure],
   ]);
   for (const [nom, code] of attendus) {
-    const worker = await monterLeWorker((n, appels) =>
-      n === 1 ? Promise.reject(rejet(nom)) : racineDouble(appels),
-    );
+    const worker = await monterLeWorker(toujoursRejete(nom));
     worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
     geste(worker, "d1");
-    await attendre(150);
+    await attendre(200);
     assert.equal(worker.parCorrelation("e1")?.etat, "indetermine", nom);
     assert.equal(worker.parCorrelation("d1")?.code, code, nom);
-    assert.equal(
-      worker.appels.getDirectory,
-      1 + 1 + 0,
-      `${nom} : sans réessai interne, une relance par geste`,
-    );
+    assert.notEqual(worker.parCorrelation("d1")?.code, STORAGE_ERROR_CODES.unsupported, nom);
+    // Pas de réessai INTERNE sur une panne : la sonde d'emblée, puis UNE relance par geste.
+    assert.equal(worker.appels.getDirectory, 2, nom);
   }
 });
 
@@ -304,11 +300,13 @@ test("l'INVENTAIRE est INCONNU tant que le stockage est indéterminé : jamais �
 });
 
 test("une demande d'INVENTAIRE relance la sonde : à la reprise l'inventaire n'est plus inconnu, sans rechargement", async () => {
+  // La sonde d'emblée (3 essais) et la relance de la PREMIÈRE demande d'inventaire (3 essais) échouent ;
+  // la relance de la seconde aboutit.
   const worker = await monterLeWorker((n, appels) =>
-    n <= 3 ? Promise.reject(rejet("UnknownError")) : racineDouble(appels),
+    n <= 6 ? Promise.reject(rejet("UnknownError")) : racineDouble(appels),
   );
   worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
-  await attendre(400);
+  await attendre(800);
   assert.equal(worker.parCorrelation("i1")?.inconnu, true);
 
   worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i2");
@@ -317,6 +315,9 @@ test("une demande d'INVENTAIRE relance la sonde : à la reprise l'inventaire n'e
   assert.ok(reprise, "l'inventaire redemandé reçoit une réponse");
   assert.notEqual(reprise.inconnu, true, "la sonde réussie lève l'inconnu");
   assert.notEqual(reprise.refus?.code, STORAGE_ERROR_CODES.indeterminate);
+  // L'inventaire est LU pour de bon : il est allé jusqu'à l'OPFS (un inventaire servi sans y toucher
+  // serait un « vide » déguisé, celui d'une capacité que le Worker croit encore absente).
+  assert.ok(worker.appels.racine > 0, "l'inventaire a atteint l'OPFS");
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
   await attendre(60);
   assert.equal(worker.parCorrelation("e1")?.etat, "verrouille");

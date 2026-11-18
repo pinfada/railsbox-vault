@@ -26,7 +26,8 @@ for (const largeur of LARGEURS) {
     page,
   }) => {
     await page.setViewportSize({ width: largeur, height: 900 });
-    await ouvrir(page);
+    // Sous WebKit éphémère (#231) l'écran de création n'existe pas : ce gabarit-ci n'a rien à mesurer.
+    if ((await ouvrir(page)) === "inaccessible") return;
     const rang = await taille(page, "#parcours-rang");
     expect(rang.px, "« Étape x sur 9 »").toBeGreaterThanOrEqual(13);
     const explication = await taille(page, "#parcours-ce-qui-va-se-passer");
@@ -53,7 +54,8 @@ for (const largeur of LARGEURS) {
     page,
   }) => {
     await page.setViewportSize({ width: largeur, height: 900 });
-    await ouvrir(page);
+    // Sous WebKit éphémère (#231) l'écran de création n'existe pas : ce gabarit-ci n'a rien à mesurer.
+    if ((await ouvrir(page)) === "inaccessible") return;
     await bouton(page, "Commencer").click();
     await expect(titre(page, "Choisir comment l'ouvrir")).toBeVisible();
     const champ = page.getByLabel("Votre phrase", { exact: true });
@@ -92,7 +94,8 @@ for (const largeur of LARGEURS) {
 test("la description accessible du champ de la phrase porte le constat ET le conseil (création)", async ({
   page,
 }) => {
-  await ouvrir(page);
+  // Sous WebKit éphémère (#231) l'écran de création n'existe pas : ce gabarit-ci n'a rien à mesurer.
+  if ((await ouvrir(page)) === "inaccessible") return;
   await bouton(page, "Commencer").click();
   await expect(titre(page, "Choisir comment l'ouvrir")).toBeVisible();
   const champ = page.getByLabel("Votre phrase", { exact: true });

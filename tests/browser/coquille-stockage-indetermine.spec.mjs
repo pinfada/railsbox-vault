@@ -25,18 +25,23 @@ const ecran = (page, titre) => page.getByRole("heading", { level: 2, name: titre
 const bouton = (page, nom) => page.getByRole("button", { name: nom, exact: true });
 const releve = async (page) => JSON.parse(await page.locator("#coquille-rapport").textContent());
 
-/** Le nombre d'appels de `getDirectory()` que le prochain Worker de confiance rejettera. */
+/**
+ * Pose, dans le Worker de confiance, un `getDirectory()` qui REJETTE `UnknownError` tant que l'épreuve
+ * le demande. L'interrupteur est TENU PAR L'ÉPREUVE : le Worker l'interroge à chaque appel par un
+ * `fetch` de même origine que la route de l'épreuve sert — un compte d'appels fixé d'avance serait
+ * faux dès qu'un autre module du Worker appelle `getDirectory()` avant la sonde.
+ */
 async function poserLeRejetDansLeWorker(context, etat) {
+  await context.route(/\/__rejets-d-opfs$/, (route) =>
+    route.fulfill({ status: 200, contentType: "text/plain", body: etat.rejeter ? "1" : "0" }),
+  );
   await context.route(/\/runtime-worker\.mjs/, async (route) => {
     const reponse = await route.fetch();
     const prelude =
-      `const __restants = { n: ${etat.rejets} };\n` +
       "const __origine = StorageManager.prototype.getDirectory;\n" +
-      "StorageManager.prototype.getDirectory = function () {\n" +
-      "  if (__restants.n > 0) {\n" +
-      "    __restants.n -= 1;\n" +
-      '    return Promise.reject(new DOMException("transitoire", "UnknownError"));\n' +
-      "  }\n" +
+      "StorageManager.prototype.getDirectory = async function () {\n" +
+      '  const demande = await (await fetch("/__rejets-d-opfs", { cache: "no-store" })).text();\n' +
+      '  if (demande === "1") throw new DOMException("transitoire", "UnknownError");\n' +
       "  return __origine.call(this);\n" +
       "};\n";
     await route.fulfill({ response: reponse, body: prelude + (await reponse.text()) });
@@ -75,7 +80,7 @@ test("stockage inaccessible : ni création ni moyen, « Réessayer », et la rep
   page,
   context,
 }, info) => {
-  const etat = { rejets: 0 };
+  const etat = { rejeter: false };
   await poserLeRejetDansLeWorker(context, etat);
   await ouvrirLaCoquille(page);
   await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBeTruthy();
@@ -97,7 +102,7 @@ test("stockage inaccessible : ni création ni moyen, « Réessayer », et la rep
 
   // Chromium et Firefox : un coffre EXISTANT, puis un stockage qui ne répond pas à la rouverture.
   const code = await creerEtAfficherLeCode(page);
-  etat.rejets = 3;
+  etat.rejeter = true;
   await page.reload({ waitUntil: "commit" });
   await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
   await expect(page.locator("#deverrouillage-moyens")).toContainText("inaccessible pour l'instant");
@@ -107,6 +112,7 @@ test("stockage inaccessible : ni création ni moyen, « Réessayer », et la rep
   // La reprise : SANS rechargement. L'épreuve compte les chargements du document depuis ce point.
   let chargements = 0;
   page.on("load", () => (chargements += 1));
+  etat.rejeter = false;
   await bouton(page, "Réessayer").click();
   await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
   await expect(ecran(page, "Créer votre coffre")).toHaveCount(0);
@@ -117,5 +123,54 @@ test("stockage inaccessible : ni création ni moyen, « Réessayer », et la rep
   // Le coffre existant s'ouvre : la reprise n'est pas qu'un écran.
   await page.getByLabel("Code de récupération", { exact: true }).fill(code);
   await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBe("ouvert");
+});
+
+test("la même reprise rend l'écran de RÉOUVERTURE par la PHRASE d'un coffre existant, et la phrase l'ouvre", async ({
+  page,
+  context,
+}) => {
+  const etat = { rejeter: false };
+  await poserLeRejetDansLeWorker(context, etat);
+  await ouvrirLaCoquille(page);
+  await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBeTruthy();
+  if ((await releve(page)).etat === "indetermine") {
+    // WebKit éphémère : aucun coffre n'existe, la phrase n'a rien à rouvrir. Même écran, même absence
+    // d'offre — la limite est écrite dans la première épreuve.
+    await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
+    await exigerAucuneOffre(page);
+    return;
+  }
+
+  // Un coffre existant dont le code a été éprouvé, puis verrouillé : la page rouvre par la PHRASE.
+  const code = await creerEtAfficherLeCode(page);
+  await bouton(page, "J'ai recopié mon code").click();
+  const recharge = page.waitForEvent("load");
+  await bouton(page, "Verrouiller mon coffre").click();
+  await recharge;
+  await expect(page.getByLabel("Code de récupération", { exact: true })).toBeVisible({
+    timeout: DELAI,
+  });
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+  // La feuille est éprouvée (c'est le Worker qui le constate) : un rechargement referme le coffre, et la
+  // page le rouvre désormais par la PHRASE.
+  await page.reload({ waitUntil: "commit" });
+  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible({ timeout: DELAI });
+
+  // Le stockage ne répond plus : l'écran de réouverture cède la place à l'écran « inaccessible »…
+  etat.rejeter = true;
+  await page.reload({ waitUntil: "commit" });
+  await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
+  await exigerAucuneOffre(page);
+
+  // …puis, à la reprise, revient — celui d'un coffre EXISTANT, jamais « Créer votre coffre ».
+  etat.rejeter = false;
+  await bouton(page, "Réessayer").click();
+  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible({ timeout: DELAI });
+  await expect(ecran(page, "Créer votre coffre")).toHaveCount(0);
+  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+  await bouton(page, "Ouvrir mon coffre").click();
   await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBe("ouvert");
 });

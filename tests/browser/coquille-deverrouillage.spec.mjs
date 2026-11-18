@@ -350,10 +350,25 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
   // la conduite juste. L'ADR 0028 distingue les deux : l'un dit « il faut un geste », l'autre dit
   // « ce moteur ne sait pas », et les confondre ferait demander une phrase qui n'ouvrirait rien.
   expect((await releve(page)).etat).not.toBe(ETATS_DU_VOLUME.ouvert);
-  await expect(page.locator("#deverrouillage-moyens")).toContainText("Aucun coffre");
+  // « Aucun coffre » quand l'inventaire est lu ; « inaccessible pour l'instant » quand le stockage
+  // rejette `UnknownError` (WebKit ≥ 26.6 éphémère, #231) : l'inventaire est alors INCONNU, jamais vide.
+  await expect(page.locator("#deverrouillage-moyens")).toContainText(
+    /Aucun coffre|inaccessible pour l'instant/,
+  );
 
   await page.locator("#saisie-phrase").fill(PHRASE);
   await page.locator("#ouvrir-par-phrase").click();
+
+  if ((await releve(page)).etat === ETATS_DU_VOLUME.indetermine) {
+    // Sous WebKit ≥ 26.6 éphémère (#231) : l'inventaire est INCONNU, le geste est refusé AVANT toute
+    // dérivation, sous son code typé — et AUCUNE attente n'est annoncée pour rien. La mesure de
+    // l'annonce (#217) n'a pas d'objet là : elle se joue sous Chromium et Firefox.
+    await expect(page.locator("#deverrouillage-refus")).toContainText(MOTIF_DE_REFUS_DE_CAPACITE, {
+      timeout: DELAI,
+    });
+    expect(await page.evaluate(() => globalThis.__annoncesPeintes)).toEqual([]);
+    return;
+  }
 
   await expect
     .poll(async () => (await releve(page)).etat, { timeout: DELAI })
@@ -937,10 +952,13 @@ test("une PASSKEY crée le coffre et le rouvre ; sans authentificateur, le refus
       borneMs: DELAI_PASSKEY_MS,
       refus,
     });
+    // TROIS refus sont admis : les deux ci-dessus, et le refus de CAPACITÉ — sous WebKit ≥ 26.6
+    // éphémère l'inventaire est INCONNU (#231), la page refuse le geste AVANT tout appel à
+    // l'authentificateur, et le dit sous son code typé.
     expect(
       [DERIVATION_ERROR_CODES.prfIndisponible, DERIVATION_ERROR_CODES.annulee].some((code) =>
         refus.includes(code),
-      ),
+      ) || MOTIF_DE_REFUS_DE_CAPACITE.test(refus),
       `refus non typé : ${refus}`,
     ).toBe(true);
     return;

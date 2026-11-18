@@ -119,12 +119,28 @@ export async function verifierAux(page, testInfo, nom, largeurs) {
   }
 }
 
+/** Le titre de l'écran que la coquille montre quand le stockage du navigateur ne répond pas (#231). */
+export const TITRE_STOCKAGE_INACCESSIBLE = "Le stockage du navigateur ne répond pas pour l'instant";
+
+/**
+ * Ouvre la coquille et rend l'écran qui s'y montre : `"creer"` — l'écran de création —, ou
+ * `"inaccessible"`. Sous WebKit ≥ 26.6 dans le contexte éphémère de la fixture, `getDirectory()` rejette
+ * `UnknownError` : l'inventaire du coffre est INCONNU, la coquille n'offre NI la création NI un moyen
+ * (ADR 0047), et seul « Réessayer » est proposé. Les épreuves qui mesurent l'écran de création ne
+ * s'y jouent pas : la limite est écrite, et l'écran `inaccessible` est, lui, vérifié.
+ *
+ * @returns {Promise<"creer" | "inaccessible">}
+ */
 export async function ouvrir(page) {
   await page.goto(`${ORIGINE_A}/index.html`);
-  await expect(titre(page, "Créer votre coffre")).toBeVisible({ timeout: 60_000 });
+  const creer = titre(page, "Créer votre coffre");
+  const inaccessible = titre(page, TITRE_STOCKAGE_INACCESSIBLE);
+  await expect(creer.or(inaccessible)).toBeVisible({ timeout: 60_000 });
+  if (await inaccessible.isVisible()) return "inaccessible";
   await expect(page.locator("#parcours-attente-annoncee")).not.toHaveText(/calibration/, {
     timeout: 60_000,
   });
+  return "creer";
 }
 
 /**

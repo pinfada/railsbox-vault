@@ -489,23 +489,25 @@ répond : l'état, l'inventaire et chaque geste attendent la conclusion de la so
 est constant (8 essais sur 8, étalés sur 800 ms) ; le coût est le seul délai, **200 ms** au
 démarrage.
 
-| Verdict de la sonde | Cause                                                     | État publié    | Refus d'un geste                |
-| ------------------- | --------------------------------------------------------- | -------------- | ------------------------------- |
-| `atteignable`       | `getDirectory()` aboutit, à n'importe lequel des essais   | `verrouille`   | —                               |
-| `absente`           | fonction manquante ; `SecurityError`, `TypeMismatchError` | `indisponible` | `VAULT_STORAGE_UNSUPPORTED`     |
-| **`indetermine`**   | `UnknownError` persistant après les essais                | `indetermine`  | **`VAULT_STORAGE_INDETERMINE`** |
-| `panne`             | tout autre rejet : quota, état invalide, erreur inconnue  | `verrouille`   | le code précis du vrai geste    |
+| Verdict de la sonde | Cause                                                     | État publié    | Refus d'un geste                          |
+| ------------------- | --------------------------------------------------------- | -------------- | ----------------------------------------- |
+| `atteignable`       | `getDirectory()` aboutit, à n'importe lequel des essais   | `verrouille`   | —                                         |
+| `absente`           | fonction manquante ; `SecurityError`, `TypeMismatchError` | `indisponible` | `VAULT_STORAGE_UNSUPPORTED`               |
+| **`indetermine`**   | `UnknownError` persistant après les essais                | `indetermine`  | **`VAULT_STORAGE_INDETERMINE`**           |
+| `panne`             | tout autre rejet : quota, état invalide, erreur inconnue  | `indetermine`  | **son code précis**, jamais `UNSUPPORTED` |
 
 `VAULT_STORAGE_INDETERMINE` dit « le stockage du navigateur est inaccessible pour l'instant, cause
 non établie » : il **n'affirme aucune absence**, ne conseille pas d'emblée de changer de navigateur,
-et est **réessayable** — un geste présenté tant que l'état est `indetermine` relance la sonde, et si
-elle aboutit le coffre redevient `verrouille` sans rechargement. Avant ce correctif la coquille
-passait en `data-coquille="erreur"` sur WebKit ≥ 26.6 (47 épreuves rouges sous 1.63.0 en CI, 76 sous
-1.65.0 en local). Un contexte persistant, lui, ouvre un volume : si Safari se comporte ainsi, le
-refus du volume est une propriété de la SESSION et non du moteur. **Cela n'a pas été mesuré sur un
-vrai Safari** (#40) ; l'assimilation « contexte éphémère de Playwright = navigation privée de Safari
-» est une hypothèse, que le produit ne fait pas : il ne dit rien du contexte, seulement ce qu'il a
-vu.
+et est **réessayable** — un geste ou une demande d'inventaire présentés tant que l'état est
+`indetermine` relancent la sonde, et si elle aboutit le coffre redevient `verrouille` sans
+rechargement. L'**inventaire** est alors INCONNU, non vide : le parcours dit « le stockage ne répond
+pas pour l'instant », n'offre ni création ni moyen d'ouverture, et propose « Réessayer » (ADR 0047).
+Avant ce correctif la coquille passait en `data-coquille="erreur"` sur WebKit ≥ 26.6 (47 épreuves
+rouges sous 1.63.0 en CI, 76 sous 1.65.0 en local). Un contexte persistant, lui, ouvre un volume :
+si Safari se comporte ainsi, le refus du volume est une propriété de la SESSION et non du moteur.
+**Cela n'a pas été mesuré sur un vrai Safari** (#40) ; l'assimilation « contexte éphémère de
+Playwright = navigation privée de Safari » est une hypothèse, que le produit ne fait pas : il ne dit
+rien du contexte, seulement ce qu'il a vu.
 
 **La sonde de capacités ne suit pas encore.** Sous WebKit ≥ 26.6 éphémère, `opfsGetDirectory` et
 `opfsSyncAccessHandle` valent `error` (`UnknownError`), non `unsupported` : le verdict Vault de la
