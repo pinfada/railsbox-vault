@@ -103,8 +103,8 @@ export const BLOCS = Object.freeze([
   "espace-de-travail",
   "sauvegarde",
   "restauration",
-  "revocation",
   "sans-revoquer",
+  "revocation",
   "continuer",
   "retour",
 ]);
@@ -599,6 +599,8 @@ export const GESTES_LONGS = Object.freeze([
   "sauvegarder-le-coffre",
   "restaurer-le-coffre",
   "revoquer-en-urgence",
+  // Le second geste de la révocation (#265) : fermé comme les autres tant qu'un geste long court.
+  "revoquer-confirmer",
 ]);
 
 /**

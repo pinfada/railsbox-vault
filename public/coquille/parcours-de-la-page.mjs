@@ -17,6 +17,7 @@
 // (scission du 19/09/2026, #250) ; ce module garde l'écran, la progression et les gestes.
 
 import { relierLesChamps } from "./refus-du-champ.mjs";
+import { suivreLaConfirmationDeRevocation } from "./confirmation-de-la-revocation.mjs";
 import { ecrireLaPromesse } from "./promesse-de-l-entree.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
@@ -511,6 +512,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
         ? [...visibles, "espace-de-travail"]
         : visibles,
     );
+    suivreLaConfirmationDeRevocation({ noeud, dire, releve }); // APRÈS les blocs (#265)
     noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
     // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
     noeud("promesse-garanties").hidden = ecranId === "rouvrir";

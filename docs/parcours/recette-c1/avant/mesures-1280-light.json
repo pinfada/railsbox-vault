@@ -3,10 +3,7 @@
   "moment": "avant",
   "ecrans": {
     "etape-9": {
-      "blocsVisibles": [
-        "revocation",
-        "sans-revoquer"
-      ],
+      "blocsVisibles": ["revocation", "sans-revoquer"],
       "boutons": [
         {
           "id": "revoquer-en-urgence",
@@ -25,24 +22,15 @@
           "ordreCss": "0"
         }
       ],
-      "ordreDeTabulation": [
-        "revoquer-en-urgence",
-        "parcours-sans-revoquer"
-      ],
-      "ordreVisuel": [
-        "parcours-sans-revoquer",
-        "revoquer-en-urgence"
-      ],
+      "ordreDeTabulation": ["revoquer-en-urgence", "parcours-sans-revoquer"],
+      "ordreVisuel": ["parcours-sans-revoquer", "revoquer-en-urgence"],
       "revocationsEnvoyees": 0,
       "focus": "parcours-titre",
       "confirmation": false,
       "descriptionDuFocus": null
     },
     "accueil": {
-      "blocsVisibles": [
-        "sauvegarde",
-        "revocation"
-      ],
+      "blocsVisibles": ["sauvegarde", "revocation"],
       "boutons": [
         {
           "id": "sauvegarder-le-coffre",
@@ -61,14 +49,8 @@
           "ordreCss": "1"
         }
       ],
-      "ordreDeTabulation": [
-        "sauvegarder-le-coffre",
-        "revoquer-en-urgence"
-      ],
-      "ordreVisuel": [
-        "sauvegarder-le-coffre",
-        "revoquer-en-urgence"
-      ],
+      "ordreDeTabulation": ["sauvegarder-le-coffre", "revoquer-en-urgence"],
+      "ordreVisuel": ["sauvegarder-le-coffre", "revoquer-en-urgence"],
       "revocationsEnvoyees": 0,
       "focus": "parcours-titre",
       "confirmation": false,

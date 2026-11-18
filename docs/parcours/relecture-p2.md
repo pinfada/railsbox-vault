@@ -143,7 +143,8 @@ Messages qui peuvent s'afficher sur cet écran :
 
 Boutons et champs : « Afficher mon code de récupération », « Revenir : j'ai toujours ma feuille »
 (seulement quand la personne a dit ne plus l'avoir), « Révoquer tous les autres moyens d'ouvrir ce
-coffre ».
+coffre », qui ne retire rien par lui-même : il ouvre une confirmation (« Annuler » et « Oui,
+révoquer les autres moyens »).
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -233,7 +234,7 @@ Messages qui peuvent s'afficher sur cet écran :
 > vous le recopierez sur une feuille neuve. L'ancien code continue d'ouvrir ce coffre tant que
 > personne ne le retire. Si quelqu'un d'autre a vu votre feuille, cliquez aussi sur « Je n'ai plus
 > cette feuille », puis, avant d'afficher un nouveau code, sur « Révoquer tous les autres moyens
-> d'ouvrir ce coffre » : les anciens codes seront retirés.
+> d'ouvrir ce coffre », puis confirmez : les anciens codes seront retirés.
 >
 > Durée : Le verrouillage prend quelques secondes.
 
@@ -363,7 +364,8 @@ Messages qui peuvent s'afficher sur cet écran :
 > écrivez est enregistré dans votre coffre, sur cet appareil. Vos gestes de tous les jours sont sur
 > cet écran : verrouiller le coffre quand vous avez fini, le sauvegarder de temps en temps, et
 > révoquer les autres moyens de l'ouvrir si l'un d'eux a pu être vu. Ce que la révocation retirerait
-> est écrit au-dessus du bouton : cela dépend du moyen avec lequel vous avez ouvert ce coffre.
+> est écrit au-dessus du bouton : cela dépend du moyen avec lequel vous avez ouvert ce coffre. Rien
+> n'est retiré avant que vous ayez confirmé.
 >
 > Ce que vous avez à faire : Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche,
 > puis utilisez-la. Quand vous avez fini, cliquez sur « Verrouiller mon coffre ».
@@ -378,7 +380,9 @@ tard » (seulement quand une nouvelle version de l'application est proposée), �
 jour » à la place de « Mettre à jour l'application » (seulement quand une mise à jour a été
 commencée et n'est pas terminée), « Verrouiller mon coffre », la version de l'application, en une
 ligne discrète, l'application elle-même, une fois démarrée, « Sauvegarder mon coffre », «
-Enregistrer la sauvegarde » (lien), « Révoquer tous les autres moyens d'ouvrir ce coffre ».
+Enregistrer la sauvegarde » (lien), « Révoquer tous les autres moyens d'ouvrir ce coffre », qui ne
+retire rien par lui-même : il ouvre une confirmation (« Annuler » et « Oui, révoquer les autres
+moyens »).
 
 Dès que le démarrage commence, les explications ci-dessus se replient sous « Aide pour cette étape »
 (un clic ou la touche Entrée les rouvre) et le bouton « Démarrer l'application » s'efface : pendant
@@ -693,16 +697,18 @@ Messages qui peuvent s'afficher sur cet écran :
 > Cette étape est facultative : elle vous montre le geste à faire si quelqu'un connaît votre phrase
 > ou a trouvé votre feuille. Révoquer retire tout ce qui ouvre ce coffre, SAUF le moyen que vous
 > venez d'utiliser. Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du
-> moyen avec lequel vous avez ouvert ce coffre. Les sauvegardes déjà faites restent ouvrables par
-> les anciens moyens : détruisez-les si elles risquent de tomber entre de mauvaises mains, puis
-> faites une nouvelle sauvegarde.
+> moyen avec lequel vous avez ouvert ce coffre. Rien n'est retiré avant que vous ayez confirmé. Les
+> sauvegardes déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent
+> de tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.
 >
 > Ce que vous avez à faire : Si personne n'a vu votre phrase ni votre feuille, cliquez sur «
 > Terminer sans révoquer ». Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres
-> moyens d'ouvrir ce coffre », puis notez le nouveau numéro de feuille sur votre feuille.
+> moyens d'ouvrir ce coffre », puis confirmez : « Annuler » ne change rien. Notez ensuite le nouveau
+> numéro de feuille.
 
-Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre », « Terminer sans révoquer
-», « Revenir à mon application ».
+Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre », qui ne retire rien par
+lui-même : il ouvre une confirmation (« Annuler » et « Oui, révoquer les autres moyens »), «
+Terminer sans révoquer », « Revenir à mon application ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -715,6 +721,26 @@ Messages qui peuvent s'afficher sur cet écran :
   Seul le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de
   l'ouvrir. Votre phrase et votre passkey ne fonctionneront plus sur ce coffre : seul le code de
   votre feuille l'ouvrira.
+- Confirmer la révocation
+- (ouvert par la phrase) Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu.
+  Seul le moyen avec lequel vous venez d'ouvrir ce coffre — votre phrase — continuera de l'ouvrir.
+  Votre passkey et vos codes de récupération ne fonctionneront plus : votre feuille de récupération
+  ne servira plus à rien, créez-en une nouvelle ensuite. Vos sauvegardes déjà faites ne changent pas
+  : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez pas
+  cliqué sur « Oui, révoquer les autres moyens » ; « Annuler » ne change rien. — ou — (ouvert par la
+  passkey) Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. Seul le moyen
+  avec lequel vous venez d'ouvrir ce coffre — votre passkey — continuera de l'ouvrir. Votre phrase
+  et vos codes de récupération ne fonctionneront plus : votre feuille de récupération ne servira
+  plus à rien, créez-en une nouvelle ensuite. Vos sauvegardes déjà faites ne changent pas : elles
+  restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez pas cliqué sur «
+  Oui, révoquer les autres moyens » ; « Annuler » ne change rien. — ou — (ouvert par le code)
+  Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. Seul le moyen avec lequel
+  vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de l'ouvrir. Votre phrase et
+  votre passkey ne fonctionneront plus sur ce coffre : seul le code de votre feuille l'ouvrira. Vos
+  sauvegardes déjà faites ne changent pas : elles restent ouvrables par les anciens moyens. Rien
+  n'est retiré tant que vous n'avez pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler »
+  ne change rien.
+- Rien n'a été révoqué : tout ce qui ouvrait ce coffre l'ouvre toujours.
 - N moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V. — ou, pour un seul
   moyen — 1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V.
 - Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.
@@ -933,8 +959,9 @@ faire.
   ici.
 - Ce coffre a déjà huit moyens de l'ouvrir, le maximum : aucun nouveau code n'a été ajouté. Rien n'a
   été perdu. Pour faire de la place, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce
-  coffre » (c'est le geste de l'étape 9) : tous les autres codes seront retirés, et seul le moyen
-  avec lequel vous venez d'ouvrir le coffre restera. Vous pourrez ensuite afficher un nouveau code.
+  coffre », puis confirmez (c'est le geste de l'étape 9) : tous les autres codes seront retirés, et
+  seul le moyen avec lequel vous venez d'ouvrir le coffre restera. Vous pourrez ensuite afficher un
+  nouveau code.
 - Ce coffre a été fermé par une version plus récente de RailsBox Vault. Mettez l'application à jour,
   puis réessayez. Rien n'a été perdu.
 - Les réglages enregistrés pour ouvrir ce coffre ne sont pas acceptables : ce coffre a peut-être été

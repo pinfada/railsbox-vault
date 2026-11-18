@@ -284,8 +284,8 @@ const TABLE = Object.freeze({
     K.autre,
     "Ce coffre a déjà huit moyens de l'ouvrir, le maximum : aucun nouveau code n'a été ajouté. " +
       RIEN_PERDU +
-      " Pour faire de la place, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce coffre » " +
-      "(c'est le geste de l'étape 9) : tous les autres codes seront retirés, et seul le moyen avec " +
+      " Pour faire de la place, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce coffre », " +
+      "puis confirmez (c'est le geste de l'étape 9) : tous les autres codes seront retirés, et seul le moyen avec " +
       "lequel vous venez d'ouvrir le coffre restera. Vous pourrez ensuite afficher un nouveau code.",
   ],
   // #240 : une règle de saisie, pas une panne : rien à recharger, personne à qui demander.

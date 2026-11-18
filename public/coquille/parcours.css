@@ -262,13 +262,16 @@ button:disabled {
   border-color: var(--separateur);
   cursor: default;
 }
-/* La révocation passe en DERNIER dans sa section, après la sauvegarde et « Terminer sans révoquer ». */
-#portabilite {
-  display: flex;
-  flex-direction: column;
+/* La révocation est DERNIÈRE dans sa section parce qu'elle l'est dans le DOM (#265) : l'ordre de
+   tabulation est celui de l'écran, et aucun `order` ne les sépare. */
+/* La confirmation de la révocation : un cadre au bord du danger, au-dessus de ses deux gestes. */
+#revocation-confirmation {
+  border: 1px solid var(--danger);
+  padding: 4px 16px;
+  margin-bottom: 16px;
 }
-#portabilite > [data-bloc="revocation"] {
-  order: 1;
+#revocation-confirmation-titre {
+  font-weight: 700;
 }
 [data-bloc] p:has(> button + button) {
   display: flex;

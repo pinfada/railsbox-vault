@@ -93,3 +93,19 @@ test("« Oui, révoquer » est le second geste : un message, une révocation, et
   await expect(titre(page, "Parcours terminé")).toBeVisible({ timeout: 180_000 });
   expect(await revocations()).toBe(1);
 });
+
+test("une demande de révocation ne survit pas à l'étape qui l'a faite : à l'accueil, elle est fermée", async ({
+  page,
+}) => {
+  const revocations = await jusquALaConfirmation(page);
+  await bouton(page, REVOQUER).click();
+  await expect(page.locator("#revocation-confirmation")).toBeVisible();
+  await bouton(page, "Terminer sans révoquer").click();
+  await expect(titre(page, "Parcours terminé, rien n'a été révoqué")).toBeVisible();
+  await bouton(page, "Revenir à mon application").click();
+  await expect(titre(page, "Votre application")).toBeVisible();
+  await expect(bouton(page, REVOQUER)).toBeVisible();
+  await expect(page.locator("#revocation-confirmation")).toBeHidden();
+  await expect(bouton(page, REVOQUER)).toHaveAttribute("aria-expanded", "false");
+  expect(await revocations()).toBe(0);
+});

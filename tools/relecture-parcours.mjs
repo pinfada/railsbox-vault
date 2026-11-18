@@ -156,7 +156,14 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "ouvertureEnCours",
     "coffreOuvert",
   ],
-  revoquer: ["avertissementDeRevocation", "revoque", "revoqueSansRien"],
+  revoquer: [
+    "avertissementDeRevocation",
+    "titreDeLaConfirmationDeRevocation",
+    "confirmationDeRevocation",
+    "revocationAnnulee",
+    "revoque",
+    "revoqueSansRien",
+  ],
 });
 
 /** Les messages de STRUCTURE, communs à tous les écrans, dits une fois dans l'introduction. */
@@ -292,7 +299,7 @@ function texteDuMessage(nom) {
   if (nom === "miseAJourProposee") {
     return `${message("A", "B", true)} — ou, sans migration — ${message("A", "B", false)}`;
   }
-  if (nom === "avertissementDeRevocation") {
+  if (nom === "avertissementDeRevocation" || nom === "confirmationDeRevocation") {
     return ["phrase", "webauthn-prf", "recuperation"]
       .map(
         (moyen) =>

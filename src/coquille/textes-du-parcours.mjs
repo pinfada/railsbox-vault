@@ -80,7 +80,10 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
     "« Fichier de sauvegarde » (champ)",
     "« Restaurer ma sauvegarde sur cet appareil »",
   ],
-  revocation: ["« Révoquer tous les autres moyens d'ouvrir ce coffre »"],
+  revocation: [
+    "« Révoquer tous les autres moyens d'ouvrir ce coffre », qui ne retire rien par lui-même : il " +
+      "ouvre une confirmation (« Annuler » et « Oui, révoquer les autres moyens »)",
+  ],
   "sans-revoquer": ["« Terminer sans révoquer »"],
   continuer: ["« Continuer : » suivi du titre de l'étape suivante"],
   retour: ["« Revenir à mon application »"],
@@ -123,8 +126,8 @@ const SI_LA_FEUILLE_EST_PERDUE =
   "nouveau code » : un nouveau code sera affiché, une seule fois, et vous le recopierez sur une " +
   "feuille neuve. L'ancien code continue d'ouvrir ce coffre tant que personne ne le retire. Si " +
   "quelqu'un d'autre a vu votre feuille, cliquez aussi sur « Je n'ai plus cette feuille », puis, " +
-  "avant d'afficher un nouveau code, sur « Révoquer tous les autres moyens d'ouvrir ce coffre » : " +
-  "les anciens codes seront retirés.";
+  "avant d'afficher un nouveau code, sur « Révoquer tous les autres moyens d'ouvrir ce coffre », " +
+  "puis confirmez : les anciens codes seront retirés.";
 
 /**
  * La même question sur un coffre VERROUILLÉ : afficher un code exige un coffre ouvert, et celui-ci
@@ -165,7 +168,7 @@ const UN_CODE_A_DEJA_ETE_RENDU =
  */
 const CE_QUE_LA_REVOCATION_RETIRE =
   "Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du moyen avec lequel " +
-  "vous avez ouvert ce coffre.";
+  "vous avez ouvert ce coffre. Rien n'est retiré avant que vous ayez confirmé.";
 
 /**
  * L'étape 3 éprouve la feuille en S'EN SERVANT (#239) : verrouiller, puis rouvrir par le code. Le
@@ -398,7 +401,8 @@ export const ECRANS = Object.freeze({
     attendu:
       "Si personne n'a vu votre phrase ni votre feuille, cliquez sur « Terminer sans révoquer ». " +
       "Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce " +
-      "coffre », puis notez le nouveau numéro de feuille sur votre feuille.",
+      "coffre », puis confirmez : « Annuler » ne change rien. Notez ensuite le nouveau numéro de " +
+      "feuille.",
     blocs: ["revocation", "sans-revoquer", "retour"],
   }),
   "termine-sans-revoquer": ecran(9, {
@@ -652,6 +656,14 @@ export const MESSAGES = Object.freeze({
   phasePreparation: "Étape en cours : préparation de l'application.",
   phaseDemarrage: "Étape en cours : démarrage de l'application.",
   phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",
+  // La CONFIRMATION de la révocation (#265) : l'irréversible, ce qui part, ce qui reste, la sortie.
+  titreDeLaConfirmationDeRevocation: "Confirmer la révocation",
+  confirmationDeRevocation: (moyen, moyens = null) =>
+    "Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. " +
+    `${MESSAGES.avertissementDeRevocation(moyen, moyens)} Vos sauvegardes déjà faites ne changent ` +
+    "pas : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez " +
+    "pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler » ne change rien.",
+  revocationAnnulee: "Rien n'a été révoqué : tout ce qui ouvrait ce coffre l'ouvre toujours.",
   avertissementDeRevocation: (moyen, moyens = null) =>
     MOYEN_NOMME[moyen] === undefined
       ? "Seul le moyen avec lequel vous avez ouvert ce coffre continuera de l'ouvrir ; tous les " +

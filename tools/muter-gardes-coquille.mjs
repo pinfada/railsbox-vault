@@ -64,6 +64,11 @@ const EPREUVE_PARCOURS = "tests/unit/coquille-parcours.test.mjs";
 const OUVERTURE_PAR_LE_CODE = "src/coquille/ouverture-par-le-code.mjs";
 const EPREUVE_OUVERTURE_PAR_LE_CODE = "tests/unit/coquille-ouverture-par-le-code.test.mjs";
 const EPREUVE_PARCOURS_CONDUITES = "tests/unit/coquille-parcours-conduites.test.mjs";
+
+/** Les gardes de #265 : la révocation d'urgence se confirme en deux temps (aide, pas garde du Worker). */
+const CONFIRMATION = "src/coquille/confirmation-en-deux-temps.mjs";
+const TEXTES = "src/coquille/textes-du-parcours.mjs";
+const EPREUVE_CONFIRMATION = "tests/unit/coquille-confirmation-revocation.test.mjs";
 const PREUVE = "src/coquille/preuve-de-la-feuille.mjs";
 const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
 const DEVERROUILLAGE = "public/runtime-worker-deverrouillage.mjs";
@@ -1251,6 +1256,103 @@ export const MUTATIONS = Object.freeze([
       '  if (REFUS_D_INVENTAIRE.includes(dernierRefus) && texte.startsWith("Ce coffre ne peut pas")) {\n',
     apres: '  if (texte.startsWith("Ce coffre ne peut pas")) {\n',
     epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "un clic sur « Révoquer… » ne révoque pas : il demande (#265)",
+    garde: "brancherUneConfirmation — la demande n'accomplit rien",
+    fichier: CONFIRMATION,
+    avant: "    noeud(annuler)?.focus();\n    demandee();\n",
+    apres: "    noeud(annuler)?.focus();\n    demandee();\n    confirmee();\n",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "« Annuler » n'envoie rien (#265)",
+    garde: "brancherUneConfirmation — renoncer n'appelle jamais le geste",
+    fichier: CONFIRMATION,
+    avant: "    refermer();\n    annulee();\n",
+    apres: "    refermer();\n    annulee();\n    confirmee();\n",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "« Oui » ne part que d'une confirmation OUVERTE, une fois par ouverture (#265)",
+    garde: "brancherUneConfirmation — accomplir exige le panneau ouvert",
+    fichier: CONFIRMATION,
+    avant: "    if (!ouverte()) return;\n    refermer();\n    confirmee();\n",
+    apres: "    refermer();\n    confirmee();\n",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "la confirmation s'ouvre sur « Annuler », le geste sûr (#265)",
+    garde: "brancherUneConfirmation — le focus à l'ouverture",
+    fichier: CONFIRMATION,
+    avant: "    noeud(annuler)?.focus();\n",
+    apres: "",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "refermer rend le focus au geste qui avait demandé (#265)",
+    garde: "brancherUneConfirmation — le focus ne tombe pas au document",
+    fichier: CONFIRMATION,
+    avant: "    dire(false);\n    noeud(declencheur)?.focus();\n",
+    apres: "    dire(false);\n",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "Échap annule (#265)",
+    garde: "brancherUneConfirmation — la touche d'annulation",
+    fichier: CONFIRMATION,
+    avant: '    if (evenement.key !== "Escape") return;\n',
+    apres: "    return;\n",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "une demande dont le geste a quitté l'écran est oubliée (#265)",
+    garde: "oublierLaConfirmation — le panneau se referme",
+    fichier: CONFIRMATION,
+    avant: "  cible.hidden = true;\n  noeud(declencheur)?.setAttribute",
+    apres: "  noeud(declencheur)?.setAttribute",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "la confirmation dit l'irréversible (#265)",
+    garde: "MESSAGES.confirmationDeRevocation — la première phrase",
+    fichier: TEXTES,
+    avant: '    "Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. " +\n',
+    apres: '    "" +\n',
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "la confirmation dit ce qui est retiré et ce qui reste (#265)",
+    garde: "MESSAGES.confirmationDeRevocation — l'avertissement propre au moyen d'ouverture",
+    fichier: TEXTES,
+    avant: "    `${MESSAGES.avertissementDeRevocation(moyen, moyens)} Vos sauvegardes",
+    apres: "    ` Vos sauvegardes",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "la confirmation dit que les sauvegardes déjà faites ne changent pas (#265)",
+    garde: "MESSAGES.confirmationDeRevocation — les sauvegardes",
+    fichier: TEXTES,
+    avant:
+      "    \"pas : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez \" +\n",
+    apres: "    \"pas. Rien n'est retiré tant que vous n'avez \" +\n",
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "l'ordre du DOM est l'ordre de l'écran : « Terminer sans révoquer » avant « Révoquer » (#265)",
+    garde: "BLOCS — l'ordre des blocs du document",
+    fichier: PARCOURS,
+    avant: '  "sans-revoquer",\n  "revocation",\n',
+    apres: '  "revocation",\n  "sans-revoquer",\n',
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "le second geste de la révocation se ferme pendant un geste long (#265)",
+    garde: "GESTES_LONGS — `revoquer-confirmer`",
+    fichier: PARCOURS,
+    avant: '  "revoquer-confirmer",\n',
+    apres: "",
+    epreuves: [EPREUVE_CONFIRMATION],
   },
   {
     nom: "un code du chemin rend SA conduite, jamais la phrase générique",

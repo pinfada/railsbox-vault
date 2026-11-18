@@ -13,9 +13,11 @@
 // public n'en porte que la taille, l'empreinte et la cohérence. Le document applicatif n'en voit
 // rien : aucun de ces trois types n'existe sur le port restreint.
 
+import { brancherUneConfirmation } from "./confirmation-en-deux-temps.mjs";
 import { AVERTISSEMENT_SANS_RECUPERATION } from "./feuille-de-recuperation.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
+import { MESSAGES } from "./textes-du-parcours.mjs";
 import { ARCHIVE_ERROR_CODES } from "../vm/archive-errors.mjs";
 import { IMPORT_ERROR_CODES } from "../vm/import-errors.mjs";
 
@@ -83,7 +85,18 @@ export function brancherLesGestesDePortabilite(liaison) {
   noeud("restaurer-le-coffre")?.addEventListener("click", () => {
     void restaurer(noeud("archive-a-restaurer")?.files?.[0] ?? null);
   });
-  noeud("revoquer-en-urgence")?.addEventListener("click", () => void revoquer());
+  // Irréversible : le clic sur « Révoquer… » DEMANDE ; seul « Oui, révoquer » appelle le Worker (#265).
+  // Une aide à la personne, pas une garde : la garde du geste reste celle du Worker.
+  brancherUneConfirmation({
+    noeud,
+    declencheur: "revoquer-en-urgence",
+    panneau: "revocation-confirmation",
+    annuler: "revoquer-annuler",
+    confirmer: "revoquer-confirmer",
+    confirmee: () => void revoquer(),
+    demandee: () => contexte.dire("revocation-annulee", ""),
+    annulee: () => contexte.dire("revocation-annulee", MESSAGES.revocationAnnulee),
+  });
   return Object.freeze({ sauvegarder, restaurer, revoquer });
 }
 

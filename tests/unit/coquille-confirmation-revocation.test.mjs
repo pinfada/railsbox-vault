@@ -10,7 +10,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+import { oublierLaConfirmation } from "../../src/coquille/confirmation-en-deux-temps.mjs";
 import { brancherLesGestesDePortabilite } from "../../src/coquille/gestes-de-portabilite.mjs";
+import { GESTES_LONGS } from "../../src/coquille/parcours.mjs";
 import { MESSAGES } from "../../src/coquille/textes-du-parcours.mjs";
 
 /** Une page factice : des nœuds qui retiennent leurs écouteurs, leur `hidden` et le focus. */
@@ -142,7 +144,8 @@ test("le texte de confirmation dit l'irréversible, ce qui est retiré et ce qui
   assert.match(texte, /irréversible/);
   assert.match(texte, /Votre phrase ne fonctionnera plus/);
   assert.match(texte, /le code de votre feuille/, "ce qui reste");
-  assert.match(texte, /sauvegardes déjà faites/, "les sauvegardes déjà faites ne changent pas");
+  assert.match(texte, /sauvegardes déjà faites ne changent pas/);
+  assert.match(texte, /restent ouvrables par les anciens moyens/, "ce que les sauvegardes gardent");
   assert.match(texte, /Annuler/);
   assert.doesNotMatch(texte, /passkey/, "un coffre sans passkey n'entend pas parler de passkey");
 });
@@ -157,5 +160,41 @@ test("la page ordonne « Terminer sans révoquer » AVANT « Révoquer » dans l
     new URL("../../public/coquille/parcours.css", import.meta.url),
     "utf8",
   );
-  assert.doesNotMatch(css, /\border\s*:/, "aucun `order` ne remet le DOM en ordre visuel");
+  const regles = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , corps]) =>
+    /\border\s*:/.test(corps),
+  );
+  for (const [, selecteur] of regles) {
+    assert.doesNotMatch(
+      selecteur,
+      /portabilite|revocation|revoquer/,
+      "aucun `order` ne les sépare",
+    );
+  }
+});
+
+test("une demande dont le geste a quitté l'écran est oubliée, sans bruit, sans rendre le focus", () => {
+  const page = pageFactice();
+  const noeud = page.noeud;
+  const liaison = {
+    noeud: page.noeud,
+    declencheur: "revoquer-en-urgence",
+    panneau: "revocation-confirmation",
+  };
+  oublierLaConfirmation(liaison); // fermée : rien à faire
+  assert.equal(noeud("revocation-confirmation").hidden, true);
+  noeud("revocation-confirmation").hidden = false;
+  noeud("revoquer-en-urgence").setAttribute("aria-expanded", "true");
+  oublierLaConfirmation(liaison);
+  assert.equal(noeud("revocation-confirmation").hidden, true);
+  assert.equal(noeud("revoquer-en-urgence").getAttribute("aria-expanded"), "false");
+  assert.equal(page.actif, null, "le focus n'est pas déplacé");
+});
+
+test("pendant un geste long, ni « Révoquer… » ni « Oui, révoquer » ne s'offrent (boutons fermés)", () => {
+  assert.ok(GESTES_LONGS.includes("revoquer-en-urgence"));
+  assert.ok(GESTES_LONGS.includes("revoquer-confirmer"));
+  assert.ok(
+    !GESTES_LONGS.includes("revoquer-annuler"),
+    "annuler ne touche à rien : il reste ouvert",
+  );
 });

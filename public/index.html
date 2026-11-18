@@ -348,17 +348,51 @@
             </button>
           </p>
         </div>
-        <div data-bloc="revocation" hidden>
-          <p id="parcours-avertissement-revocation"></p>
-          <p>
-            <button id="revoquer-en-urgence" type="button" data-danger>
-              Révoquer tous les autres moyens d'ouvrir ce coffre
-            </button>
-          </p>
-        </div>
         <!-- L'étape 9 est facultative : la visite se termine sans rien retirer (décision du 19/09). -->
         <div data-bloc="sans-revoquer" hidden>
           <p><button id="parcours-sans-revoquer" type="button">Terminer sans révoquer</button></p>
+        </div>
+        <!--
+          La RÉVOCATION vient APRÈS « Terminer sans révoquer » dans le DOM, donc à l'écran ET à la
+          tabulation : aucun `order` CSS ne remet l'écran en ordre (#265). Irréversible, elle se fait en
+          deux temps : « Révoquer… » ouvre la confirmation, « Annuler » y a le focus, et seul « Oui,
+          révoquer » appelle le Worker (`confirmation-en-deux-temps.mjs`).
+        -->
+        <div data-bloc="revocation" hidden>
+          <p id="parcours-avertissement-revocation"></p>
+          <p>
+            <button
+              id="revoquer-en-urgence"
+              type="button"
+              data-danger
+              aria-expanded="false"
+              aria-controls="revocation-confirmation"
+            >
+              Révoquer tous les autres moyens d'ouvrir ce coffre
+            </button>
+          </p>
+          <div
+            id="revocation-confirmation"
+            role="group"
+            aria-labelledby="revocation-confirmation-titre"
+            hidden
+          >
+            <p id="revocation-confirmation-titre"></p>
+            <p id="revocation-confirmation-texte"></p>
+            <p>
+              <button
+                id="revoquer-annuler"
+                type="button"
+                aria-describedby="revocation-confirmation-texte"
+              >
+                Annuler
+              </button>
+              <button id="revoquer-confirmer" type="button" data-danger>
+                Oui, révoquer les autres moyens
+              </button>
+            </p>
+          </div>
+          <p id="revocation-annulee" role="status"></p>
         </div>
       </section>
 
