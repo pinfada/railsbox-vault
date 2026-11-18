@@ -479,7 +479,7 @@ Détail sous WebKit 27.2 (1.65.0), contexte éphémère contre contexte persista
 | `navigator.storage.estimate()`                            | quota 1000 Mio           | quota 1000 Mio                     |
 
 **Ce que le produit en tire** (ADR
-[0046](decisions/0046-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md), qui amende la
+[0047](decisions/0047-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md), qui amende la
 décision 6 de l'[ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)) : un `typeof` ne dit
 plus si le moteur offre l'OPFS, et **un `UnknownError` n'est pas une absence** — le message du
 moteur parle d'une raison transitoire. Le Worker de confiance **appelle** `getDirectory()` au

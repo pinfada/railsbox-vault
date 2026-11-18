@@ -545,11 +545,11 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
 Aucun format, aucun vecteur, aucune empreinte ne bouge : `node tools/verifier-vecteurs.mjs` reste
 vert sans qu'un seul fichier de `tests/vectors/` ait été touché.
 
-## Note du 18/11/2026 — le DÉTECTEUR de l'absence d'OPFS est amendé par l'ADR 0046 (#231)
+## Note du 18/11/2026 — le DÉTECTEUR de l'absence d'OPFS est amendé par l'ADR 0047 (#231)
 
 Cette note n'amende pas la décision 6 dans son principe — l'absence reste un ÉTAT et le geste reste
 refusé, typé — ; elle en change le DÉTECTEUR, et l'ADR
-[0046](0046-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md) porte la décision. Résumé :
+[0047](0047-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md) porte la décision. Résumé :
 `typeof getDirectory` ne suffit plus (WebKit ≥ 26.6 rejette `UnknownError` en contexte éphémère,
 rejet que le moteur dit « transitoire ») ; la sonde du Worker de confiance appelle `getDirectory()`,
 réessaie un nombre borné de fois, et un `UnknownError` persistant n'est PAS une absence : l'état est
