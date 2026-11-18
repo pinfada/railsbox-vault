@@ -321,7 +321,8 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
       ),
     ).toBeVisible();
     await bouton(a, "Terminer sans révoquer").click();
-    await attendreLEcran(a, "Parcours terminé");
+    // #246 : l'écran où RIEN n'a été révoqué a son propre titre, distinct de « Parcours terminé ».
+    await attendreLEcran(a, "Parcours terminé, rien n'a été révoqué");
     await expect(a.getByText(/l'ouvre toujours/)).toBeVisible();
     // La phrase ouvre TOUJOURS : la visite n'a rien détruit.
     await bouton(a, "Revenir à mon application").click();
