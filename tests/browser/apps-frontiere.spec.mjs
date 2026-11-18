@@ -120,21 +120,64 @@ function parNom(sondes) {
 }
 
 /**
- * Compare un relevé à une table d'attentes en laissant passer `indisponible`.
+ * Une indisponibilité MESURÉE : une API absente du moteur, ou le seul rejet que WebKit 26.6+ oppose à
+ * `navigator.storage.getDirectory()` en contexte éphémère (`UnknownError`, #231). Tout autre rejet —
+ * quota, état invalide, erreur inconnue — est une PANNE de la mesure, pas une indisponibilité : elle
+ * ne se range pas sous `indisponible`, elle fait échouer l'épreuve.
+ */
+const INDISPONIBILITE_MESUREE =
+  /(^| )absent$|^navigator\.storage\.getDirectory rejeté \(UnknownError\)$/;
+
+function estIndisponibleMesure(detail) {
+  return INDISPONIBILITE_MESUREE.test(detail ?? "");
+}
+
+/**
+ * Compare un relevé à une table d'attentes en laissant passer l'indisponibilité MESURÉE.
  *
  * Une capacité absente du moteur n'est pas une frontière ; c'est un trou dans la mesure, et il
  * doit se voir comme tel plutôt que d'être compté comme un refus. Les écarts sont rendus, jamais
- * avalés.
+ * avalés — et un `indisponible` dont le détail n'est pas une indisponibilité mesurée en est un.
  */
 function ecarts(sondes, attendu) {
   return sondes
-    .filter((sonde) => sonde.resultat !== "indisponible")
+    .filter((sonde) => !(sonde.resultat === "indisponible" && estIndisponibleMesure(sonde.detail)))
     .filter((sonde) => sonde.resultat !== attendu[sonde.nom])
     .map(
       (sonde) =>
         `${sonde.nom} : ${sonde.resultat} au lieu de ${attendu[sonde.nom]} — ${sonde.detail}`,
     );
 }
+
+/**
+ * Une PANNE d'OPFS n'est pas une indisponibilité : si `getDirectory()` rejette autre chose que le cas
+ * mesuré, le dépôt de A le DIT (`panne`) — il ne le range pas sous `indisponible` —, et les sondes de
+ * B ne le laissent pas passer en trou de mesure ni en preuve d'isolation. Sans cette épreuve, un rejet quelconque ferait disparaître
+ * en silence les trois témoins OPFS de la frontière.
+ */
+test("une PANNE de getDirectory() n'est pas rangée sous « indisponible »", async ({ context }) => {
+  await context.addInitScript(() => {
+    if (!globalThis.StorageManager) return;
+    StorageManager.prototype.getDirectory = () =>
+      Promise.reject(new DOMException("panne simulée", "QuotaExceededError"));
+  });
+  const topologie = "meme-origine-prefixe-de-chemin";
+  const { page: pageA, depots } = await poserApplicationA(context, topologie);
+  const sondes = await lireDepuisApplicationB(context, topologie);
+  await pageA.close();
+
+  // Un moteur sans `getDirectory` n'a rien à tomber en panne : l'API est absente, et c'est mesuré.
+  if (depots.opfs.startsWith("indisponible: navigator.storage.getDirectory absent")) return;
+  expect(depots.opfs).toMatch(/^panne: QuotaExceededError/);
+  const opfs = sondes.filter((sonde) => sonde.mecanisme === "OPFS");
+  expect(opfs.length).toBeGreaterThan(0);
+  for (const sonde of opfs) {
+    // `panne`, ni `indisponible` ni `invisible` : un `invisible` serait lu, dans une topologie
+    // isolée, comme la PREUVE de l'isolation.
+    expect(sonde.resultat, sonde.nom).toBe("panne");
+  }
+  expect(ecarts(sondes, ATTENDU_MEME_ORIGINE).length).toBeGreaterThan(0);
+});
 
 test("le contrat du spike #46 déclare la MÊME origine applicative que l'ADR 0002", () => {
   // Les deux contrats vivent dans deux modules — `src/spike/origin-topology.mjs` n'est pas
@@ -161,7 +204,12 @@ test("témoin négatif : sur une même origine, un préfixe de chemin n'isole ri
   await joindre(info, "sondes-meme-origine", { temoinA, temoinB, sondes });
 
   expect(sondes).toHaveLength(NOMBRE_DE_SONDES);
-  expect(depots.opfs === "depose" || depots.opfs.startsWith("indisponible")).toBe(true);
+  expect(
+    depots.opfs === "depose" ||
+      (depots.opfs.startsWith("indisponible: ") &&
+        estIndisponibleMesure(depots.opfs.slice("indisponible: ".length))),
+    `dépôt OPFS de A : ${depots.opfs}`,
+  ).toBe(true);
   expect(depots.localStorage).toBe("depose");
   expect(ecarts(sondes, ATTENDU_MEME_ORIGINE)).toEqual([]);
 

@@ -294,6 +294,11 @@ export async function opfsAtteignable() {
   }
 }
 
+/** ROUGE : la sémantique actuelle — tout rejet vaut absence — que les épreuves du lot rejettent. */
+export async function opfsConstateeAbsente() {
+  return !(await opfsAtteignable());
+}
+
 async function volumeDirectory({ create }) {
   const storage = globalThis.navigator?.storage;
   if (typeof storage?.getDirectory !== "function") {
