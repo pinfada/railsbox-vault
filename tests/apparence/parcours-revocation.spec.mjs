@@ -181,10 +181,15 @@ test("issue incertaine : l'avertissement vit hors du bloc, survit à « Revenir 
 }) => {
   const retenue = await revoquerSansReponse(page);
   await retenue.refuser("VAULT_X");
-  const avertissement = page.getByRole("alert").filter({ hasText: "peut-être eu lieu" });
-  await expect(avertissement).toBeVisible({ timeout: 60_000 });
+  const avertissement = page.locator("#parcours-incertitude");
+  await expect(avertissement).toContainText("peut-être eu lieu", { timeout: 60_000 });
   await expect(avertissement).toContainText("Rouvrez votre coffre");
-  for (const texte of await page.getByRole("alert").allTextContents()) {
+  await expect(avertissement).toHaveAttribute("aria-live", "assertive");
+  const regions = [
+    ...(await page.getByRole("alert").allTextContents()),
+    (await avertissement.textContent()) ?? "",
+  ];
+  for (const texte of regions) {
     expect(texte, "aucune alerte ne dit « refusée »").not.toMatch(/refus/i);
   }
   await expect(page.locator("#parcours-sans-revoquer")).toBeDisabled();
@@ -208,7 +213,7 @@ test("issue incertaine : l'avertissement vit hors du bloc, survit à « Revenir 
   await bouton(page, REVOQUER).click();
   await bouton(page, "Oui, révoquer les autres moyens").click();
   await expect(page.locator("#parcours-incertitude")).toHaveText("", { timeout: 180_000 });
-  await expect(avertissement).toHaveCount(0);
+  await expect(avertissement).toBeEmpty();
 });
 
 test("issue incertaine (le Worker ne décode pas le message et meurt : aucune réponse) : « a peut-être eu lieu » partout, « refusée » nulle part, « Terminer sans révoquer » fermé", async ({
@@ -219,7 +224,10 @@ test("issue incertaine (le Worker ne décode pas le message et meurt : aucune r�
   await expect(page.locator("#parcours-incertitude")).toContainText("peut-être eu lieu", {
     timeout: 60_000,
   });
-  const alertes = await page.getByRole("alert").allTextContents();
+  const alertes = [
+    ...(await page.getByRole("alert").allTextContents()),
+    (await page.locator("#parcours-incertitude").textContent()) ?? "",
+  ];
   const etat = await page.locator("#revocation-etat").textContent();
   const refus = await page.locator("#portabilite-refus").textContent();
   for (const texte of [...alertes, etat, refus]) {
