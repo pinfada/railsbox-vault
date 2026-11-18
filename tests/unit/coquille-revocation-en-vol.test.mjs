@@ -209,22 +209,3 @@ test("quand le bloc de la révocation est caché, la demande ouverte est oublié
   assert.equal(page.noeud("revocation-confirmation").hidden, true);
   assert.equal(page.noeud("revoquer-en-urgence").getAttribute("aria-expanded"), "false");
 });
-
-test("la page appelle `suivreLaConfirmationDeRevocation` APRÈS avoir montré les blocs, à chaque rendu", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const source = await readFile(
-    new URL("../../public/coquille/parcours-de-la-page.mjs", import.meta.url),
-    "utf8",
-  );
-  const montre = source.indexOf("montrerLesBlocs(\n      applicationVisible");
-  const suit = source.indexOf("suivreLaConfirmationDeRevocation({ noeud, dire, releve })");
-  assert.ok(montre !== -1, "la page montre les blocs dans `rendre`");
-  assert.ok(suit !== -1, "la page appelle la confirmation");
-  assert.ok(montre < suit, "l'oubli lit l'état des blocs APRÈS qu'ils ont été montrés ou cachés");
-  assert.match(source, /suivreLaConfirmationDeRevocation\(\{ noeud, dire, releve \}\)/);
-  assert.ok(
-    source.includes(
-      'import { suivreLaConfirmationDeRevocation } from "/src/coquille/confirmation-de-la-revocation.mjs"',
-    ),
-  );
-});

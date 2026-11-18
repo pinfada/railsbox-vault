@@ -21,6 +21,7 @@ import { ecrireLaPromesse } from "./promesse-de-l-entree.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
 import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
+import { montrerLesBlocs } from "/src/coquille/blocs-montres.mjs";
 import { suivreLaConfirmationDeRevocation } from "/src/coquille/confirmation-de-la-revocation.mjs";
 import { refusJugeLaValeur } from "/src/coquille/refus-qui-jugent-une-valeur.mjs";
 import {
@@ -59,9 +60,6 @@ import { brancherLesObservateurs } from "./observateurs-du-parcours.mjs";
 import { surveillerLaPression } from "./pression-du-bouton.mjs";
 import { ancreSaisie } from "/src/coquille/interface-de-deverrouillage.mjs";
 import { etatDeLaSaisie } from "/src/coquille/saisie-du-code.mjs";
-
-/** Les sections qui regroupent des blocs : cachées quand aucun de leurs blocs n'est montré. */
-const SECTIONS = ["deverrouillage", "feuille", "cycle", "portabilite"];
 
 /** Entrée dans un champ vaut le clic sur le bouton qu'il sert (revue de la PR #213, constat 12). */
 const ENTREE_VAUT = Object.freeze({
@@ -229,18 +227,6 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       }
       return true;
     });
-  }
-
-  function montrerLesBlocs(visibles) {
-    for (const element of doc.querySelectorAll("[data-bloc]")) {
-      element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);
-    }
-    for (const id of SECTIONS) {
-      const section = noeud(id);
-      if (section === null) continue;
-      section.hidden =
-        !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);
-    }
   }
 
   function nommerLesGestes(ecranId) {
@@ -503,11 +489,15 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     // qui ne la nomme pas ne la masque plus, il s'ajoute dans le panneau du coffre.
     const cycleLu = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;
     const applicationVisible = cycleLu === "application-demarree" && !etat.applicationArretee;
-    montrerLesBlocs(
-      applicationVisible && !visibles.includes("espace-de-travail")
-        ? [...visibles, "espace-de-travail"]
-        : visibles,
-    );
+    montrerLesBlocs({
+      doc,
+      noeud,
+      vueComplete,
+      visibles:
+        applicationVisible && !visibles.includes("espace-de-travail")
+          ? [...visibles, "espace-de-travail"]
+          : visibles,
+    });
     suivreLaConfirmationDeRevocation({ noeud, dire, releve }); // APRÈS les blocs (#265)
     noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
     // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
