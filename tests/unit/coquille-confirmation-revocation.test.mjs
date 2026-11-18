@@ -14,45 +14,7 @@ import { oublierLaConfirmation } from "../../src/coquille/confirmation-en-deux-t
 import { brancherLesGestesDePortabilite } from "../../src/coquille/gestes-de-portabilite.mjs";
 import { GESTES_LONGS } from "../../src/coquille/parcours.mjs";
 import { MESSAGES } from "../../src/coquille/textes-du-parcours.mjs";
-
-/** Une page factice : des nœuds qui retiennent leurs écouteurs, leur `hidden` et le focus. */
-function pageFactice() {
-  const noeuds = new Map();
-  const page = { actif: null };
-  const nouveau = (id) => {
-    const ecouteurs = new Map();
-    const attributs = new Map();
-    const noeud = {
-      id,
-      hidden: id === "revocation-confirmation",
-      disabled: false,
-      textContent: "",
-      addEventListener: (type, fn) => ecouteurs.set(type, [...(ecouteurs.get(type) ?? []), fn]),
-      setAttribute: (nom, valeur) => attributs.set(nom, String(valeur)),
-      getAttribute: (nom) => attributs.get(nom) ?? null,
-      focus: () => {
-        page.actif = id;
-      },
-      emettre: (type, evenement = {}) => {
-        for (const fn of ecouteurs.get(type) ?? []) fn({ preventDefault() {}, ...evenement });
-      },
-      click: () => {
-        if (!noeud.disabled && !noeud.hidden) noeud.emettre("click");
-      },
-    };
-    return noeud;
-  };
-  page.racine = {
-    querySelector(selecteur) {
-      const id = selecteur.slice(1);
-      if (id === "sauvegarde-lien") return null;
-      if (!noeuds.has(id)) noeuds.set(id, nouveau(id));
-      return noeuds.get(id);
-    },
-  };
-  page.noeud = (id) => page.racine.querySelector(`#${id}`);
-  return page;
-}
+import { pageFactice } from "./support-page-factice.mjs";
 
 function monter({ refuser = false } = {}) {
   const page = pageFactice();

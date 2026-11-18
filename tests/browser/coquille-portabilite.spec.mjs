@@ -287,6 +287,40 @@ test("après une RÉVOCATION d'urgence, la phrase est refusée et le code ouvre"
   await attendreLEtat(page, ETATS_DU_VOLUME.ouvert);
 });
 
+test("avec DEUX codes, ouvert par l'un : la confirmation annonce le retrait de l'autre feuille, et c'est ce qui part (#265)", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page)) return;
+  await ouvrirParLaPhrase(page);
+  await attendreLEtat(page, ETATS_DU_VOLUME.ouvert);
+  const premiere = await creerLaFeuille(page);
+  // Un même Worker ne rend qu'un code : on rouvre, puis on en demande un second.
+  await page.reload();
+  await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
+  await ouvrirParLaPhrase(page);
+  await attendreLEtat(page, ETATS_DU_VOLUME.ouvert);
+  await creerLaFeuille(page);
+  // Ouvert par le PREMIER code : le second est « l'autre feuille ».
+  await page.reload();
+  await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
+  await ouvrirParLeCode(page, premiere);
+  await attendreLEtat(page, ETATS_DU_VOLUME.ouvert);
+  await page.click("#revoquer-en-urgence");
+  const texte = page.locator("#revocation-confirmation-texte");
+  await expect(texte).toContainText("autres codes de récupération");
+  await expect(texte).not.toContainText("rien ne sera retiré");
+  await page.click("#revoquer-confirmer");
+  await expect(page.locator("#portabilite-etat")).toContainText("portabilite:revoque:2-retires", {
+    timeout: DELAI,
+  });
+  // Ce qui est parti : la phrase ET l'autre feuille, comme la confirmation l'a dit.
+  const bilan = (await releve(page)).portabilite.revocation;
+  expect(bilan.retires).toEqual({ phrase: 1, recuperation: 1 });
+  expect(bilan.restants).toEqual({ recuperation: 1 });
+});
+
 /** Rejoue, dans l'OPFS de la coquille, les fichiers qu'a laissés la coquille d'AVANT. */
 async function poserLeCoffreAnterieur(page) {
   const { fichiers } = JSON.parse(

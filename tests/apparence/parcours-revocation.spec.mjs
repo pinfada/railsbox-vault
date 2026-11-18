@@ -59,7 +59,7 @@ test("« Annuler » (ou Échap) referme, rend le focus, dit que rien n'a été r
     await expect(page.locator("#revocation-confirmation")).toBeHidden();
     await expect(bouton(page, REVOQUER)).toBeFocused();
     await expect(bouton(page, REVOQUER)).toHaveAttribute("aria-expanded", "false");
-    await expect(page.locator("#revocation-annulee")).toHaveText(/Rien n'a été révoqué/);
+    await expect(page.locator("#revocation-etat")).toHaveText(/Rien n'a été révoqué/);
     expect(await revocations(), `après ${geste}`).toBe(0);
   }
   await expect(titre(page, "Révoquer en urgence")).toBeVisible();
