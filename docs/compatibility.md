@@ -458,6 +458,16 @@ durable, et le produit ne le prétend pas. Les suites WebKit passent sous Playwr
 est le verrou de la CI (voir « Firefox 159 », plus bas) ; la matrice « mesurée » plus haut date du
 23/08/2026 (Playwright 1.62.1, WebKit 26.5) et n'est pas réécrite.
 
+**Reproduction du critère de #231 (Playwright 1.63.0, WebKit 26.6 v2359), 18/11/2026, x86_64, Node
+22.23.5.** `playwright test --project '*webkit*'` sur `main` (f619be5) : **76 rouges, 45 verts, 32
+sautés** (39,7 min, 09:04–09:44 UTC) — même répartition que sous 1.65.0 : `data-coquille` attendu
+`prete`, reçu `erreur` ; `#deverrouillage-moyens` vide ; `VAULT_STORAGE_SUPPORT_FAILURE` au lieu de
+`VAULT_STORAGE_UNSUPPORTED` ; table de persistance ; sondes de banc. Avec le correctif (`c635323`,
+mêmes conditions) : **122 verts, 0 rouge, 32 sautés** (2,6 min) ; fins d'onglet 11 verts, apparence
+22, compat 3. Les 32 sautés sont ceux de `main`, aucun n'est nouveau. Non reproduit : rien — la
+cause (rejet `UnknownError` en contexte éphémère) est la même qu'observée sous 1.65.0, la sonde
+minimale le confirme sous 26.6 (rejet identique, `persist()` rend `false`).
+
 Détail sous WebKit 27.2 (1.65.0), contexte éphémère contre contexte persistant
 (`launchPersistentContext`) — **non mesuré sous 26.6** pour le contexte persistant :
 
