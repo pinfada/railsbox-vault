@@ -29,8 +29,15 @@ registerHooks({
   },
 });
 
-const { brancherLeDeverrouillage, deverrouiller } =
-  await import("../../public/runtime-worker-deverrouillage.mjs");
+/**
+ * Une INSTANCE du module : le module garde son contexte en variables de module — le Worker n'en a
+ * qu'un —, si bien que deux « onglets » dans un même processus sont deux évaluations du même fichier.
+ * La chaîne de requête fait de chacune une URL distincte, donc une évaluation distincte ; leurs
+ * imports `/src/…` restent partagés, comme le sont ceux de deux Workers qui ne partagent que l'OPFS.
+ */
+let instances = 0;
+const chargerLeModule = () =>
+  import(`../../public/runtime-worker-deverrouillage.mjs?instance=${(instances += 1)}`);
 const { ETATS_DU_VOLUME } = await import("../../src/coquille/etat-de-la-coquille.mjs");
 const { ETATS_DE_L_EMPLACEMENT } = await import("../../src/coquille/portabilite-du-coffre.mjs");
 const { IDENTIFIANT_DU_COFFRE } = await import("../../src/coquille/identites-du-coffre.mjs");
@@ -77,10 +84,12 @@ export const kekDeLaPage = (octets = KEK) => importerCleDeDeverrouillage(octets)
 
 /**
  * Le banc : un magasin, un Worker réduit à son état, des réponses collectées, et un point d'arrêt.
+ * Plusieurs bancs peuvent partager un même `banc` : ce sont alors plusieurs onglets d'une origine.
  *
  * @param {{ banc?: object, emplacement?: string }} options
  */
-export function workerDeverrouillage({ banc = magasin(), emplacement = "coffre" } = {}) {
+export async function workerDeverrouillage({ banc = magasin(), emplacement = "coffre" } = {}) {
+  const { brancherLeDeverrouillage, deverrouiller } = await chargerLeModule();
   const reponses = [];
   const refus = [];
   const ouvertures = [];

@@ -6,6 +6,7 @@ import {
   fermerLesBancs,
   KEK,
   messageDeCode,
+  magasin,
   messageDePhrase,
   poserUneEnveloppeV1,
   workerDeverrouillage,
@@ -33,7 +34,7 @@ const octets = (banc, nom) => Buffer.from(banc.store.snapshot(nom));
 
 /** Un coffre dont l'enveloppe est en page v1, et dont le petit volume existe déjà. */
 async function coffreEnV1(options = {}) {
-  const w = workerDeverrouillage();
+  const w = await workerDeverrouillage();
   const pose = await poserUneEnveloppeV1(w.banc, options);
   await poserLeVolumeCoquille(w.banc, IDENTIFIANT_DU_VOLUME_COQUILLE);
   return { w, ...pose };
@@ -94,7 +95,7 @@ test("CODE sur une page v1 : l'enveloppe n'est PAS écrite avant le handle, la m
 });
 
 test("une enveloppe en page v2 s'ouvre sans migration, sous la même version", async () => {
-  const w = workerDeverrouillage();
+  const w = await workerDeverrouillage();
   // Création du coffre par le chemin de production : enveloppe v2 version 1, volume né.
   await w.deverrouiller(await messageDePhrase());
   await w.interne.backend.close();
@@ -112,7 +113,7 @@ test("une enveloppe en page v2 s'ouvre sans migration, sous la même version", a
 });
 
 test("un emplacement RÉVOQUÉ entre l'enveloppe et le handle est refusé : rien d'ouvert, handle rendu", async () => {
-  const w = workerDeverrouillage();
+  const w = await workerDeverrouillage();
   // Un coffre ouvert par A (phrase), qui imprime un code ; A garde son volume jusqu'à sa fermeture.
   await w.deverrouiller(await messageDePhrase());
   const { creerMoyenDeRecuperation } = await import("../../src/vm/moyen-de-recuperation.mjs");
@@ -147,7 +148,7 @@ test("un emplacement RÉVOQUÉ entre l'enveloppe et le handle est refusé : rien
 });
 
 test("un second déverrouillage referme d'abord le volume précédent : un seul handle tenu", async () => {
-  const w = workerDeverrouillage();
+  const w = await workerDeverrouillage();
   await w.deverrouiller(await messageDePhrase());
   const premier = w.interne.backend;
   // Un second geste sur le même Worker referme d'abord le volume précédent (constat 6 de #167), puis
@@ -155,4 +156,105 @@ test("un second déverrouillage referme d'abord le volume précédent : un seul 
   await w.deverrouiller(await messageDePhrase());
   assert.notEqual(w.interne.backend, premier);
   assert.equal(w.interne.etat, ETATS_DU_VOLUME.ouvert);
+});
+
+// --- La CRÉATION du coffre : le même verrou que l'ouverture ---------------------------------------------
+
+const AUTRE_KEK = Uint8Array.from({ length: 32 }, (_, i) => 0x70 + i);
+const AUTRE_DEK = Uint8Array.from({ length: 32 }, (_, i) => 0x30 + i);
+
+/** Un onglet qui vient de créer son coffre FERME : le Worker meurt, le handle est libre. */
+async function fermer(w) {
+  const backend = w.interne.backend;
+  w.interne.backend = null;
+  w.interne.etat = ETATS_DU_VOLUME.verrouille;
+  await backend.close();
+}
+
+test("CRÉATION : le handle du volume est pris AVANT l'enveloppe, et c'est LUI que l'ouvreur reçoit", async () => {
+  const w = await workerDeverrouillage({ emplacement: "vide" });
+
+  await w.deverrouiller(await messageDePhrase());
+
+  assert.equal(w.ouvertures[0], VOLUME, "le premier handle pris est celui du volume");
+  assert.equal(
+    w.ouvertures.filter((nom) => nom === VOLUME).length,
+    1,
+    "le handle pris est celui que l'ouvreur reçoit : aucun trou entre l'enveloppe et la naissance",
+  );
+  assert.ok(w.ouvertures.indexOf(ENVELOPPE) > 0, "l'enveloppe est écrite sous ce handle");
+  assert.equal(w.interne.etat, ETATS_DU_VOLUME.ouvert);
+});
+
+test("CRÉATION entre deux onglets : B retardé APRÈS son constat, A crée et ferme — B est refusé, l'enveloppe de A est intacte, A rouvre", async () => {
+  const banc = magasin();
+  const b = await workerDeverrouillage({ banc, emplacement: "vide" });
+  const a = await workerDeverrouillage({ banc, emplacement: "vide" });
+
+  // B a constaté « pas d'enveloppe » ; il est retenu à sa première prise de handle.
+  const retenue = b.retenir("*");
+  const issueB = b.deverrouiller(await messageDePhrase({ kek: AUTRE_KEK })).then(
+    () => ({}),
+    (erreur) => ({ erreur }),
+  );
+  await retenue.atteint;
+
+  // A crée son coffre, l'ouvre, puis se verrouille : le handle est libre.
+  await a.deverrouiller(await messageDePhrase());
+  await fermer(a);
+  const enveloppeDeA = octets(banc, ENVELOPPE);
+  retenue.relacher();
+  const { erreur } = await issueB;
+
+  assert.equal(erreur?.code, ENVELOPPE_ERROR_CODES.presente, String(erreur?.code ?? erreur));
+  assert.deepEqual(octets(banc, ENVELOPPE), enveloppeDeA, "l'enveloppe de A n'est pas écrasée");
+  assert.equal(b.interne.etat, ETATS_DU_VOLUME.verrouille);
+  assert.equal(banc.store.isOpen(VOLUME), false, "B a rendu le handle");
+
+  await a.deverrouiller(await messageDePhrase());
+  assert.equal(a.interne.etat, ETATS_DU_VOLUME.ouvert, "A rouvre sous sa propre clé");
+});
+
+test("CRÉATION entre deux onglets : A tient encore le volume — B est refusé BUSY, l'enveloppe de A est intacte", async () => {
+  const banc = magasin();
+  const b = await workerDeverrouillage({ banc, emplacement: "vide" });
+  const a = await workerDeverrouillage({ banc, emplacement: "vide" });
+
+  const retenue = b.retenir("*");
+  const issueB = b.deverrouiller(await messageDePhrase({ kek: AUTRE_KEK })).then(
+    () => ({}),
+    (erreur) => ({ erreur }),
+  );
+  await retenue.atteint;
+  await a.deverrouiller(await messageDePhrase());
+  const enveloppeDeA = octets(banc, ENVELOPPE);
+  retenue.relacher();
+  const { erreur } = await issueB;
+
+  assert.equal(erreur?.code, "VAULT_STORAGE_BUSY", String(erreur?.code ?? erreur));
+  assert.deepEqual(octets(banc, ENVELOPPE), enveloppeDeA, "l'enveloppe de A n'est pas écrasée");
+  assert.equal(a.interne.etat, ETATS_DU_VOLUME.ouvert, "A est intact");
+});
+
+test("une enveloppe v1 REMPLACÉE entre les deux passes — même KEK, autre clé de volume — est refusée sans UNE écriture", async () => {
+  const { w } = await coffreEnV1();
+  const retenue = w.retenir(VOLUME);
+  const issue = w.deverrouiller(await messageDePhrase()).then(
+    () => ({}),
+    (erreur) => ({ erreur }),
+  );
+  await retenue.atteint;
+  // Même KEK, même identifiant d'emplacement, une AUTRE clé de volume : l'enveloppe d'un autre coffre.
+  await poserUneEnveloppeV1(w.banc, { dek: AUTRE_DEK });
+  const remplacee = octets(w.banc, ENVELOPPE);
+  retenue.relacher();
+  const { erreur } = await issue;
+
+  assert.equal(erreur?.code, ENVELOPPE_ERROR_CODES.cleRefusee, String(erreur?.code ?? erreur));
+  assert.deepEqual(
+    octets(w.banc, ENVELOPPE),
+    remplacee,
+    "un refus n'écrit rien : la migration ne se joue qu'une fois l'identité confirmée",
+  );
+  assert.equal(w.interne.etat, ETATS_DU_VOLUME.verrouille);
 });
