@@ -40,7 +40,7 @@ test.beforeEach(async ({ page }) => {
 
 /** Un descripteur v2 admis par `formeDuDescripteur`, posé à la main dans la page. */
 const DESCRIPTEUR = {
-  descripteurVersion: 2,
+  descripteurVersion: 3,
   application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260815120000" },
   runtime: { version: "0.1.0" },
   rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },

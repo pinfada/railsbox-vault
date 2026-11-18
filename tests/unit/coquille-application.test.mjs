@@ -155,7 +155,7 @@ test("un handle qui refuse de se FERMER ne transforme pas le constat en refus", 
 /** Un descripteur minimal, de la forme que `tools/build-reference-image/manifest.mjs` écrit. */
 function descripteur(champs = {}) {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260815120000" },
     runtime: { version: "0.1.0" },
     rootfs: {

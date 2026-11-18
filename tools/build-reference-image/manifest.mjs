@@ -38,7 +38,8 @@ export const CHEMIN_DESCRIPTEUR_APPLICATIF = join(RACINE_DEPOT, "artifacts", "ap
 /**
  * Version du descripteur. Un lecteur d'une autre version refuse plutôt que de deviner.
  *
- * **v2 depuis #236** : le disque unique (`disque`) a disparu, remplacé par les trois morceaux du
+ * **v3 depuis #298 (ADR 0046 § 6) : `boot.empreintes` — noyau, initrd, BIOS — est OBLIGATOIRE ; un lecteur d'avant, qui
+ * accepte la v2 et ignore ce bloc, refuse la v3.** v2 depuis #236 : le disque unique (`disque`) a disparu, remplacé par les trois morceaux du
  * paquet applicatif — le `rootfs` et le `paquet`, que la coquille RANGE dans un `hda` composé, et la
  * `graine`, qu'elle VERSE dans le volume de données. Chacun porte désormais son EMPREINTE, que
  * l'installation et le boot confrontent aux octets reçus ; la v1 ne portait que des tailles.
@@ -46,7 +47,7 @@ export const CHEMIN_DESCRIPTEUR_APPLICATIF = join(RACINE_DEPOT, "artifacts", "ap
  * Aucune compatibilité v1 n'est portée : aucun déploiement réel n'existe (ADR 0041), et un lecteur
  * qui accepterait les deux formes accepterait aussi un descripteur sans empreinte.
  */
-export const DESCRIPTEUR_APPLICATIF_VERSION = 2;
+export const DESCRIPTEUR_APPLICATIF_VERSION = 3;
 
 /**
  * Dérive le descripteur applicatif du manifeste d'image, sans rien y ajouter qui ne s'y trouve.

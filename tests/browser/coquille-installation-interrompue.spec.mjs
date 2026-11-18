@@ -35,7 +35,7 @@ const releve = async (page) => JSON.parse(await page.locator("#coquille-rapport"
 /** Un descripteur valide, dont la graine pèse `octets`, éventuellement servie en gzip. */
 function descripteurDEpreuve(octets, { gzip = false } = {}) {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "installation-interrompue", version: "1.0.0", schema: "20260101000002" },
     runtime: { version: "0.1.0" },
     rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },

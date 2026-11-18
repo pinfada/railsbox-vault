@@ -32,7 +32,7 @@ async function releve(page) {
 /** Un descripteur admis : 1.1.0 (N) servi, 1.0.0 (M) en précédent si demandé. */
 function descripteur({ precedent = true, id = "reference-essai" } = {}) {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id, version: "1.1.0", schema: N },
     runtime: { version: "0.1.0" },
     rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },

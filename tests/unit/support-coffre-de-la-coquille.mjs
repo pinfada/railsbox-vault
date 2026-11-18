@@ -31,7 +31,7 @@ export const MOTIF_DE_RAILS = 0x5b;
 
 export function descripteurDEpreuve() {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260815120000" },
     runtime: { version: "0.1.0" },
     rootfs: {

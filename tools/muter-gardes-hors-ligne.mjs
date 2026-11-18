@@ -45,6 +45,7 @@ const T = {
   libv86: "tests/unit/vm-lecture-de-libv86-hors-connexion.test.mjs",
   annulation: "tests/unit/vm-magasin-annulation-a-chaque-attente.test.mjs",
   accueil: "tests/unit/coquille-accueil-mise-a-jour.test.mjs",
+  compat: "tests/unit/coquille-compatibilite-ancien-lecteur.test.mjs",
   cle: "tests/unit/vm-cle-du-descripteur-scelle.test.mjs",
   demarrage: "tests/unit/coquille-demarrage-hors-connexion.test.mjs",
   preparation: "tests/unit/coquille-preparation-du-demarrage.test.mjs",
@@ -455,6 +456,23 @@ export const MUTATIONS = Object.freeze([
     avant: "  if (Number.isNaN(date.getTime())) return null;\n",
     apres: "",
     epreuves: [T.accueil],
+  },
+  // --- L'ancien lecteur refuse le descripteur neuf : la version du descripteur servi (revue de #298) -
+  {
+    nom: "le lecteur n'accepte que la version 3 du descripteur servi : la v2 (empreintes facultatives) est refusée",
+    garde: "DESCRIPTEUR_VERSION_ATTENDUE",
+    fichier: APPLICATIF,
+    avant: "export const DESCRIPTEUR_VERSION_ATTENDUE = 3;\n",
+    apres: "export const DESCRIPTEUR_VERSION_ATTENDUE = 2;\n",
+    epreuves: [T.compat],
+  },
+  {
+    nom: "la fabrication émet la version 3 : un ancien lecteur, qui lit la v2, ignorerait boot.empreintes",
+    garde: "image:manifest — DESCRIPTEUR_APPLICATIF_VERSION",
+    fichier: "tools/build-reference-image/manifest.mjs",
+    avant: "export const DESCRIPTEUR_APPLICATIF_VERSION = 3;\n",
+    apres: "export const DESCRIPTEUR_APPLICATIF_VERSION = 2;\n",
+    epreuves: [T.compat],
   },
   // --- Aucun octet n'atteint le guest sans empreinte épinglée (revue de #298, constat 2) ----------
   {

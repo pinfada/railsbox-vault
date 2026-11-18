@@ -36,7 +36,7 @@ function raisonDIndisponibilite() {
     return `descripteur applicatif absent (${CHEMIN_DESCRIPTEUR}) : « npm run image:build »`;
   }
   const descripteur = JSON.parse(readFileSync(CHEMIN_DESCRIPTEUR, "utf8"));
-  if (descripteur.descripteurVersion !== 2 || descripteur.graine === undefined) {
+  if (descripteur.descripteurVersion !== 3 || descripteur.graine === undefined) {
     return "descripteur d'avant #236 (sans graine) : « npm run image:build »";
   }
   const manquantsV86 = artefactsV86Absents(["libv86.mjs", "v86.wasm"]);

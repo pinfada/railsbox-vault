@@ -29,7 +29,7 @@ const E = (lettre) => lettre.repeat(64);
 /** Un descripteur v2 admis : 1.1.0 (schéma N) courant, 1.0.0 (schéma M) précédent. */
 function descripteur(surcharge = {}) {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "ref", version: "1.1.0", schema: N },
     runtime: { version: "0.1.0" },
     rootfs: { nom: "rootfs.ext4", octets: 4096, sha256: E("a") },

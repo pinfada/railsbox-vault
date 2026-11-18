@@ -38,13 +38,15 @@ export const estUneRedirection = (reponse) =>
 /**
  * Version de descripteur que ce module sait lire. Une autre est refusée, jamais devinée.
  *
- * **v2 depuis #236 (ADR 0041), et la v1 n'est PAS portée.** La v1 décrivait UN disque — code et
- * données mêlés — par son nom et sa taille, sans empreinte. La v2 décrit trois morceaux (`rootfs`,
- * `paquet`, `graine`), chacun avec la sienne. Accepter les deux formes reviendrait à garder un
- * chemin d'installation qui ne vérifie aucune empreinte, pour des déploiements qui n'existent pas :
- * aucune origine ne sert encore ce produit.
+ * **v3 depuis #298 (ADR 0046 § 6), et les v1 et v2 ne sont PAS portées.** La v1 décrivait UN disque sans
+ * empreinte (#236). La v2 décrit trois morceaux avec leurs empreintes, mais `boot.empreintes` — le noyau,
+ * l'initrd et les deux BIOS — y était absent ou facultatif ; la v3 le rend OBLIGATOIRE. Le numéro change
+ * parce que le contrat change : un lecteur d'avant, qui accepte la v2 et ignore `boot.empreintes`, aurait
+ * démarré sans la vérification que le nouveau contrat exige. Il refuse la v3 (« version de descripteur
+ * inconnue »), ce que `tests/unit/coquille-compatibilite-ancien-lecteur.test.mjs` éprouve avec le lecteur
+ * d'avant importé tel quel. Un descripteur v2 rangé et scellé avant la règle est refusé à l'ouverture.
  */
-export const DESCRIPTEUR_VERSION_ATTENDUE = 2;
+export const DESCRIPTEUR_VERSION_ATTENDUE = 3;
 
 /**
  * Le NOM d'un artefact servi : une lettre ou un chiffre, puis des caractères de nom de fichier.

@@ -39,7 +39,7 @@ const GRAINE = Buffer.alloc(OCTETS_DU_DISQUE, 0x42);
 const EMPREINTE_DE_LA_GRAINE = createHash("sha256").update(GRAINE).digest("hex");
 
 const DESCRIPTEUR = {
-  descripteurVersion: 2,
+  descripteurVersion: 3,
   application: { id: "portabilite-test", version: "1.0.0", schema: "20260101000002" },
   runtime: { version: "0.1.0" },
   // Les DEUX morceaux du disque système : ces épreuves ne bootent aucune VM, mais le descripteur

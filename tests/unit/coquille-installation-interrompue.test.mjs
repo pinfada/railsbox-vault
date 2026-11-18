@@ -63,7 +63,7 @@ const EMPREINTE = createHash("sha256").update(GRAINE).digest("hex");
 
 function descripteur() {
   return {
-    descripteurVersion: 2,
+    descripteurVersion: 3,
     application: { id: "installation-interrompue", version: "1.0.0", schema: "20260101000002" },
     runtime: { version: "0.1.0" },
     rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },
