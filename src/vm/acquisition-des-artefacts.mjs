@@ -261,9 +261,14 @@ async function importV86(libUrl, { horsConnexion, manifeste }) {
   return module.V86;
 }
 
-async function lireDuCacheHttp(url) {
+/**
+ * Lit `libv86` dans le cache HTTP, hors connexion.
+ *
+ * @param {string} url @param {typeof fetch} [recuperer]
+ */
+export async function lireDuCacheHttp(url, recuperer = globalThis.fetch) {
   try {
-    return await fetchBytes(url, globalThis.fetch, { cache: "force-cache" });
+    return await fetchBytes(url, recuperer, { cache: "force-cache" });
   } catch (erreur) {
     throw artefactAbsentHorsConnexion(
       "libv86",
