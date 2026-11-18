@@ -527,6 +527,15 @@ export const MUTATIONS = Object.freeze([
     epreuves: [T.empreintes],
   },
   {
+    nom: "PRODUCTION : la réserve transmise au crochet de scellement exige le rootfs ET le paquet",
+    garde: "loadRuntime — reserveComplete (l'expression exécutée par le boot)",
+    fichier: ARTEFACTS,
+    avant:
+      "    reserveComplete:\n      petits.complet && Object.values(disqueSysteme.mesures.magasin).every(dansLaReserve),\n",
+    apres: "    reserveComplete: petits.complet,\n",
+    epreuves: [T.preparation, T.petits, T.disque, T.intention],
+  },
+  {
     nom: "la réserve n'est complète que si TOUT y est",
     garde: "reserveTientTout",
     fichier: ARTEFACTS,
