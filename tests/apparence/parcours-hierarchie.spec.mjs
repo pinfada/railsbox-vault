@@ -5,6 +5,7 @@
 import { PHRASE, bouton, expect, ouvrir, test, titre } from "./outils-d-apparence.mjs";
 
 const LARGEURS = [320, 360, 1280];
+const echapper = (texte) => texte.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const taille = (page, selecteur) =>
   page
@@ -87,3 +88,25 @@ for (const largeur of LARGEURS) {
     }
   });
 }
+
+test("la description accessible du champ de la phrase porte le constat ET le conseil (création)", async ({
+  page,
+}) => {
+  await ouvrir(page);
+  await bouton(page, "Commencer").click();
+  await expect(titre(page, "Choisir comment l'ouvrir")).toBeVisible();
+  const champ = page.getByLabel("Votre phrase", { exact: true });
+  await expect(page.locator("#phrase-aide")).not.toBeEmpty();
+  for (const phrase of ["trop court", PHRASE]) {
+    await champ.fill(phrase);
+    await expect(champ).toHaveAccessibleName("Votre phrase");
+    const constat = (await page.locator("#phrase-conseil").textContent()).trim();
+    const aide = (await page.locator("#phrase-aide").textContent()).trim();
+    expect(constat).not.toBe("");
+    expect(aide).toContain("plusieurs mots");
+    // Description calculée par le navigateur : le constat, puis le conseil.
+    await expect(champ).toHaveAccessibleDescription(
+      new RegExp(`${echapper(constat)}\\s+${echapper(aide)}`),
+    );
+  }
+});

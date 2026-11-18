@@ -104,3 +104,18 @@ test("m11 : un refus du parcours est dit à la console par son code, sans la val
     expect(texte).not.toContain(feuille.code);
   }
 });
+
+test("la description accessible du champ de la phrase, à la réouverture, est celle de la réouverture", async ({
+  page,
+}) => {
+  const feuille = await afficherLeCode(page);
+  await eprouverLaFeuille(page, feuille.code);
+  await bouton(page, "Continuer : Verrouiller et rouvrir").click();
+  await verrouillerEtRecharger(page);
+  await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
+  const champ = page.getByLabel("Votre phrase", { exact: true });
+  await expect(champ).toHaveAccessibleDescription(
+    "Saisissez la phrase utilisée lors de la création du coffre.",
+  );
+  await expect(page.locator("#phrase-aide")).toBeEmpty();
+});

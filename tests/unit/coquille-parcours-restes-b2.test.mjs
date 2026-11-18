@@ -28,18 +28,29 @@ test("m1 : l'attente d'une RÉOUVERTURE annonce l'ordre de grandeur mesuré (6 �
   assert.match(attenteDeLaPhrase(2207, { reouverture: true }), /de 4 à 20 secondes/);
 });
 
-test("m3 : sur un appareil vierge, l'écran de restauration ne dit pas que les étapes 1 à 6 sont « passées »", () => {
-  const releve = ouSuisJe("restaurer", ORIGINES_DU_COFFRE.creation, { etapeAtteinte: 7 });
+test("m3 : avant la restauration, aucune étape ne dit que le coffre est restauré, ni de quelque façon que ce soit", () => {
+  const avant = ouSuisJe("restaurer", ORIGINES_DU_COFFRE.creation, { etapeAtteinte: 7 });
   assert.deepEqual(
-    releve.map((ligne) => ligne.statut),
-    [...Array(6).fill("non-jouee"), "en-cours", "a-venir", "a-venir"],
+    avant.map((ligne) => ligne.statut),
+    [...Array(6).fill("non-jouee-ici"), "en-cours", "a-venir", "a-venir"],
   );
-  assert.doesNotMatch(
-    STATUTS["non-jouee"],
-    /a été restauré/,
-    "la restauration n'a pas encore eu lieu",
+  for (const { statut } of avant) {
+    assert.doesNotMatch(
+      STATUTS[statut],
+      /restaur/i,
+      `« ${STATUTS[statut]} » promet une restauration`,
+    );
+  }
+  assert.match(STATUTS["non-jouee-ici"], /^non jouée sur cet appareil$/);
+});
+
+test("m3 : après la restauration, les étapes 1 à 6 disent d'où vient le coffre", () => {
+  const apres = ouSuisJe("revoquer", ORIGINES_DU_COFFRE.restauration, { etapeAtteinte: 9 });
+  assert.deepEqual(
+    apres.slice(0, 6).map((ligne) => ligne.statut),
+    Array(6).fill("non-jouee"),
   );
-  assert.match(STATUTS["non-jouee"], /non jouée sur cet appareil/);
+  assert.match(STATUTS["non-jouee"], /a été restauré/);
 });
 
 test("#242 (4) : un démarrage ordinaire dit l'étape en cours quand le coffre la connaît", () => {
