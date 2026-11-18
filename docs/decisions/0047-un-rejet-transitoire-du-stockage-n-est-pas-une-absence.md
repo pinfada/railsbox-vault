@@ -2,7 +2,7 @@
 
 - Statut : accepté
 - Date : 2026-11-18
-- Issues : #231 · revue de la PR #305 (deux refus, 18/11/2026) · suite : #306, #309
+- Issues : #231 · revue de la PR #305 (trois refus, 18/11/2026) · suite : #306, #309
 - Amende : la décision 6 de l'[ADR 0029](0029-deverrouillage-dans-la-coquille.md) (le DÉTECTEUR de
   l'absence d'OPFS) ; complète l'[ADR 0028](0028-coquille-de-produit-et-frontiere.md) (les états que
   la coquille publie : quatre deviennent cinq)
@@ -35,11 +35,18 @@ n'offre pas… », avec le conseil de changer de navigateur : une affirmation qu
    essais — **jamais « absente »**. `panne` : tout autre rejet (quota, état invalide, erreur
    inconnue) : ni absence ni indétermination, un échec que le vrai geste signale sous son code
    précis.
-3. **Un cinquième état, `indetermine`** (`ETATS_DU_VOLUME`), publié par le Worker de confiance : «
-   le stockage du navigateur est inaccessible pour l'instant, cause non établie ». Il n'est pas
-   `indisponible` (« ce moteur ne sait pas », durable). La mort du Worker et le verrouillage le
-   conservent, comme `indisponible` : la coquille n'invente pas un verrou là où le stockage ne
-   répondait pas.
+3. **La capacité est une machine explicite, non un booléen**
+   (`src/coquille/capacite-du-stockage.mjs`) : `inconnu` → `disponible` | `indetermine` | `absent` |
+   `panne:<code>`. Seules les transitions écrites existent, toute autre lève : `absent` est terminal
+   (une absence établie ne se resonde pas), `disponible` n'est pas resondé, `indetermine` et `panne`
+   sont **réessayables** et peuvent mener à tout état. Une première rédaction retombait à
+   `stockageIndetermine = false` sur la première panne rencontrée au réessai, sans rétablir la
+   capacité : « trois `UnknownError`, puis `QuotaExceededError` » rendait
+   `VAULT_STORAGE_UNSUPPORTED` et plus aucune sonde ne partait (revue de la PR #305). **L'état
+   publié** : `verrouille` pour `disponible`, `indisponible` pour `absent`, et **`indetermine`**
+   (cinquième état) pour `indetermine` ET `panne` — pour la personne, le stockage ne répond pas pour
+   l'instant ; le refus d'un geste dit le détail. La mort du Worker et le verrouillage conservent
+   `indisponible` et `indetermine`.
 4. **Un code de refus neuf, `VAULT_STORAGE_INDETERMINE`**, inscrit au registre des codes du stockage
    (`src/vm/storage-errors.mjs`, § 10.2 de `docs/format-de-volume-v3.md`) et à la table des
    conduites du parcours (`CONDUITES`, classe `recommencer`, cliquet
@@ -50,10 +57,22 @@ n'offre pas… », avec le conseil de changer de navigateur : une affirmation qu
    n'a été tenté. Distinct de `unsupported` (absence) et de `supportFailure` (échec d'une opération
    sur un volume atteint). § 10.5 (famille de la COQUILLE, `VAULT_COQUILLE_*`) n'est pas touchée :
    le code est du stockage.
-5. **Rien n'est figé : un geste lève l'indétermination sans rechargement.** Tout message du canal
-   privilégié autre que l'état et l'inventaire, reçu tant que le stockage est `indetermine`, relance
-   la sonde (une seule à la fois). Si elle aboutit, l'état redevient `verrouille` et le geste suit
-   son cours ; sinon il reçoit `VAULT_STORAGE_INDETERMINE`.
+5. **Rien n'est figé : un geste, ou une demande d'inventaire, lève l'indétermination sans
+   rechargement.** Tout message du canal privilégié autre que l'état, reçu tant que la capacité est
+   réessayable, relance la sonde (une seule à la fois). Si elle aboutit, l'état redevient
+   `verrouille` et le message suit son cours ; sinon le geste reçoit `VAULT_STORAGE_INDETERMINE` —
+   ou, après une panne, SON code précis (`VAULT_STORAGE_QUOTA_EXCEEDED`, …), **jamais
+   `UNSUPPORTED`**, qui n'est rendu que pour `absent`. 5 bis. **L'inventaire d'un stockage qui ne
+   répond pas est INCONNU, pas vide.** Le Worker répond `inconnu: true` avec le refus typé
+   `VAULT_STORAGE_INDETERMINE` (jamais `present: false` nu, qui se lisait « Aucun coffre sur cet
+   appareil »). La coquille ne propose alors NI la création (la politique de phrase de création ne
+   s'applique pas), NI un moyen d'ouverture : l'écran du parcours `inaccessible` — « Le stockage du
+   navigateur ne répond pas pour l'instant » — n'offre que « Réessayer ». Ce bouton relance la
+   sonde, puis l'inventaire, puis l'état publié, **sans recharger la page** ; l'inventaire relu
+   efface l'inconnu et le parcours rend l'écran du coffre EXISTANT (`Vérifier votre code`,
+   `Rouvrir votre coffre`), jamais `Créer votre coffre`. Éprouvé sous Chromium, Firefox et WebKit
+   (`tests/browser/coquille-stockage-indetermine.spec.mjs`) : coffre existant, rejet posé dans le
+   Worker, reprise sans rechargement, ouverture par le code puis par la phrase.
 6. **Tout ce qui dépend de la capacité attend la sonde** : `surMessagePrivilegie` (inventaire,
    gestes) et `publierLEtat` (qui attend puis lit l'état — la première rédaction lisait avant son
    `await` et publiait un `verrouille` périmé). Pas d'`await` de module : un Worker module qui en
@@ -87,8 +106,11 @@ n'offre pas… », avec le conseil de changer de navigateur : une affirmation qu
 - **La sonde de capacités** (`src/compat/`) range ce rejet en `error`, donc le verdict Vault de
   WebKit en `candidat` : suivi par #306. Le produit et la sonde ne se contredisent pas, mais ne se
   recoupent pas non plus.
-- **Non muté, et dit** : `app-inter.mjs` et le banc (branchement DOM, navigateur seul) ; et
-  `PEUT_OUVRIR = true` à la levée, que le double du Worker ne distingue pas d'un refus tiers.
+- **Non muté, et dit** : `app-inter.mjs`, le banc et l'interface de déverrouillage (branchement DOM,
+  navigateur seul). Le geste qui ATTEINT l'OPFS à la levée est éprouvé par le Worker chargé tel quel
+  (un double de racine dont l'accès est compté) et par ses mutants. **Le passkey** n'est pas rejoué
+  après une panne : l'inventaire relu propose les moyens du coffre par le même chemin que la phrase
+  et le code (`moyensProposes`), mais aucun authentificateur virtuel n'est piloté ici.
 
 ## Alternatives rejetées
 

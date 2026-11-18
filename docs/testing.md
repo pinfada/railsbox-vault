@@ -123,28 +123,32 @@ et les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les 
 fabriqué » et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en
 bout en bout ; le retour arrière, en unitaire.
 
-La campagne `coquille` gagne **trente mutants** avec #231 (18/11/2026, après la seconde revue de la
-PR #305), tous tués, **159/159** pour la campagne. Huit portent sur la SONDE du stockage
+La campagne `coquille` gagne **quarante-cinq mutants** avec #231 (18/11/2026, après la troisième
+revue de la PR #305), tous tués, **174/174** pour la campagne. Huit portent sur la SONDE du stockage
 (`src/vm/sonde-du-stockage.mjs` : la borne et le réessai, le délai, le classement `indetermine`
-jamais `absente`), deux sur la traduction en `VAULT_STORAGE_INDETERMINE` (`opfs-sync-access.mjs`),
-neuf sur le BRANCHEMENT de `public/runtime-worker.mjs`, que
+jamais `absente`, le code précis d'une panne), deux sur la traduction en `VAULT_STORAGE_INDETERMINE`
+(`opfs-sync-access.mjs`), dix-neuf sur la MACHINE de capacité
+(`src/coquille/capacite-du-stockage.mjs` : chaque ligne de la table des transitions, l'état publié,
+les refus par état — `UNSUPPORTED` seulement pour une absence établie —, `peutOuvrir`,
+`reessayable`) et sur le BRANCHEMENT de `public/runtime-worker.mjs`, que
 `tests/unit/coquille-worker-sonde-opfs.test.mjs` charge TEL QUEL — un résolveur de modules ramène
 les importations `/src/…` à `src/`, `navigator.storage` est un double dont `getDirectory()` suit un
-script : l'attente de la sonde par le canal et par la poignée d'état, l'ordre « attendre puis lire
-», l'état `indetermine`, la relance par un geste, le refus typé, le retour à `verrouille` —, quatre
-sur la racine des témoins du spike et la fouille du banc (`public/spike/origin/racine-opfs.mjs` : un
-`UnknownError` n'est jamais `indisponible`, une fouille impossible se dit, une panne lève) et sept
-sur la comparaison des témoins (`tests/support/temoins-opfs.mjs` : la tolérance du seul contexte
-éphémère connu de l'épreuve, quand A n'a rien déposé). **Non muté, et dit :** le branchement DOM du
-spike (`app-inter.mjs`) et du banc, éprouvable par le seul navigateur — `apps-frontiere.spec.mjs`
-(injections `QuotaExceededError` et `UnknownError` avant et APRÈS le dépôt de A, sur les trois
-moteurs) et `deverrouillage-frontiere.spec.mjs` — ; et `PEUT_OUVRIR = true` à la levée de
-l'indétermination, que le double du Worker ne distingue pas d'un refus tiers.
+script et dont la racine compte ses accès : l'attente de la sonde par le canal et par la poignée
+d'état, l'ordre « attendre puis lire », la relance par un geste ET par une demande d'inventaire,
+l'inventaire INCONNU, le refus typé, le retour à `verrouille` avec un geste qui ATTEINT l'OPFS —,
+quatre sur la racine des témoins du spike et la fouille du banc
+(`public/spike/origin/racine-opfs.mjs`), sept sur la comparaison des témoins
+(`tests/support/temoins-opfs.mjs`), deux sur le parcours (`coffreObserve` et `ecranCourant`
+reconnaissent l'inventaire inconnu). **Non muté, et dit :** le branchement DOM du spike
+(`app-inter.mjs`), du banc et de l'interface de déverrouillage (« Réessayer »), éprouvable par le
+seul navigateur — `apps-frontiere.spec.mjs`, `deverrouillage-frontiere.spec.mjs` et
+`coquille-stockage-indetermine.spec.mjs` (coffre existant, rejet posé dans le Worker, reprise sans
+rechargement, sur les trois moteurs).
 
 Les deux campagnes qui tenaient déjà `conduiteApresLaMort` et `conduiteApresLeVerrouillage`
 (`cycle-de-vie`, `verrouillage`) suivent l'état `indetermine` : leur mutant « un moteur INDISPONIBLE
 reste indisponible » vise la nouvelle expression, et un mutant par campagne retire la préservation
-de `indetermine`. **407/407 mutants tués sur les quatorze campagnes** (`npm run check:mutations`,
+de `indetermine`. **422/422 mutants tués sur les quatorze campagnes** (`npm run check:mutations`,
 18/11/2026) — une première version de ce lot n'avait rejoué que `coquille` en local, et la CI a
 trouvé le survivant de `cycle-de-vie` : le texte muté avait changé.
 
@@ -2554,7 +2558,11 @@ l'annonce.
 d'état : la course de mesure, quatre occurrences en CI du 15 au 17/09, est écartée par construction,
 sans retirer l'exigence (la mesure doit exister). Quarante exécutions locales WebKit de cette
 épreuve : 40 vertes, une seule machine, sans charge, ce qui ne prouve rien sur un exécutant partagé
-— la preuve est la lecture du code (`surMesure("annonce")` suit `await peindre()`).
+— la preuve est la lecture du code (`surMesure("annonce")` suit `await peindre()`). Depuis la
+troisième revue de la PR #305, cette branche (état `indisponible` sous WebKit) n'est plus atteinte
+sous WebKit ≥ 26.6 : l'inventaire y est INCONNU (ADR 0047), le geste est refusé avant toute
+dérivation et aucune attente n'est annoncée ; la mesure de l'annonce se joue sous Chromium et
+Firefox.
 
 Les deux autres signatures **ne sont pas expliquées** et ne sont pas traitées ici : la navigation
 sans `load` du second contexte (`tests/apparence/parcours.spec.mjs`, 15/09, une occurrence en CI) —
