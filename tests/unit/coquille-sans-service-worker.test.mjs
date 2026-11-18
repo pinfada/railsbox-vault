@@ -1,5 +1,17 @@
 /**
- * AUCUN SERVICE WORKER sur l'origine de CONFIANCE (#163, ADR 0030, décision 4).
+ * AUCUN AUTRE SERVICE WORKER que celui de la RÉSERVE sur l'origine de CONFIANCE (#163, ADR 0030, décision 4,
+ * révisée par l'ADR 0048 — #299).
+ *
+ * **LISTE BLANCHE (#299).** La règle « aucun Service Worker » devient « aucun AUTRE Service Worker que
+ * celui-ci » : un seul appelant d'enregistrement dans l'arbre `coquille` (`src/coquille/reserve-portail.mjs`),
+ * quelques fichiers nommés qui lisent `navigator.serviceWorker` pour le brancher, et un script SW publié —
+ * généré (`tools/publier-reserve.mjs`), vérifié plus bas. Toute autre apparition d'une porte d'entrée de
+ * Service Worker rougit ici, avec le même texte qu'avant. Côté `application`, seul
+ * `service-worker-du-cadre.mjs` en porte un (surveillé ci-dessous, inchangé).
+ *
+ * Ce qui suit est l'ADR 0030 tel qu'il a été écrit ; son motif de fond reste VRAI et accepté, dans les
+ * limites que l'ADR 0048 écrit (un SW, généré, épinglé, éprouvé, qui n'écoute que son origine et ne voit
+ * aucune clé).
  *
  * La question était ouverte : l'ADR 0010 la posait nommément — « #24 doit dire si un Service Worker
  * injectant COOP est admissible DANS la frontière » —, parce qu'un hébergeur sans en-têtes (GitHub
@@ -52,6 +64,15 @@ const PORTES = [
   "ServiceWorkerContainer",
   "ServiceWorkerRegistration",
 ];
+
+/**
+ * LA LISTE BLANCHE (ADR 0048 § 15) : pour chaque fichier publié par la coquille, les portes qu'il a le droit
+ * de nommer. Un fichier absent de cette table n'en a aucune ; une porte absente de sa ligne est interdite.
+ * L'enregistrement lui-même (`.register(`) a sa propre garde, plus bas : UN SEUL appelant, le portail.
+ */
+const LISTE_BLANCHE = Object.freeze({
+  "public/coquille/reserve-de-la-page.mjs": ["navigator.serviceWorker"],
+});
 
 /** Les extensions qui portent du code. Une licence ou un `.wasm` n'enregistre rien. */
 const EXTENSIONS = [".mjs", ".js", ".html"];
@@ -226,11 +247,13 @@ test("la garde d'installation REFUSE la même origine, et n'accepte que la front
   );
 });
 
-test("aucun module publié par l'origine de confiance n'installe de Service Worker", async () => {
+test("aucun module publié par l'origine de confiance n'installe d'AUTRE Service Worker que celui de la réserve", async () => {
   const fautifs = [];
   for (const chemin of await fichiersPublies()) {
     const contenu = await readFile(path.join(REPO_ROOT, chemin), "utf8");
+    const permises = LISTE_BLANCHE[chemin] ?? [];
     for (const porte of PORTES) {
+      if (permises.includes(porte)) continue;
       const appels = contenu
         .split("\n")
         .filter((ligne) => ligne.includes(porte) && estUnAppel(ligne));
@@ -240,7 +263,61 @@ test("aucun module publié par l'origine de confiance n'installe de Service Work
   assert.deepEqual(
     fautifs,
     [],
-    "Un Service Worker sur l'origine de confiance est INADMISSIBLE (ADR 0030, décision 4).",
+    "Un Service Worker autre que celui de la réserve est INADMISSIBLE (ADR 0030, décision 4 ; ADR 0048 § 15).",
+  );
+});
+
+test("la LISTE BLANCHE est exacte : chaque fichier nommé existe, est publié par la coquille, et porte bien sa porte", async () => {
+  for (const [chemin, portes] of Object.entries(LISTE_BLANCHE)) {
+    assert.equal(
+      estPublieParLaCoquille(chemin),
+      true,
+      `${chemin} n'est pas publié par la coquille`,
+    );
+    const contenu = await readFile(path.join(REPO_ROOT, chemin), "utf8");
+    for (const porte of portes) {
+      assert.ok(
+        contenu.split("\n").some((ligne) => ligne.includes(porte) && estUnAppel(ligne)),
+        `${chemin} ne nomme plus « ${porte} » : une inscription périmée sort de la liste`,
+      );
+    }
+  }
+});
+
+test("UN SEUL appelant d'enregistrement : `.register(` n'apparaît, dans ce que la coquille publie, que dans le portail", async () => {
+  const appelants = [];
+  for (const chemin of await fichiersPublies()) {
+    const contenu = await readFile(path.join(REPO_ROOT, chemin), "utf8");
+    if (contenu.split("\n").some((ligne) => /\.register\(/.test(ligne) && estUnAppel(ligne))) {
+      appelants.push(chemin);
+    }
+  }
+  assert.deepEqual(appelants, ["src/coquille/reserve-portail.mjs"]);
+});
+
+test("l'enregistrement du portail est celui de la réserve : script stable, portée racine, `updateViaCache: none` (gardes 26 et 28)", async () => {
+  const portail = await readFile(path.join(REPO_ROOT, "src/coquille/reserve-portail.mjs"), "utf8");
+  assert.match(
+    portail,
+    /conteneur\.register\(URL_DU_SW, \{ scope: "\/", updateViaCache: "none" \}\)/,
+  );
+  const { URL_DU_SW } = await import("../../src/coquille/reserve-identite.mjs");
+  assert.equal(URL_DU_SW, "/sw-coquille.mjs");
+});
+
+test("le SCRIPT du SW publié est UN : il est généré à la racine de l'arbre, jamais copié du dépôt, et aucune autre source ne le porte", async () => {
+  const sources = SOURCES_COQUILLE.map(({ depuis }) => depuis);
+  assert.ok(
+    !sources.some((depuis) => depuis.includes("sw-coquille")),
+    "le script n'est pas une source : il est généré",
+  );
+  assert.equal((await import("../../tools/publier-reserve.mjs")).CHEMIN_DU_SW, "/sw-coquille.mjs");
+  const modele = await readFile(path.join(REPO_ROOT, "tools/reserve/sw-coquille.js"), "utf8");
+  const code = modele.split("\n").filter(estUnAppel).join("\n");
+  assert.doesNotMatch(
+    code,
+    /skipWaiting\(|clients\.claim\(/,
+    "ni skipWaiting ni claim : la mise à jour attend tous les clients",
   );
 });
 
