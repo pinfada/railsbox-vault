@@ -314,11 +314,11 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await a.getByLabel("Code de récupération", { exact: true }).fill(code);
     await bouton(a, "Ouvrir mon coffre avec le code").click();
     await attendreLEcran(a, "Révoquer en urgence", BUDGET_DEVERROUILLAGE_MS);
-    await expect(
-      a.getByText(
-        /— le code de votre feuille — continuera de l.ouvrir. Votre phrase ne fonctionnera plus/,
-      ),
-    ).toBeVisible();
+    // Le texte du moyen de la séance est écrit au-dessus du bouton ; la confirmation (fermée) le redit (#265).
+    await expect(a.locator("#parcours-avertissement-revocation")).toBeVisible();
+    await expect(a.locator("#parcours-avertissement-revocation")).toHaveText(
+      /— le code de votre feuille — continuera de l.ouvrir. Votre phrase ne fonctionnera plus/,
+    );
     await bouton(a, "Terminer sans révoquer").click();
     // #246 : l'écran où RIEN n'a été révoqué a son propre titre, distinct de « Parcours terminé ».
     await attendreLEcran(a, "Parcours terminé, rien n'a été révoqué");
