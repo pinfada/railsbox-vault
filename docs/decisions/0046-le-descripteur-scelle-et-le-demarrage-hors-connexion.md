@@ -171,8 +171,12 @@ d'être lu.
   règle** : le sceau porte la v2, l'ouverture rejoue `formeDuDescripteur` et le refuse sur son
   contenu (`HORS_LIGNE_DESCRIPTEUR_REFUSE`, raison `contenu`), sans repli ; le démarrage en ligne
   suivant range un v3. Aucun fichier de cette sorte n'existe hors développement : le hors ligne
-  n'était pas implémenté avant la PR. Un retour arrière (revert) rend à l'ancien lecteur son
-  descripteur v2 : l'origine doit servir celui d'avant, ce que la publication fait avec le code.
+  n'était pas implémenté avant la PR. **Retour arrière (revert) :** l'origine doit re-servir le
+  descripteur v2 d'avant avec le code d'avant, ce que la publication fait. Un NOUVEAU lecteur encore
+  en mémoire (onglet resté ouvert, coquille en cache) qui rechargerait alors ce descripteur v2 le
+  refuse (`version de descripteur inconnue : 2`) : le démarrage se ferme sans démarrer
+  l'application, et le coffre reste indisponible — sans effet sur les données — jusqu'au
+  rechargement du code d'avant, qui lit la v2.
 - **Défense en profondeur** : `acquerirLesPetitsArtefacts` refuse AVANT tout téléchargement une
   épingle absente (`null` ou clé manquante) — y compris celle du wasm, qui ne se trouverait pas au
   manifeste v86 —, quel que soit l'appelant : les bancs de bout en bout reçoivent leurs empreintes
@@ -362,9 +366,10 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
   requête sur cache vide (§ 6 ; WebKit : une requête, limite mesurée).
 - **Spike** : `node tools/spike-liaison-libv86.mjs` rejoue la mesure du § 6 sur les trois moteurs.
 - **Bout en bout** : `tests/e2e/hors-ligne.spec.mjs` — réseau coupé, démarrage depuis la réserve,
-  aucune réponse pour l'image ; descripteur altéré, HTTP 500 et portail captif sans repli. **Non
-  exécuté dans cette session** : l'image de référence n'est pas fabriquée dans le sandbox de
-  l'agent, et la fabrication en CI est réparée par un autre lot (CI-0).
+  aucune réponse pour l'image ; descripteur altéré, HTTP 500 et portail captif sans repli. **Exécuté
+  sur l'image réelle** : en local, puis en CI dans le lot 5 de « Reprise MVP » (vert, run
+  44246445896, SHA 8a9fea7) — **sous le harnais de cache du code** (§ 6), pas avec les en-têtes de
+  production, avec lesquels il échoue.
 
 ## Ce qui n'est pas prouvé
 
@@ -376,5 +381,10 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
   écrites, non éprouvées avec deux vrais onglets.
 - Le **coût** des empreintes de cinq artefacts de plus au premier démarrage, et la taille du magasin
   : non mesurés (image absente). `docs/quality-attributes.md` garde « non mesuré ».
+- **Que chaque mutant des campagnes `hors-ligne` et `magasin` porte sur du code exécuté par le
+  chemin de production** : non prouvé. Un outil d'analyse statique par noms a été essayé puis RETIRÉ
+  (il regroupait des homonymes et certifiait à tort) ; seule la garde de la réserve complète est
+  prouvée sur le chemin réel (`tests/unit/vm-reserve-complete-du-boot.test.mjs` traverse
+  `loadRuntime`, et son mutant porte sur l'unique définition appelée par le boot).
 - Le retour arrière (rangé antérieur au volume) **sur l'image réelle** : prouvé au niveau unitaire
   par la vraie décision de déphasage, pas en bout en bout.
