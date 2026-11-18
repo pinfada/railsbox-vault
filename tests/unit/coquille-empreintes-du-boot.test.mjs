@@ -1,15 +1,18 @@
 /**
  * Les EMPREINTES des artefacts du démarrage dans le descripteur (#247, D1g) : noyau, initrd, BIOS et
  * VGA BIOS ne portaient qu'un nom. Pour passer par le magasin — et pour être vérifiés — chacun a
- * besoin d'une empreinte et d'une taille épinglées. `boot.empreintes` est facultatif (un descripteur
- * antérieur reste lisible, sans le hors ligne) mais TOUT OU RIEN.
+ * besoin d'une empreinte et d'une taille épinglées. `boot.empreintes` est OBLIGATOIRE et TOUT OU RIEN :
+ * aucun octet n'atteint le guest sans empreinte épinglée (revue de sécurité de #298, constat 2 ; ADR 0046).
  */
 
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { descripteurApplicatif } from "../../tools/build-reference-image/manifest.mjs";
-import { formeDuDescripteur } from "../../src/coquille/descripteur-applicatif.mjs";
+import {
+  formeDuDescripteur,
+  lireLeDescripteur,
+} from "../../src/coquille/descripteur-applicatif.mjs";
 import { adressesDuRuntime } from "../../src/coquille/application-de-reference.mjs";
 import { descripteurDEpreuve } from "./support-coffre-de-la-coquille.mjs";
 
@@ -30,8 +33,22 @@ test("des empreintes complètes et bien formées sont admises", () => {
   assert.equal(formeDuDescripteur(avec(EMPREINTES)).valide, true);
 });
 
-test("sans empreintes, le descripteur reste admis (sans le hors ligne)", () => {
-  assert.equal(formeDuDescripteur(descripteurDEpreuve()).valide, true);
+test("sans empreintes, le descripteur est REFUSÉ : pas d'octet de boot sans épingle", () => {
+  const sans = descripteurDEpreuve();
+  delete sans.boot.empreintes;
+  const forme = formeDuDescripteur(sans);
+  assert.equal(forme.valide, false);
+  assert.match(forme.motif, /empreintes du boot/);
+});
+
+test("servi en ligne sans empreintes, le descripteur n'est pas une application : rien à démarrer", async () => {
+  const sans = descripteurDEpreuve();
+  delete sans.boot.empreintes;
+  const lu = await lireLeDescripteur({
+    recuperer: async () => ({ ok: true, status: 200, json: async () => sans }),
+  });
+  assert.equal(lu.present, false);
+  assert.match(lu.motif, /empreintes du boot/);
 });
 
 test("tout ou rien : un artefact sans empreinte est refusé", () => {
@@ -90,7 +107,7 @@ test("la fabrication reprend noyau, initrd, BIOS et VGA BIOS du manifeste d'imag
   assert.deepEqual(descripteurApplicatif(manifeste, "1.0.0").boot.empreintes, EMPREINTES);
 });
 
-test("un manifeste qui ne décrit pas l'un des quatre artefacts ne produit AUCUNE empreinte", () => {
+test("un manifeste qui ne décrit pas l'un des quatre artefacts : la fabrication REFUSE, elle ne dégrade pas", () => {
   const manifeste = {
     application: { id: "app", version: "1.0.0", schema: "s" },
     artifacts: [
@@ -112,7 +129,7 @@ test("un manifeste qui ne décrit pas l'un des quatre artefacts ne produit AUCUN
     },
     donnees: { disqueOctets: 1 },
   };
-  assert.equal(descripteurApplicatif(manifeste, "1.0.0").boot.empreintes, undefined);
+  assert.throws(() => descripteurApplicatif(manifeste, "1.0.0"), /initrd/);
 });
 
 // --- adressesDuRuntime : en ligne, le manifeste v86 est lu ; hors connexion, il est donné --------

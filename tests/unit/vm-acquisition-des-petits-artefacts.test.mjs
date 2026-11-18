@@ -157,14 +157,21 @@ test("hors connexion, un artefact sans épingle ne peut pas être vérifié : re
 
 // --- Sans épingle, ou sans place : le démarrage en ligne marche, mais la réserve est incomplète ----
 
-test("sans épingle (descripteur ancien) : téléchargé comme avant, rien n'est rangé, réserve incomplète", async () => {
+test("sans épingle : REFUSÉ avant tout téléchargement, aucun octet n'est rendu", async () => {
   const m = monde({ epingles: false });
-  const acquis = await acquerir(m);
-  assert.equal(m.requetes.length, 5);
-  assert.deepEqual(Object.values(acquis.magasin), Array(5).fill("sans-empreinte"));
-  assert.equal(acquis.complet, false);
+  await assert.rejects(acquerir(m), /empreinte/i);
+  assert.equal(m.requetes.length, 0, "rien n'est même demandé à l'origine");
   assert.equal(m.primitives.fichiers.size, 0);
 });
+
+for (const nom of NOMS) {
+  test(`une seule épingle manque (${nom}) : refus, les quatre autres ne suffisent pas`, async () => {
+    const m = monde();
+    m.pins[nom] = null;
+    await assert.rejects(acquerir(m), new RegExp(`${nom}.*empreinte|empreinte.*${nom}`, "i"));
+    assert.equal(m.requetes.length, 0);
+  });
+}
 
 test("une admission refusée par le budget ne fait pas échouer le démarrage : réserve incomplète", async () => {
   const m = monde();

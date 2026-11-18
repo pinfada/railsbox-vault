@@ -323,3 +323,13 @@ test("un fichier qui n'est pas une vue d'octets est refusé par sa forme", async
     );
   }
 });
+
+test("un descripteur scellé AVANT l'obligation des empreintes du boot (sceau juste) est refusé sur son contenu", async () => {
+  const ancien = descripteurDEpreuve();
+  delete ancien.boot.empreintes;
+  const octets = await scelle({ descripteur: ancien });
+  await assert.rejects(
+    ouvrirLeDescripteurScelle({ octets, cle: await cleDe(1) }),
+    refus("contenu"),
+  );
+});
