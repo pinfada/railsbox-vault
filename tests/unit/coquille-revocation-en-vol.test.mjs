@@ -152,17 +152,15 @@ test("issue : le SUCCÈS rend le geste, efface « en cours » et n'annonce rien 
   assert.equal(m.etat(), "");
 });
 
-test("issue : un REFUS typé est dit « refusée », le geste est rendu, aucun second message n'est parti", async () => {
-  const m = await confirmerSansReponse();
-  m.finir().refuser({ code: "VAULT_X" });
-  await apres();
-  assert.match(m.etat(), /refusée/);
-  assert.doesNotMatch(m.etat(), /en cours|Rien n'a été révoqué/);
-  assert.equal(m.page.noeud("revoquer-en-urgence").getAttribute("aria-disabled"), null);
-  assert.equal(m.envois(), 1);
-});
-
+// Un refus TYPÉ peut survenir APRÈS `revoquerToutSauf` (l'effacement, la copie résiduelle) : la page
+// ne distingue pas les phases, et le Worker n'atteste rien (page seule). Tout refus reçu après
+// l'envoi se dit donc « a peut-être eu lieu », jamais « refusée » (relecture de #308, REFUSÉ 5feee19).
 for (const [nom, erreur] of [
+  ["un refus typé (le Worker a répondu par un code)", { code: "VAULT_X" }],
+  [
+    "un refus typé du volume (après publication, peut-être)",
+    { code: CODES_REFUS_COQUILLE.volumeVerrouille },
+  ],
   ["le Worker est mort (aucune réponse)", { code: CODES_REFUS_COQUILLE.workerMort }],
   ["le Worker a jeté sans refus à nommer", { code: CODES_REFUS_COQUILLE.gesteRompu }],
   ["une erreur sans code", new Error("réseau")],
