@@ -116,6 +116,9 @@ const DEVERROUILLAGE_COQUILLE = [
   // Le PARCOURS GUIDÉ (#193, ADR 0040) : l'ordre attaqué et ce qu'il laisse dans la page, sur le même
   // chemin de produit (revue de la PR #213, constats 1, 2, 3 et 9).
   "**/coquille-parcours.spec.mjs",
+  // La COURSE entre deux onglets au déverrouillage (#311, C5) : même chemin de produit, deux Workers
+  // sur un même OPFS, pause posée par l'épreuve.
+  "**/coquille-course-entre-onglets.spec.mjs",
 ];
 
 /**
