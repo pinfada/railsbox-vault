@@ -7,6 +7,8 @@ import { pipeline } from "node:stream/promises";
 import {
   ISOLATION_REQUIRE_CORP,
   enTetesDAbsence,
+  natureDArtefact,
+  NATURES_DARTEFACT,
   parseServerOptions,
   securityHeaders,
 } from "./serve-headers.mjs";
@@ -21,6 +23,25 @@ const vendorRoot = resolve("vendor");
 // sert à v86 dans le navigateur, en lecture seule, sous leur propre racine.
 const artifactRoot = resolve("artifacts");
 const options = parseServerOptions(process.argv.slice(2), process.env);
+
+/**
+ * HARNAIS de l'E2E hors ligne SEULEMENT (#247, D1g ; ADR 0046 § 6, #299) : `VAULT_E2E_CODE_MAX_AGE=<s>`
+ * donne au CODE de la coquille (tout ce que la politique de cache classe `coquille`, hors
+ * `/artifacts/`) une fraîcheur de `<s>` secondes. Les en-têtes de production le laissent en
+ * `no-cache` : un Worker NEUF, créé réseau coupé, ne peut alors pas importer ses modules, et le
+ * démarrage hors connexion échoue AVANT de lire la réserve — mesuré le 18/11/2026, c'est la moitié
+ * « code de la coquille » de #299. Ce harnais modélise la condition préalable que la décision de
+ * #299 devra garantir (code en cache) pour éprouver ce que cette tranche livre : la décision de
+ * repli et la lecture de la réserve. `/artifacts/` (le descripteur, l'image) reste `no-cache` : c'est
+ * cela, l'origine « injoignable ». Jamais posé par `npm start`.
+ */
+const dureeDuCodeEnCache = Number.parseInt(process.env.VAULT_E2E_CODE_MAX_AGE ?? "", 10);
+function enTetesDeCacheDuHarnais(pathname) {
+  if (!Number.isInteger(dureeDuCodeEnCache) || dureeDuCodeEnCache <= 0) return {};
+  if (pathname.startsWith("/artifacts/")) return {};
+  if (natureDArtefact({ role: options.role, pathname }) !== NATURES_DARTEFACT.coquille) return {};
+  return { "Cache-Control": `public, max-age=${dureeDuCodeEnCache}` };
+}
 // Une socket de bouclage accepte aussi les alias de son adresse. Servir le coffre sous
 // localhost partagerait les cookies des autres applications localhost, quel que soit le port.
 // Seuls le couple configuré et les alias DÉCLARÉS (`--alias`) sont admis ; un alias sans port
@@ -147,6 +168,7 @@ createServer(async (request, response) => {
         requestOrigin: request.headers.origin ?? null,
         workerSrcBlob: options.workerSrcBlob,
       }),
+      ...enTetesDeCacheDuHarnais(pathname),
     });
     if (request.method === "HEAD") response.end();
     else await pipeline(fichier.createReadStream({ autoClose: false }), response);

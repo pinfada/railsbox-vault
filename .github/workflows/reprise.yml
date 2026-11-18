@@ -223,11 +223,16 @@ jobs:
           # connexion noyée dans un job rouge ne se lit pas. Quatre démarrages de Rails (≈ 3 min l'un)
           # et cinq réouvertures du coffre, sans mesure CI avant son premier run : le lot 5 vise
           # ≈ 20 min, sous la borne de 60 min du job, qui reste inchangée.
+          # `code_en_cache` : harnais de cet E2E seulement (`tools/serve.mjs`, `VAULT_E2E_CODE_MAX_AGE`).
+          # Sous les en-têtes de production, le code de la coquille est `no-cache` et un Worker neuf ne
+          # démarre pas réseau coupé (#299) : l'épreuve modélise le préalable que #299 devra garantir.
           - lot: "5"
+            code_en_cache: "3600"
             fichiers: tests/e2e/hors-ligne.spec.mjs
 
     env:
       VAULT_E2E_LOT: ${{ matrix.lot }}
+      VAULT_E2E_CODE_MAX_AGE: ${{ matrix.code_en_cache }}
       # `inputs` est vide hors `workflow_dispatch` : la production retombe sur « 1 ». Voir la
       # description du champ, plus haut, pour ce que la mesure a tranché.
       VAULT_E2E_WORKERS: ${{ inputs.workers || '1' }}

@@ -150,6 +150,15 @@ test("un coffre déjà démarré redémarre réseau coupé, depuis la réserve ;
   chronologie,
 }) => {
   exigerLesPrealables(raison, "hors-ligne.spec.mjs");
+  // PRÉALABLE du scénario, pas du produit : le serveur d'épreuve doit donner au CODE de la coquille une
+  // fraîcheur (`tools/serve.mjs`, `VAULT_E2E_CODE_MAX_AGE`). Sous les en-têtes de production (`no-cache`),
+  // un Worker NEUF créé réseau coupé ne peut pas importer ses modules : le démarrage échoue
+  // (`VAULT_COQUILLE_GESTE_ROMPU`) AVANT de lire la réserve — mesuré le 18/11/2026, moitié « code de la
+  // coquille » de #299. Sans ce préalable, l'épreuve échouerait pour une raison qui n'est pas la sienne.
+  expect(
+    Number.parseInt(process.env.VAULT_E2E_CODE_MAX_AGE ?? "", 10) > 0,
+    "préalable : VAULT_E2E_CODE_MAX_AGE=<secondes> (voir tools/serve.mjs, #299)",
+  ).toBe(true);
   test.setTimeout(4_800_000);
   const erreurs = [];
   const noter = (etape, detail = {}) => chronologie.etape(etape, detail);

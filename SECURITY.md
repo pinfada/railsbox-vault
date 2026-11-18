@@ -1594,8 +1594,12 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
   Décision du propriétaire : #299. Hors connexion il est lu du cache HTTP en `only-if-cached`
   (jamais `force-cache`, qui va au réseau sur un cache vide) — **sauf sous WebKit, qui ignore
   l'option** (mesuré) : « ne touche pas au réseau » n'est établi que sur Chromium et Firefox. La
-  page ne se recharge pas hors connexion (pas de Service Worker) : le démarrage hors connexion exige
-  une page déjà chargée et `libv86` encore en cache — sinon refus typé, sans effet sur les données.
+  page ne se recharge pas hors connexion (pas de Service Worker). **Mesuré sur l'image réelle : avec
+  les en-têtes de production (code de la coquille en `no-cache`), un Worker neuf créé réseau coupé
+  n'importe pas ses modules et le démarrage hors connexion échoue avant de lire la réserve**
+  (`VAULT_COQUILLE_GESTE_ROMPU`). La décision de repli est éprouvée sous un harnais qui donne une
+  fraîcheur au code ; la condition « code disponible sans réseau » reste ouverte (#299, ADR 0046 §
+  6).
 
 ## L'instantané de reprise contient la RAM invitée (#65)
 

@@ -1822,8 +1822,9 @@ Instruments : ceux du lot D-0 (`docs/mesures/2026-10-lot-d-reference.md`) et l'�
    CI ou sur un poste où l'épreuve de reprise passe.
 2. `node tools/mesurer-memoire.mjs --essais=2` dépend du même banc.
 3. Le mode hors ligne est implémenté depuis le lot D1g (ADR 0046), et son scénario de bout en bout
-   (`tests/e2e/hors-ligne.spec.mjs`, lot 5 de `reprise.yml`) est écrit ; **il n'a pas encore été
-   exécuté en CI** : la branche attend le rebase sur le lot CI-0 (fabrication de l'image). `libv86`
-   n'est pas lié aux octets exécutés (confiance de l'origine, ADR 0046 § 6, #299). Le coût des
-   empreintes de cinq artefacts de plus au premier démarrage et la taille du magasin restent à
-   mesurer en CI : aucune mesure n'est donc inscrite ici.
+   (`tests/e2e/hors-ligne.spec.mjs`, lot 5 de `reprise.yml`) est écrit ; **exécuté sur l'image
+   réelle (local, puis lot 5 de la recette)** sous un harnais qui donne au code de la coquille une
+   fraîcheur : avec les en-têtes de production, le démarrage hors connexion échoue avant la réserve
+   (#299). `libv86` n'est pas lié aux octets exécutés (confiance de l'origine, ADR 0046 § 6, #299).
+   Le coût des empreintes de cinq artefacts de plus au premier démarrage et la taille du magasin
+   restent à mesurer en CI : aucune mesure n'est donc inscrite ici.

@@ -205,6 +205,20 @@ d'être lu.
   élargie, émulateur en fenêtre) — revient au propriétaire : options, coût et frontière touchée dans
   #299.
 
+**Constat de l'E2E sur l'image réelle (lot 5, 18/11/2026) : le démarrage hors connexion n'a pas lieu
+avec les en-têtes de production.** Le code de la coquille est servi `no-cache` (ADR 0023) : un
+Worker NEUF, créé réseau coupé, ne peut pas importer ses modules (`/src/vm/boot-de-reference.mjs`),
+et le démarrage échoue en `VAULT_COQUILLE_GESTE_ROMPU` — avant de lire la réserve. C'est la moitié «
+code de la coquille » de #299, plus dure que « non garantie » : **tant que le code n'est pas servi
+avec une fraîcheur, ou par un Service Worker, il n'y a pas de démarrage hors connexion en
+production.** Cette tranche livre la DÉCISION (repli sur le descripteur scellé, lecture de la
+réserve, refus typés) ; la condition qu'elle suppose — le code de la coquille disponible sans réseau
+— relève de #299. L'E2E la modélise par un harnais : `VAULT_E2E_CODE_MAX_AGE` (`tools/serve.mjs`)
+donne au code (hors `/artifacts/`, qui reste `no-cache` : c'est l'origine « injoignable ») une
+fraîcheur, et le scénario l'exige en préalable. Avec lui, le scénario passe sur l'image réelle :
+premier boot en ligne, redémarrage réseau coupé depuis la réserve sans un octet d'image par le
+réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
+
 ### 7. Ce que la personne voit
 
 La coquille publie `horsConnexion: { rangeLe, version }` dans le constat de la page et dans le
