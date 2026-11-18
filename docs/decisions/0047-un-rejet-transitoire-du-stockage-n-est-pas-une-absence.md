@@ -38,10 +38,10 @@ n'offre pas… », avec le conseil de changer de navigateur : une affirmation qu
 3. **La capacité est une machine explicite, non un booléen**
    (`src/coquille/capacite-du-stockage.mjs`) : `inconnu` → `disponible` | `indetermine` | `absent` |
    `panne:<code>`. Seules les transitions écrites existent, toute autre lève : `absent` est terminal
-   (une absence établie ne se resonde pas), `disponible` n'est pas resondé, `indetermine` et `panne`
-   sont **réessayables** et peuvent mener à tout état. Une première rédaction retombait à
-   `stockageIndetermine = false` sur la première panne rencontrée au réessai, sans rétablir la
-   capacité : « trois `UnknownError`, puis `QuotaExceededError` » rendait
+   (une absence établie ne se resonde pas), `disponible` n'est pas resondé par la sonde (mais voir 5
+   ter), `indetermine` et `panne` sont **réessayables** et peuvent mener à tout état. Une première
+   rédaction retombait à `stockageIndetermine = false` sur la première panne rencontrée au réessai,
+   sans rétablir la capacité : « trois `UnknownError`, puis `QuotaExceededError` » rendait
    `VAULT_STORAGE_UNSUPPORTED` et plus aucune sonde ne partait (revue de la PR #305). **L'état
    publié** : `verrouille` pour `disponible`, `indisponible` pour `absent`, et **`indetermine`**
    (cinquième état) pour `indetermine` ET `panne` — pour la personne, le stockage ne répond pas pour
@@ -70,9 +70,27 @@ n'offre pas… », avec le conseil de changer de navigateur : une affirmation qu
    navigateur ne répond pas pour l'instant » — n'offre que « Réessayer ». Ce bouton relance la
    sonde, puis l'inventaire, puis l'état publié, **sans recharger la page** ; l'inventaire relu
    efface l'inconnu et le parcours rend l'écran du coffre EXISTANT (`Vérifier votre code`,
-   `Rouvrir votre coffre`), jamais `Créer votre coffre`. Éprouvé sous Chromium, Firefox et WebKit
-   (`tests/browser/coquille-stockage-indetermine.spec.mjs`) : coffre existant, rejet posé dans le
-   Worker, reprise sans rechargement, ouverture par le code puis par la phrase.
+   `Rouvrir votre coffre`), jamais `Créer votre coffre`. **Ce qui est mesuré, par moteur**
+   (`tests/browser/coquille-stockage-indetermine.spec.mjs`, moteur lu de la FIXTURE, jamais de ce
+   que la page affiche) : **Chromium et Firefox** — un coffre EXISTANT, le rejet posé dans le Worker
+   (au démarrage, ou APRÈS une sonde réussie), l'écran inaccessible sans création ni moyen, la
+   reprise sans rechargement, l'ouverture par le code puis par la phrase ; si l'écran devient
+   inaccessible là où il ne doit pas, l'épreuve échoue. **WebKit** — dans le contexte ÉPHÉMÈRE de la
+   fixture, le rejet est naturel et constant et aucun coffre ne s'y crée : l'épreuve vérifie la
+   seule conduite de l'écran (ni création, ni moyen, « Réessayer » qui ne peut pas aboutir). **La
+   reprise d'un coffre existant n'est PAS mesurée sous WebKit** : un contexte WebKit persistant, qui
+   a l'OPFS, la permettrait ; ce dépôt ne le mesure pas. Les scénarios qui exigent l'écran de
+   création sont `test.skip(browserName === "webkit", …)`, visibles au rapport. 5 ter. **Une panne
+   APRÈS une sonde réussie.** `disponible` n'est pas terminal : il peut repasser en `indetermine` ou
+   en `panne:<code>` quand une LECTURE réelle rejette (`apresUnEchecDeLecture`,
+   `classerLaLectureEnEchec`) — l'inventaire, jamais un refus privé qui finirait le démarrage en
+   erreur, ou un geste. Le classement est conservateur : l'`UnknownError` (brut, ou traduit en
+   `SUPPORT_FAILURE` avec son nom dans `context.cause`) est indéterminé ; `QuotaExceededError`,
+   `InvalidStateError`, `NotReadableError` et les codes de support typés sont des pannes à leur code
+   ; **toute erreur du domaine** (refus d'enveloppe, coffre refusé, exclusivité tenue, bug) remonte
+   telle quelle et n'est jamais avalée. Un volume OUVERT n'est pas touché. Éprouvé avec le Worker
+   réel : lectures successives (lue, en panne, relue), panne après une reprise, geste dont la
+   lecture rejette ; mutants sur le chemin réel.
 6. **Tout ce qui dépend de la capacité attend la sonde** : `surMessagePrivilegie` (inventaire,
    gestes) et `publierLEtat` (qui attend puis lit l'état — la première rédaction lisait avant son
    `await` et publiait un `verrouille` périmé). Pas d'`await` de module : un Worker module qui en

@@ -54,16 +54,8 @@ import {
 } from "/src/coquille/contrat-de-messages.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "/src/coquille/identites-du-coffre.mjs";
 import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
-import {
-  ETATS_DE_CAPACITE,
-  apresLaSonde,
-  capaciteInitiale,
-  etatPublie,
-  peutOuvrir,
-  refusDeCapacite,
-  reessayable,
-} from "/src/coquille/capacite-du-stockage.mjs";
-import { sonderLeStockageEnDetail } from "/src/vm/sonde-du-stockage.mjs";
+import { capaciteInitiale, etatPublie } from "/src/coquille/capacite-du-stockage.mjs";
+import { creerLaCapaciteDuWorker } from "./capacite-du-worker.mjs";
 import { brancherLeRelaisDuWorker } from "./relais-du-worker.mjs";
 import { brancherLaPortabilite } from "./portabilite-du-worker.mjs";
 import { battementDuWorker } from "./battement-du-worker.mjs";
@@ -121,18 +113,12 @@ const API_DU_STOCKAGE_PRESENTE =
   typeof FileSystemFileHandle.prototype.createSyncAccessHandle === "function";
 
 /**
- * La CAPACITÉ du stockage : une machine explicite (`src/coquille/capacite-du-stockage.mjs`), et non un
- * booléen. Seule la sonde la fait changer, par les transitions écrites.
- */
-let capacite = capaciteInitiale({ apiPresente: API_DU_STOCKAGE_PRESENTE });
-
-/**
  * Ce que le Worker sait de lui-même. Rien de tout cela ne franchit un `postMessage`.
  */
 const interne = {
   // L'état de DÉPART dit déjà ce que ce moteur sait faire : la toute première réponse d'état est
   // donc juste, avant qu'aucun geste n'ait eu lieu et sans qu'aucune course ne puisse l'inverser.
-  etat: etatPublie(capacite),
+  etat: etatPublie(capaciteInitiale({ apiPresente: API_DU_STOCKAGE_PRESENTE })),
   barrieres: 0,
   /** Backend du volume ouvert. Il tient le handle exclusif ; il n'est jamais posté. */
   backend: null,
@@ -153,47 +139,15 @@ const interne = {
 };
 
 /**
- * WebKit 26.6+ expose `getDirectory` mais le REJETTE (`UnknownError`) en contexte éphémère (#231) :
- * `typeof` ne suffit plus, il faut un appel. Ce rejet, le moteur le dit « transitoire » : il ne PROUVE
- * pas que l'OPFS est absente. La sonde (`sonderLeStockage`) réessaie un nombre borné de fois ; si le
- * rejet persiste, le stockage est `indetermine` — « inaccessible pour l'instant, cause non établie » —,
- * refusé `VAULT_STORAGE_INDETERMINE`, jamais `indisponible` ni `VAULT_STORAGE_UNSUPPORTED`.
- *
- * RIEN n'est figé. Tout geste présenté tant que le stockage est `indetermine` relance la sonde
- * (`reessayerLaSonde`) : si elle aboutit, le coffre redevient `verrouille` sans rechargement. Seul un
- * refus de capacité déjà typé (`SecurityError`) pose `indisponible`, et toute autre panne laisse le
- * vrai geste rendre son échec précis.
- *
- * La sonde est ASYNCHRONE et SANS `await` au niveau du module — un `await` de premier niveau fait
- * perdre ses premiers messages à un Worker module (mesuré sur les trois moteurs,
- * `docs/compatibility.md`), et la poignée de main de la coquille serait muette. Elle est donc ATTENDUE
- * par tout ce qui en dépend, à deux endroits et pas un de moins : `surMessagePrivilegie` (l'inventaire
- * et chaque geste, dont les refus lisent `PEUT_OUVRIR`) et `publierLEtat` (qui attend d'abord, lit
- * l'état ensuite). Une demande reçue PENDANT la sonde reçoit la valeur d'APRÈS.
+ * La CAPACITÉ du stockage (`public/capacite-du-worker.mjs`) : WebKit 26.6+ expose `getDirectory` mais le
+ * REJETTE (`UnknownError`) en contexte éphémère (#231). Elle est tenue par une machine explicite que
+ * seules la sonde et un échec de lecture font changer ; sa première sonde est attendue par
+ * `surMessagePrivilegie` et `publierLEtat`, sans `await` de module.
  */
-function appliquerLaSonde({ verdict, code }) {
-  capacite = apresLaSonde(capacite, { verdict, code });
-  interne.etat = etatPublie(capacite);
-}
-
-/** Une seule sonde à la fois : les messages qui la réclament partagent sa promesse. */
-let sondeEnCours = null;
-
-/**
- * Lance la sonde, ou rend celle qui court. Elle n'est appelée qu'avant la première conclusion et tant
- * que la capacité est réessayable (`indetermine`, `panne`) : une absence ÉTABLIE et une capacité
- * `disponible` ne se resondent pas, et la machine (`apresLaSonde`) LÈVE sur toute autre transition.
- */
-function reessayerLaSonde() {
-  sondeEnCours ??= sonderLeStockageEnDetail()
-    .then(appliquerLaSonde)
-    .finally(() => {
-      sondeEnCours = null;
-    });
-  return sondeEnCours;
-}
-
-const sondeDeLOpfs = API_DU_STOCKAGE_PRESENTE ? reessayerLaSonde() : Promise.resolve();
+const capaciteDuWorker = creerLaCapaciteDuWorker({
+  interne,
+  apiPresente: API_DU_STOCKAGE_PRESENTE,
+});
 
 /** Le port privilégié, transféré UNE fois par la coquille avant tout document applicatif. */
 let portPrivilegie = null;
@@ -262,7 +216,12 @@ self.addEventListener("message", (event) => {
     const sortir = decode.ok ? portabilite.entrer(decode.type) : () => {};
     chaine = chaine
       .then(() => surMessagePrivilegie(message))
-      .catch((erreur) => repondreRefus(erreur, correlation))
+      .catch((erreur) => {
+        // Un geste dont la LECTURE rejette (panne du stockage) retire `verrouille` : le prochain message
+        // relance la sonde (revue complète de la PR #305).
+        capaciteDuWorker.noterUnEchecDeLecture(erreur);
+        repondreRefus(erreur, correlation);
+      })
       .finally(sortir);
   });
   port.start();
@@ -295,13 +254,15 @@ function refuserSurLeGlobal(code) {
 /** @param {MessageEvent} event */
 async function surMessagePrivilegie(event) {
   // Rien de ce que ce canal rend ne dépend de la capacité tant que la sonde n'a pas conclu (#231).
-  await sondeDeLOpfs;
+  await capaciteDuWorker.premiereSonde;
   const decode = decoderMessage(event.data);
   if (!decode.ok) return repondreCode(decode.code, null);
   // Un GESTE ou une demande d'INVENTAIRE présentés alors que la capacité est réessayable (`indetermine`,
   // `panne`) relancent la sonde : rien n'est figé, et un inventaire n'est jamais lu sur une capacité
   // dont on sait qu'elle ne répond pas.
-  if (reessayable(capacite) && decode.type !== TYPES_PRIVILEGIES.etat) await reessayerLaSonde();
+  if (capaciteDuWorker.reessayable() && decode.type !== TYPES_PRIVILEGIES.etat) {
+    await capaciteDuWorker.reessayerLaSonde();
+  }
   const correlation = correlationDe(decode.message);
   if (decode.type === TYPES_PRIVILEGIES.etat) return publierLEtat(correlation);
   if (decode.type === TYPES_PRIVILEGIES.inventaire) return publierLInventaire(correlation);
@@ -412,39 +373,43 @@ function support() {
  * assumé de l'ADR 0020 —, et rien de tout cela ne franchit jamais le port RESTREINT.
  */
 async function publierLInventaire(correlation) {
+  let corps;
+  try {
+    corps = await lireLInventaire();
+  } catch (erreur) {
+    // Une lecture qui rejette APRÈS une sonde réussie : l'inventaire est INCONNU, pas un refus privé que
+    // la page lirait comme un démarrage en erreur (revue complète de la PR #305).
+    if (!capaciteDuWorker.noterUnEchecDeLecture(erreur)) throw erreur;
+    corps = capaciteDuWorker.corpsDInventaireInconnu();
+  }
+  return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, corps);
+}
+
+/** Lit l'inventaire, et rend le CORPS de la réponse. */
+async function lireLInventaire() {
   // La réponse porte l'ÉTAT, et c'est la correction du constat 3 : la page apprend dans le MÊME
   // message ce que le coffre porte et ce que ce moteur sait faire. Rien n'est muté ici — l'état de
   // ce Worker ne dépend pas de la lecture de l'enveloppe, et le laisser en dépendre était la course.
   const vide = { present: false, versionEnveloppe: null, emplacements: [], refus: null };
-  if (!peutOuvrir(capacite)) {
+  if (!capaciteDuWorker.peutOuvrir()) {
     // INDÉTERMINÉ ou en PANNE : le fichier n'a pas pu être lu, l'inventaire est INCONNU — il n'est pas
     // vide. « Aucun coffre » ferait créer un coffre à qui en possède un. Le refus typé le dit.
-    if (reessayable(capacite)) {
-      const refus = refusDeCapacite({ etat: ETATS_DE_CAPACITE.indetermine });
-      return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
-        ...vide,
-        inconnu: true,
-        refus: { code: refus.code, message: refus.message },
-      });
-    }
-    return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, vide);
+    if (capaciteDuWorker.reessayable()) return capaciteDuWorker.corpsDInventaireInconnu();
+    return vide;
   }
   // Un coffre ANTÉRIEUR ou une restauration COUPÉE est dit dès l'inventaire, avant qu'aucune phrase
   // ne soit dérivée : l'utilisateur n'attend rien pour apprendre qu'il n'y a rien à ouvrir (#207).
   const refusDuCoffre = refusDOuverture(await portabilite.constater());
   if (refusDuCoffre !== null) {
-    return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
-      ...vide,
-      refus: { code: refusDuCoffre, message: messageDeRefus(refusDuCoffre) },
-    });
+    return { ...vide, refus: { code: refusDuCoffre, message: messageDeRefus(refusDuCoffre) } };
   }
   const observe = await support().etat();
-  if (!observe.present) return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, vide);
+  if (!observe.present) return vide;
   const inventaire = await inventorierEnveloppe({
     support: support(),
     identifiantVolume: IDENTIFIANT_VOLUME,
   });
-  return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
+  return {
     refus: null,
     present: true,
     // Relu contre l'enveloppe du MOMENT : une feuille retirée fait tomber la preuve (#239).
@@ -464,7 +429,7 @@ async function publierLInventaire(correlation) {
         ? {}
         : { parametresHex: octetsEnHex(emplacement.parametres) }),
     })),
-  });
+  };
 }
 
 /**
@@ -479,7 +444,7 @@ async function publierLInventaire(correlation) {
 function exigerUnVolumeAtteignable() {
   // `UNSUPPORTED` n'est rendu que pour une absence ÉTABLIE ; l'indétermination rend INDETERMINE ; une
   // panne rend SON code précis (`refusDeCapacite`).
-  const refus = refusDeCapacite(capacite);
+  const refus = capaciteDuWorker.refus();
   if (refus === null) return;
   throw new StorageError(refus.code, refus.message, { volume: VOLUME });
 }
@@ -498,8 +463,8 @@ function annoncerLaBarriere() {
  * cadre, puisque le cadre attend l'établissement du canal, qui attend une réponse d'état, qui attend
  * cette promesse. L'ordre de l'étape 2 est ainsi tenu par une DÉPENDANCE, non par une convention.
  */
-const exclusiviteConstatee = sondeDeLOpfs.then(() =>
-  constaterLExclusivite({ volume: VOLUME, peutOuvrir: peutOuvrir(capacite) }),
+const exclusiviteConstatee = capaciteDuWorker.premiereSonde.then(() =>
+  constaterLExclusivite({ volume: VOLUME, peutOuvrir: capaciteDuWorker.peutOuvrir() }),
 );
 
 /** Un geste LONG, exécuté en battant (`battement-du-worker.mjs`, #163 et #192). */
@@ -668,7 +633,7 @@ async function relacherTout(capturer) {
     interne.kek = null;
     oublierLeMoyenRetenu();
     interne.revocation = null;
-    interne.etat = etatPublie(capacite);
+    interne.etat = capaciteDuWorker.etatPublie();
   }
 }
 

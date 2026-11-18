@@ -43,7 +43,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
-import { ETATS_SANS_VOLUME, MOTIF_DE_REFUS_DE_CAPACITE } from "../support/refus-de-capacite.mjs";
+import { motifDeRefusDeCapacite, etatsSansVolume } from "../support/refus-de-capacite.mjs";
 
 import { ATTENTE_MESUREE } from "../../src/coquille/attente-annoncee.mjs";
 import { DELAI_PASSKEY_MS } from "../../src/coquille/moyens-de-deverrouillage.mjs";
@@ -231,10 +231,13 @@ async function attendreLaFinDuGeste(page) {
   await expect
     .poll(async () => (await releve(page)).etat, { timeout: DELAI })
     .not.toBe(ETATS_DU_VOLUME.verrouille);
-  if (ETATS_SANS_VOLUME.includes((await releve(page)).etat)) {
-    await expect(page.locator("#deverrouillage-refus")).toContainText(MOTIF_DE_REFUS_DE_CAPACITE, {
-      timeout: DELAI,
-    });
+  if (etatsSansVolume(page).includes((await releve(page)).etat)) {
+    await expect(page.locator("#deverrouillage-refus")).toContainText(
+      motifDeRefusDeCapacite(page),
+      {
+        timeout: DELAI,
+      },
+    );
   }
 }
 
@@ -253,7 +256,7 @@ async function porte(page) {
   await page.locator("#saisie-phrase").fill(PHRASE);
   await page.locator("#ouvrir-par-phrase").click();
   await attendreLaFinDuGeste(page);
-  return !ETATS_SANS_VOLUME.includes((await releve(page)).etat);
+  return !etatsSansVolume(page).includes((await releve(page)).etat);
 }
 
 /**
@@ -271,7 +274,7 @@ async function porte(page) {
  */
 async function exigerLaLimiteDuMoteur(page, info, nom) {
   const rapport = await releve(page);
-  if (!ETATS_SANS_VOLUME.includes(rapport.etat)) return false;
+  if (!etatsSansVolume(page).includes(rapport.etat)) return false;
   await attacher(info, `limite-${nom}`, {
     moteur: info.project.name,
     etat: rapport.etat,
@@ -299,7 +302,7 @@ async function exigerLaLimiteDuMoteur(page, info, nom) {
  */
 async function exigerLEtatFerme(page) {
   const etat = (await releve(page)).etat;
-  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(etat);
   return etat;
 }
 
@@ -337,7 +340,16 @@ test.beforeEach(async ({ page }) => {
 
 test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée AVANT", async ({
   page,
+  browserName,
 }, info) => {
+  // WebKit éphémère (#231) : `getDirectory()` y rejette `UnknownError` (mesuré), l'inventaire est INCONNU et
+  // le geste est refusé avant toute dérivation — aucune attente n'est annoncée. Le moteur est celui du
+  // PROJET, jamais ce que la page affiche : sous Chromium et Firefox, ce scénario est COMPLET. Le cas
+  // WebKit a son épreuve, juste après.
+  test.skip(
+    browserName === "webkit",
+    "WebKit éphémère : inventaire inconnu, pas d'attente annoncée ; épreuve séparée",
+  );
   await ouvrirLaCoquille(page);
   // La coquille reste « prête » au sens de #161 : le cadre applicatif est créé, et le déverrouillage
   // n'y change rien. C'est la garantie que cette tranche n'a pas déplacé l'ordre du cycle de vie.
@@ -350,25 +362,10 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
   // la conduite juste. L'ADR 0028 distingue les deux : l'un dit « il faut un geste », l'autre dit
   // « ce moteur ne sait pas », et les confondre ferait demander une phrase qui n'ouvrirait rien.
   expect((await releve(page)).etat).not.toBe(ETATS_DU_VOLUME.ouvert);
-  // « Aucun coffre » quand l'inventaire est lu ; « inaccessible pour l'instant » quand le stockage
-  // rejette `UnknownError` (WebKit ≥ 26.6 éphémère, #231) : l'inventaire est alors INCONNU, jamais vide.
-  await expect(page.locator("#deverrouillage-moyens")).toContainText(
-    /Aucun coffre|inaccessible pour l'instant/,
-  );
+  await expect(page.locator("#deverrouillage-moyens")).toContainText("Aucun coffre");
 
   await page.locator("#saisie-phrase").fill(PHRASE);
   await page.locator("#ouvrir-par-phrase").click();
-
-  if ((await releve(page)).etat === ETATS_DU_VOLUME.indetermine) {
-    // Sous WebKit ≥ 26.6 éphémère (#231) : l'inventaire est INCONNU, le geste est refusé AVANT toute
-    // dérivation, sous son code typé — et AUCUNE attente n'est annoncée pour rien. La mesure de
-    // l'annonce (#217) n'a pas d'objet là : elle se joue sous Chromium et Firefox.
-    await expect(page.locator("#deverrouillage-refus")).toContainText(MOTIF_DE_REFUS_DE_CAPACITE, {
-      timeout: DELAI,
-    });
-    expect(await page.evaluate(() => globalThis.__annoncesPeintes)).toEqual([]);
-    return;
-  }
 
   await expect
     .poll(async () => (await releve(page)).etat, { timeout: DELAI })
@@ -379,7 +376,7 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
     .poll(
       async () => {
         const vu = await releve(page);
-        return ETATS_SANS_VOLUME.includes(vu.etat) || vu.journal.includes("volume-ouvert");
+        return etatsSansVolume(page).includes(vu.etat) || vu.journal.includes("volume-ouvert");
       },
       { timeout: DELAI },
     )
@@ -402,7 +399,7 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
   expect(annonces.some((texte) => texte.includes("coûteuse"))).toBe(true);
   expect(annonces.some((texte) => texte.includes("Dérivation en cours"))).toBe(true);
 
-  if (ETATS_SANS_VOLUME.includes(rapport.etat)) {
+  if (etatsSansVolume(page).includes(rapport.etat)) {
     // WebKit : l'état DIT l'absence — l'OPFS synchrone manque au Worker —, et le geste n'est pas
     // compté comme un échec de phrase. L'annonce a tout de même été faite, ci-dessus : la coquille
     // ne sait pas d'avance que ce moteur répondra vite.
@@ -429,6 +426,26 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
   // L'annonce retenue est celle du moteur reconnu, prise dans la table de l'ADR 0021.
   expect(interne.attenteAnnoncee).toBe(Math.max(...ATTENTE_MESUREE[interne.moteur].p95Ms));
   expect(interne.moyensProposes).toContain("phrase");
+});
+
+test("WebKit éphémère : l'inventaire est INCONNU, le geste est refusé AVANT toute dérivation sous son code typé, sans attente annoncée", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "webkit", "épreuve du seul contexte WebKit éphémère mesuré");
+  await ouvrirLaCoquille(page);
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
+  // Le rejet est NATUREL sous ce contexte : si WebKit cessait de rejeter, l'état ne serait plus
+  // `indetermine` et l'épreuve ÉCHOUERAIT — c'est voulu.
+  expect((await releve(page)).etat).toBe(ETATS_DU_VOLUME.indetermine);
+  await expect(page.locator("#deverrouillage-moyens")).toContainText("inaccessible pour l'instant");
+  await expect(page.locator("#deverrouillage-moyens")).not.toContainText("Aucun coffre");
+  await page.locator("#saisie-phrase").fill(PHRASE);
+  await page.locator("#ouvrir-par-phrase").click();
+  await expect(page.locator("#deverrouillage-refus")).toContainText(motifDeRefusDeCapacite(page), {
+    timeout: DELAI,
+  });
+  expect(await page.evaluate(() => globalThis.__annoncesPeintes)).toEqual([]);
 });
 
 test("une phrase FAUSSE est refusée par l'enveloppe, sous un code distinct, et rien n'est modifié", async ({
@@ -958,7 +975,7 @@ test("une PASSKEY crée le coffre et le rouvre ; sans authentificateur, le refus
     expect(
       [DERIVATION_ERROR_CODES.prfIndisponible, DERIVATION_ERROR_CODES.annulee].some((code) =>
         refus.includes(code),
-      ) || MOTIF_DE_REFUS_DE_CAPACITE.test(refus),
+      ) || motifDeRefusDeCapacite(page).test(refus),
       `refus non typé : ${refus}`,
     ).toBe(true);
     return;

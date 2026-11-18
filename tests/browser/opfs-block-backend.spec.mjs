@@ -1,5 +1,5 @@
 import { expect, test } from "../support/test.mjs";
-import { CODES_DE_REFUS_DE_CAPACITE } from "../support/refus-de-capacite.mjs";
+import { codesDeRefusDeCapacite } from "../support/refus-de-capacite.mjs";
 
 import {
   PROBE_VOLUME_BYTES,
@@ -78,7 +78,7 @@ test("le moteur porte OPFS synchrone dans un Worker, ou le refuse par une erreur
   }
 
   if (!porte) {
-    expect(CODES_DE_REFUS_DE_CAPACITE).toContain(capacite.openCode);
+    expect(codesDeRefusDeCapacite(page)).toContain(capacite.openCode);
     expect(capacite.openMessage).toBeTruthy();
   }
 });
@@ -94,7 +94,7 @@ test("la page ne peut pas obtenir de handle OPFS synchrone", async ({ page }, te
   // `openOpfsSyncAccess` refuse hors Worker dédié, sur TOUT moteur et avant même de regarder si
   // OPFS existe : la coquille, et donc la VM qu'elle encadre, n'a aucun chemin vers un handle
   // exclusif. Un succès ici serait une régression de SEC-ORIGIN.
-  expect(CODES_DE_REFUS_DE_CAPACITE).toContain(sonde.code);
+  expect(codesDeRefusDeCapacite(page)).toContain(sonde.code);
   expect(sonde.message).toContain("Worker");
   expect(sonde.opened).toBe(false);
 });
@@ -111,7 +111,7 @@ test("réutiliser un tampon acquitté ne change ni la lecture ni une écriture p
     contentType: "application/json",
   });
   if (!porte) {
-    expect(CODES_DE_REFUS_DE_CAPACITE).toContain(resultat.code);
+    expect(codesDeRefusDeCapacite(page)).toContain(resultat.code);
     return;
   }
   expect(resultat.code).toBeNull();
@@ -134,7 +134,7 @@ test("un Worker dédié écrit, ferme, rouvre et relit le volume octet pour octe
   });
 
   if (!porte) {
-    expect(CODES_DE_REFUS_DE_CAPACITE).toContain(resultat.code);
+    expect(codesDeRefusDeCapacite(page)).toContain(resultat.code);
     return;
   }
 
@@ -169,7 +169,7 @@ test("l'exclusivité du volume est refusée au second demandeur puis rendue à l
   });
 
   if (!porte) {
-    expect(CODES_DE_REFUS_DE_CAPACITE).toContain(resultat.code);
+    expect(codesDeRefusDeCapacite(page)).toContain(resultat.code);
     return;
   }
 
@@ -191,7 +191,7 @@ test("l'adaptateur v86 lit et écrit à travers le backend OPFS sans exposer de 
   });
 
   if (!porte) {
-    expect(CODES_DE_REFUS_DE_CAPACITE).toContain(resultat.code);
+    expect(codesDeRefusDeCapacite(page)).toContain(resultat.code);
     return;
   }
 
@@ -210,7 +210,7 @@ test("l'adaptateur v86 lit et écrit à travers le backend OPFS sans exposer de 
   // Aucune propriété de l'adaptateur ne porte un objet du système de fichiers : ce que v86 — et
   // donc le guest — peut atteindre s'arrête au contrat de tampon.
   expect(rapport.exposesFileSystemHandle).toBe(false);
-  expect(CODES_DE_REFUS_DE_CAPACITE).toContain(rapport.getStateCode);
+  expect(codesDeRefusDeCapacite(page)).toContain(rapport.getStateCode);
 });
 
 // --- CE QUE LE MOTEUR FAIT DU HANDLE À LA MORT DU WORKER (#169, ADR 0031) --------------------------

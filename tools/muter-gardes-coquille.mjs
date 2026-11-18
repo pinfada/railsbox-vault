@@ -73,6 +73,7 @@ const EPREUVE_WORKER_SONDE = "tests/unit/coquille-worker-sonde-opfs.test.mjs";
 const RUNTIME_WORKER = "public/runtime-worker.mjs";
 const SONDE_DU_STOCKAGE = "src/vm/sonde-du-stockage.mjs";
 const CAPACITE = "src/coquille/capacite-du-stockage.mjs";
+const CAPACITE_DU_WORKER = "public/capacite-du-worker.mjs";
 const EPREUVE_CAPACITE = "tests/unit/coquille-capacite-du-stockage.test.mjs";
 const EPREUVE_SONDE = "tests/unit/vm-sonde-du-stockage.test.mjs";
 const RACINE_OPFS = "public/spike/origin/racine-opfs.mjs";
@@ -1385,97 +1386,17 @@ export const MUTATIONS = Object.freeze([
     nom: "une fouille impossible est une PANNE sur un moteur qui ouvre un volume",
     garde: "fouilleOpfsAdmise — la branche `porte` (#231)",
     fichier: TEMOINS_OPFS,
-    avant: "    if (porte) {\n",
-    apres: "    if (!porte) {\n",
+    avant: "    if (porte || contexteEphemereMesure !== true) {\n",
+    apres: "    if (contexteEphemereMesure !== true) {\n",
     epreuves: [EPREUVE_TEMOINS],
   },
   {
-    nom: "le canal privilégié attend la sonde avant l'inventaire et avant tout geste",
-    garde: "surMessagePrivilegie — `await sondeDeLOpfs` (#231, revue de la PR #305)",
-    fichier: RUNTIME_WORKER,
-    avant: "  await sondeDeLOpfs;\n  const decode",
-    apres: "  const decode",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "la poignée d'état ATTEND la sonde puis LIT l'état — jamais l'inverse",
-    garde: "publierLEtat — l'ordre « attendre, lire » (#231, revue de la PR #305)",
-    fichier: RUNTIME_WORKER,
-    avant:
-      "  const exclusivite = await exclusiviteConstatee;\n  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n    exclusivite,\n",
-    apres:
-      "  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n    exclusivite: await exclusiviteConstatee,\n",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "le constat d'exclusivité dépend de la sonde, et la première réponse d'état avec lui",
-    garde: "exclusiviteConstatee — `sondeDeLOpfs.then` (#231)",
-    fichier: RUNTIME_WORKER,
-    avant:
-      "const exclusiviteConstatee = sondeDeLOpfs.then(() =>\n  constaterLExclusivite({ volume: VOLUME, peutOuvrir: peutOuvrir(capacite) }),\n);\n",
-    apres:
-      "const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: peutOuvrir(capacite) });\n",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "un geste présenté pendant l'indétermination RELANCE la sonde : rien n'est figé",
-    garde: "surMessagePrivilegie — la relance (#231)",
-    fichier: RUNTIME_WORKER,
-    avant:
-      "  if (reessayable(capacite) && decode.type !== TYPES_PRIVILEGIES.etat) await reessayerLaSonde();",
-    apres: "  if (false && decode.type !== TYPES_PRIVILEGIES.etat) await reessayerLaSonde();",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "une demande d'INVENTAIRE relance aussi la sonde : la reprise relit l'inventaire",
-    garde:
-      "surMessagePrivilegie — l'inventaire n'est pas exempté de la relance (#231, revue de la PR #305)",
-    fichier: RUNTIME_WORKER,
-    avant:
-      "  if (reessayable(capacite) && decode.type !== TYPES_PRIVILEGIES.etat) await reessayerLaSonde();",
-    apres:
-      "  if (\n    reessayable(capacite) &&\n    decode.type !== TYPES_PRIVILEGIES.etat &&\n    decode.type !== TYPES_PRIVILEGIES.inventaire\n  ) {\n    await reessayerLaSonde();\n  }",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "le résultat de la sonde est APPLIQUÉ à la capacité",
-    garde: "appliquerLaSonde — la transition (#231, revue de la PR #305)",
-    fichier: RUNTIME_WORKER,
-    avant: "  capacite = apresLaSonde(capacite, { verdict, code });\n",
-    apres: "  apresLaSonde(capacite, { verdict, code });\n",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "la sonde publie l'état de la capacité : `indetermine`, puis `verrouille` à la levée",
-    garde: "appliquerLaSonde — l'état publié (#231)",
-    fichier: RUNTIME_WORKER,
-    avant: "  interne.etat = etatPublie(capacite);\n}\n\n/** Une seule sonde",
-    apres: "}\n\n/** Une seule sonde",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "le refus d'un geste est celui de la CAPACITÉ : UNSUPPORTED seulement pour une absence établie",
-    garde: "exigerUnVolumeAtteignable — `refusDeCapacite` (#231, revue de la PR #305)",
-    fichier: RUNTIME_WORKER,
-    avant: "  const refus = refusDeCapacite(capacite);\n  if (refus === null) return;\n",
-    apres: "  return;\n",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "l'inventaire d'un stockage indéterminé est INCONNU, jamais vide",
-    garde: "publierLInventaire — la branche inconnue (#231, revue de la PR #305)",
-    fichier: RUNTIME_WORKER,
-    avant: "    if (reessayable(capacite)) {\n      const refus",
-    apres: "    if (false) {\n      const refus",
-    epreuves: [EPREUVE_WORKER_SONDE],
-  },
-  {
-    nom: "l'inventaire inconnu se DIT : `inconnu: true` et le refus typé",
-    garde: "publierLInventaire — le marqueur (#231)",
-    fichier: RUNTIME_WORKER,
-    avant: "        inconnu: true,\n",
-    apres: "",
-    epreuves: [EPREUVE_WORKER_SONDE],
+    nom: "une fouille impossible n'est tolérée que dans le contexte éphémère connu de l'épreuve",
+    garde: "fouilleOpfsAdmise — `contexteEphemereMesure` (#231, revue complète de la PR #305)",
+    fichier: TEMOINS_OPFS,
+    avant: "    if (porte || contexteEphemereMesure !== true) {\n",
+    apres: "    if (porte) {\n",
+    epreuves: [EPREUVE_TEMOINS],
   },
   {
     nom: "un UnknownError PERSISTANT n'est pas une absence : indéterminé, jamais « absente »",
@@ -1588,8 +1509,18 @@ export const MUTATIONS = Object.freeze([
     nom: "une panne porte son code PRÉCIS",
     garde: "apresLaSonde — le code exigé (#231)",
     fichier: CAPACITE,
-    avant: '    if (typeof code !== "string" || code === "") {',
-    apres: "    if (false) {",
+    avant:
+      "  if (!TRANSITIONS[capacite.etat]?.includes(verdict)) {\n" +
+      "    throw new Error(`Transition de capacité non écrite : ${capacite.etat} ← ${verdict}.`);\n" +
+      "  }\n" +
+      "  if (verdict === V.panne) {\n" +
+      '    if (typeof code !== "string" || code === "") {\n',
+    apres:
+      "  if (!TRANSITIONS[capacite.etat]?.includes(verdict)) {\n" +
+      "    throw new Error(`Transition de capacité non écrite : ${capacite.etat} ← ${verdict}.`);\n" +
+      "  }\n" +
+      "  if (verdict === V.panne) {\n" +
+      "    if (false) {\n",
     epreuves: [EPREUVE_CAPACITE],
   },
   {
@@ -1661,6 +1592,189 @@ export const MUTATIONS = Object.freeze([
     avant: '  if (coffre === COFFRE.inaccessible) return "inaccessible";\n',
     apres: "",
     epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "le canal privilégié attend la sonde avant l'inventaire et avant tout geste",
+    garde: "surMessagePrivilegie — `await premiereSonde` (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "  await capaciteDuWorker.premiereSonde;\n  const decode",
+    apres: "  const decode",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la poignée d'état ATTEND la sonde puis LIT l'état — jamais l'inverse",
+    garde: "publierLEtat — l'ordre « attendre, lire » (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "  const exclusivite = await exclusiviteConstatee;\n  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n    exclusivite,\n",
+    apres:
+      "  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n    exclusivite: await exclusiviteConstatee,\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "le constat d'exclusivité dépend de la sonde, et la première réponse d'état avec lui",
+    garde: "exclusiviteConstatee — `premiereSonde.then` (#231)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "const exclusiviteConstatee = capaciteDuWorker.premiereSonde.then(() =>\n  constaterLExclusivite({ volume: VOLUME, peutOuvrir: capaciteDuWorker.peutOuvrir() }),\n);\n",
+    apres:
+      "const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: capaciteDuWorker.peutOuvrir() });\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "un geste présenté pendant l'indétermination RELANCE la sonde : rien n'est figé",
+    garde: "surMessagePrivilegie — la relance (#231)",
+    fichier: RUNTIME_WORKER,
+    avant: "  if (capaciteDuWorker.reessayable() && decode.type !== TYPES_PRIVILEGIES.etat) {",
+    apres: "  if (false && decode.type !== TYPES_PRIVILEGIES.etat) {",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "une demande d'INVENTAIRE relance aussi la sonde : la reprise relit l'inventaire",
+    garde:
+      "surMessagePrivilegie — l'inventaire n'est pas exempté de la relance (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "  if (capaciteDuWorker.reessayable() && decode.type !== TYPES_PRIVILEGIES.etat) {",
+    apres:
+      "  if (\n    capaciteDuWorker.reessayable() &&\n    decode.type !== TYPES_PRIVILEGIES.etat &&\n    decode.type !== TYPES_PRIVILEGIES.inventaire\n  ) {",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "le refus d'un geste est celui de la CAPACITÉ : UNSUPPORTED seulement pour une absence établie",
+    garde: "exigerUnVolumeAtteignable — `refus` de la capacité (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "  const refus = capaciteDuWorker.refus();\n  if (refus === null) return;\n",
+    apres: "  return;\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "l'inventaire d'un stockage indéterminé est INCONNU, jamais vide",
+    garde: "lireLInventaire — la branche inconnue (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "    if (capaciteDuWorker.reessayable()) return capaciteDuWorker.corpsDInventaireInconnu();\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "une lecture d'inventaire qui rejette APRÈS une sonde réussie donne un inventaire INCONNU, non un refus privé",
+    garde:
+      "publierLInventaire — la conversion de l'échec de lecture (#231, revue complète de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "    if (!capaciteDuWorker.noterUnEchecDeLecture(erreur)) throw erreur;\n",
+    apres: "    throw erreur;\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "un geste dont la lecture rejette retire `verrouille` : l'échec est NOTÉ",
+    garde: "la chaîne du canal — `noterUnEchecDeLecture` (#231, revue complète de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "        capaciteDuWorker.noterUnEchecDeLecture(erreur);\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "le résultat de la sonde est APPLIQUÉ à la capacité",
+    garde: "appliquerLaSonde — la transition (#231, revue de la PR #305)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "    capacite = apresLaSonde(capacite, { verdict, code });\n",
+    apres: "    apresLaSonde(capacite, { verdict, code });\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la sonde publie l'état de la capacité : `indetermine`, puis `verrouille` à la levée",
+    garde: "appliquerLaSonde — l'état publié (#231)",
+    fichier: CAPACITE_DU_WORKER,
+    avant:
+      "    capacite = apresLaSonde(capacite, { verdict, code });\n    interne.etat = etatPublie(capacite);\n",
+    apres: "    capacite = apresLaSonde(capacite, { verdict, code });\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "l'inventaire inconnu se DIT : `inconnu: true` et le refus typé",
+    garde: "corpsDInventaireInconnu — le marqueur (#231)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "      inconnu: true,\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "l'échec d'une lecture est APPLIQUÉ à la capacité : `disponible` n'est pas un cul-de-sac",
+    garde: "noterUnEchecDeLecture — la transition (#231, revue complète de la PR #305)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "    capacite = apresUnEchecDeLecture(capacite, echec);\n",
+    apres: "    apresUnEchecDeLecture(capacite, echec);\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "l'échec d'une lecture retire `verrouille` de l'état publié",
+    garde: "noterUnEchecDeLecture — l'état publié (#231, revue complète de la PR #305)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "    interne.etat = etatPublie(capacite);\n    return true;",
+    apres: "    return true;",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "seule une erreur du STOCKAGE est notée : une erreur du domaine remonte telle quelle",
+    garde: "noterUnEchecDeLecture — `echec === null` (#231, revue complète de la PR #305)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "    if (echec === null || interne.etat === ETATS_DU_VOLUME.ouvert) return false;\n",
+    apres: "    if (interne.etat === ETATS_DU_VOLUME.ouvert) return false;\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "`disponible` peut repasser en `indetermine` ou en `panne` sur une lecture réelle",
+    garde: "TRANSITIONS_DE_LECTURE — la ligne `disponible` (#231, revue complète de la PR #305)",
+    fichier: CAPACITE,
+    avant: "  [E.disponible]: Object.freeze([V.indetermine, V.panne]),",
+    apres: "  [E.disponible]: Object.freeze([]),",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une lecture en échec depuis `indetermine` ou `panne` reste une transition écrite",
+    garde: "TRANSITIONS_DE_LECTURE — les lignes `indetermine` et `panne` (#231)",
+    fichier: CAPACITE,
+    avant:
+      "  [E.indetermine]: Object.freeze([V.indetermine, V.panne]),\n  [E.panne]: Object.freeze([V.indetermine, V.panne]),\n",
+    apres:
+      "  [E.indetermine]: Object.freeze([V.indetermine]),\n  [E.panne]: Object.freeze([V.indetermine]),\n",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une lecture en échec ne fait jamais repasser une capacité `inconnue` ni `absente`",
+    garde: "TRANSITIONS_DE_LECTURE — la garde des états (#231)",
+    fichier: CAPACITE,
+    avant: "  if (!TRANSITIONS_DE_LECTURE[capacite.etat]?.includes(verdict)) {",
+    apres: "  if (false) {",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "l'UnknownError déjà traduit garde son nom dans `context.cause` : il reste indéterminé",
+    garde: "classerLaLectureEnEchec — `context.cause` (#231, revue complète de la PR #305)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "    cause.context?.cause === REJET_TRANSITOIRE_MESURE ||\n",
+    apres: "",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "une erreur du DOMAINE n'est jamais avalée en panne de stockage",
+    garde: "classerLaLectureEnEchec — les codes de panne (#231, revue complète de la PR #305)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      "    return PANNES_DE_LECTURE_PAR_CODE.has(code)\n" +
+      "      ? { verdict: VERDICTS_DU_STOCKAGE.panne, code }\n" +
+      "      : null;\n",
+    apres: "    return { verdict: VERDICTS_DU_STOCKAGE.panne, code };\n",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "un échec de lecture de type `QuotaExceededError` rend le code précis",
+    garde: "classerLaLectureEnEchec — le nom du DOMException (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      "  const parNom = PANNES_DE_LECTURE_PAR_NOM[cause.name];\n  return parNom === undefined ? null : { verdict: VERDICTS_DU_STOCKAGE.panne, code: parNom };",
+    apres: "  return null;",
+    epreuves: [EPREUVE_SONDE],
   },
 ]);
 

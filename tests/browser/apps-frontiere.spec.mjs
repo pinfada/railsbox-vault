@@ -153,8 +153,6 @@ test("une PANNE de getDirectory() n'est pas rangée sous « indisponible »", as
   const sondes = await lireDepuisApplicationB(context, topologie);
   await pageA.close();
 
-  // Un moteur sans `getDirectory` n'a rien à tomber en panne : l'API est absente, et c'est mesuré.
-  if (depots.opfs.startsWith("indisponible: navigator.storage.getDirectory absent")) return;
   expect(depots.opfs).toMatch(/^panne: QuotaExceededError/);
   const opfs = sondes.filter((sonde) => sonde.mecanisme === "OPFS");
   expect(opfs.length).toBeGreaterThan(0);
@@ -187,7 +185,6 @@ test("un UnknownError APRÈS le dépôt de A ne retire AUCUN témoin : la compar
   await pageA.close();
   await joindre(info, "unknown-error-apres-depot", { depots, sondes });
 
-  if (depots.opfs.startsWith("indisponible: navigator.storage.getDirectory absent")) return;
   const options = { contexteEphemereMesure: estWebkit(browserName), depots };
   const opfs = sondes.filter((sonde) => sonde.mecanisme === "OPFS");
   for (const sonde of opfs) expect(sonde.resultat, sonde.nom).toBe("indetermine");

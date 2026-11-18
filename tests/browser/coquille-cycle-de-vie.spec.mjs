@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
-import { ETATS_SANS_VOLUME } from "../support/refus-de-capacite.mjs";
+import { etatsSansVolume } from "../support/refus-de-capacite.mjs";
 
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
@@ -389,7 +389,7 @@ test("un démarrage demandé AVANT l'ouverture du backend est refusé, et le ref
   // Aucun déverrouillage : le volume est verrouillé (ou `indisponible` sur un moteur sans OPFS
   // synchrone). Dans les deux cas il n'y a pas de backend, et la VM démarre APRÈS lui.
   const rapport = await releve(page);
-  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(rapport.etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(rapport.etat);
 
   await page.click("#demarrer-application");
   await expect(page.locator("#cycle-etat")).toHaveText(
@@ -423,7 +423,7 @@ test("une reprise demandée AVANT l'ouverture du backend est refusée, et le ref
 }) => {
   await ouvrirLaCoquille(page);
   const rapport = await releve(page);
-  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(rapport.etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(rapport.etat);
 
   await page.evaluate(() => document.querySelector("#reprendre-l-installation")?.click());
   await expect(page.locator("#cycle-etat")).toHaveText(
@@ -453,7 +453,7 @@ async function exigerLaConduite(page, cause) {
   expect(rapport.workerMort.pousseeDeBarriere).toBe(false);
   expect(rapport.workerMort.kekRetenue).toBe(false);
   // L'état est celui que #25 NOMME. #163 y arrive ; #25 dit ce qu'il veut dire.
-  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(rapport.etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(rapport.etat);
   // L'interface de déverrouillage est REMONTÉE — montrée, pas actionnée.
   await expect(page.locator("#deverrouillage")).toBeVisible();
   return rapport;
@@ -535,7 +535,7 @@ test("le VERROUILLAGE est la troisième cause, et la coquille se la donne à ell
   // celles d'avant ferait dire « enregistré » à une application sur un coffre qui ne l'est plus.
   expect(rapport.workerMort.pousseeDeBarriere).toBe(false);
   expect(rapport.workerMort.kekRetenue).toBe(false);
-  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(rapport.etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(rapport.etat);
 
   // La fermeture a bien eu lieu AVANT le `terminate()` : les étapes 5, 6 et 7 sont conclues, et
   // l'étape 6 est inscrite `banc` plutôt que passée sous silence — l'export et la migration vivent
@@ -609,7 +609,7 @@ test("le verrouillage RECHARGE la coquille, qui revient VERROUILLÉE sans que ri
   // CE N'EST PAS UNE RÉOUVERTURE : l'état est `verrouille` (ou `indisponible` sur un moteur qui ne
   // sait rien ouvrir), l'interface de déverrouillage est là, et AUCUNE dérivation n'a eu lieu — le
   // relevé de #162 ne porte ni annonce ni déverrouillage mesuré.
-  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(apres.etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(apres.etat);
   await expect(page.locator("#deverrouillage")).toBeVisible();
   expect(apres.mesures.deverrouillageMs).toBeNull();
   expect(apres.mesures.annonceApresLeGesteMs).toBeNull();
@@ -1073,7 +1073,7 @@ test("un coffre LAISSÉ se verrouille tout seul, et il le fait comme le bouton",
   expect(rapport.verrouillage.kekRetenue).toBe(false);
   expect(rapport.verrouillage.instantaneRetire).toBe(false);
   expect(rapport.workerMort.cause).toBe("terminaison");
-  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(rapport.etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(rapport.etat);
   expect(ecoule, "le verrouillage est arrivé avant son échéance").toBeGreaterThan(
     DELAI_INACTIVITE_MINIMUM_MS / 2,
   );
@@ -1203,7 +1203,7 @@ test("un verrouillage REFUSÉ ne laisse pas le coffre ouvert : il tue, il retire
   expect(rapport.verrouillage.workerTermine).toBe(true);
   expect(rapport.workerMort.cause).toBe("terminaison");
   expect(rapport.workerMort.kekRetenue).toBe(false);
-  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(rapport.etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(rapport.etat);
 
   // LE CADRE EST RETIRÉ DU DOM. Laisser ses pixels sur un coffre dont l'utilisateur vient de
   // demander le verrouillage est le contraire de la promesse.

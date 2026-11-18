@@ -129,7 +129,32 @@ export function refusDeCapacite(capacite) {
   return null;
 }
 
-/** ROUGE : stub — une lecture en échec ne change rien. */
-export function apresUnEchecDeLecture(capacite) {
-  return capacite;
+/**
+ * Les transitions d'un ÉCHEC DE LECTURE réelle — l'inventaire, un geste —, SURVENU APRÈS une sonde
+ * réussie. `disponible` n'est pas un cul-de-sac : la sonde a abouti, une lecture rejette ensuite
+ * (revue complète de la PR #305). La machine le traite de façon conservatrice et réessayable : l'état
+ * repasse en `indetermine` ou en `panne:<code>`, et la sonde suivante peut tout rétablir. Une absence
+ * établie ne change pas (elle est terminale) et une capacité encore `inconnue` n'a rien lu.
+ */
+const TRANSITIONS_DE_LECTURE = Object.freeze({
+  [E.disponible]: Object.freeze([V.indetermine, V.panne]),
+  [E.indetermine]: Object.freeze([V.indetermine, V.panne]),
+  [E.panne]: Object.freeze([V.indetermine, V.panne]),
+});
+
+/**
+ * @param {{ etat: string, code?: string }} capacite
+ * @param {{ verdict: string, code?: string | null }} echec `indetermine`, ou `panne` avec son code
+ */
+export function apresUnEchecDeLecture(capacite, { verdict, code = null }) {
+  if (!TRANSITIONS_DE_LECTURE[capacite.etat]?.includes(verdict)) {
+    throw new Error(`Transition de capacité non écrite : ${capacite.etat} ← lecture ${verdict}.`);
+  }
+  if (verdict === V.panne) {
+    if (typeof code !== "string" || code === "") {
+      throw new Error("Une panne porte son code précis : le refus qui suit le rend tel quel.");
+    }
+    return Object.freeze({ etat: E.panne, code });
+  }
+  return Object.freeze({ etat: E.indetermine });
 }
