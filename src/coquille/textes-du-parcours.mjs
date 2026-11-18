@@ -8,7 +8,8 @@
 //
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
-import { MOYEN_NOMME, lesAutresRetires } from "./moyens-nommes.mjs";
+import { ECRANS_DE_RELECTURE } from "./textes-de-relecture.mjs";
+import { TEXTES_DE_LA_REVOCATION } from "./textes-de-la-revocation.mjs";
 import { enMegaoctets } from "./taille-en-clair.mjs";
 import {
   ATTENTE_DE_LA_MISE_A_JOUR,
@@ -80,7 +81,10 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
     "« Fichier de sauvegarde » (champ)",
     "« Restaurer ma sauvegarde sur cet appareil »",
   ],
-  revocation: ["« Révoquer tous les autres moyens d'ouvrir ce coffre »"],
+  revocation: [
+    "« Révoquer tous les autres moyens d'ouvrir ce coffre », qui ne retire rien par lui-même : il " +
+      "ouvre une confirmation (« Annuler » et « Oui, révoquer les autres moyens »)",
+  ],
   "sans-revoquer": ["« Terminer sans révoquer »"],
   continuer: ["« Continuer : » suivi du titre de l'étape suivante"],
   retour: ["« Revenir à mon application »"],
@@ -123,8 +127,8 @@ const SI_LA_FEUILLE_EST_PERDUE =
   "nouveau code » : un nouveau code sera affiché, une seule fois, et vous le recopierez sur une " +
   "feuille neuve. L'ancien code continue d'ouvrir ce coffre tant que personne ne le retire. Si " +
   "quelqu'un d'autre a vu votre feuille, cliquez aussi sur « Je n'ai plus cette feuille », puis, " +
-  "avant d'afficher un nouveau code, sur « Révoquer tous les autres moyens d'ouvrir ce coffre » : " +
-  "les anciens codes seront retirés.";
+  "avant d'afficher un nouveau code, sur « Révoquer tous les autres moyens d'ouvrir ce coffre », " +
+  "puis confirmez : les anciens codes seront retirés.";
 
 /**
  * La même question sur un coffre VERROUILLÉ : afficher un code exige un coffre ouvert, et celui-ci
@@ -165,7 +169,7 @@ const UN_CODE_A_DEJA_ETE_RENDU =
  */
 const CE_QUE_LA_REVOCATION_RETIRE =
   "Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du moyen avec lequel " +
-  "vous avez ouvert ce coffre.";
+  "vous avez ouvert ce coffre. Rien n'est retiré avant que vous ayez confirmé.";
 
 /**
  * L'étape 3 éprouve la feuille en S'EN SERVANT (#239) : verrouiller, puis rouvrir par le code. Le
@@ -299,6 +303,9 @@ export const ECRANS = Object.freeze({
     attente: DEMARRAGE_SUIVANT,
     blocs: ["application", "verrouiller", "espace-de-travail", "sauvegarde", "revocation"],
   }),
+  // Les deux écrans d'une relecture d'inventaire ÉCHOUÉE (relecture de #308).
+  relire: ecran(4, ECRANS_DE_RELECTURE.relire),
+  "relire-apres-revocation": ecran(4, ECRANS_DE_RELECTURE.apresRevocation),
   "travailler-sans-application": ecran(4, {
     titre: "Travailler dans l'application",
     ceQuiVaSePasser: LIMITE_DE_FIREFOX,
@@ -398,7 +405,8 @@ export const ECRANS = Object.freeze({
     attendu:
       "Si personne n'a vu votre phrase ni votre feuille, cliquez sur « Terminer sans révoquer ». " +
       "Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce " +
-      "coffre », puis notez le nouveau numéro de feuille sur votre feuille.",
+      "coffre », puis confirmez : « Annuler » ne change rien. Notez ensuite le nouveau numéro de " +
+      "feuille.",
     blocs: ["revocation", "sans-revoquer", "retour"],
   }),
   "termine-sans-revoquer": ecran(9, {
@@ -652,12 +660,7 @@ export const MESSAGES = Object.freeze({
   phasePreparation: "Étape en cours : préparation de l'application.",
   phaseDemarrage: "Étape en cours : démarrage de l'application.",
   phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",
-  avertissementDeRevocation: (moyen, moyens = null) =>
-    MOYEN_NOMME[moyen] === undefined
-      ? "Seul le moyen avec lequel vous avez ouvert ce coffre continuera de l'ouvrir ; tous les " +
-        "autres ne fonctionneront plus."
-      : `Seul le moyen avec lequel vous venez d'ouvrir ce coffre — ${MOYEN_NOMME[moyen]} — ` +
-        `continuera de l'ouvrir. ${lesAutresRetires(moyen, moyens)}`,
+  ...TEXTES_DE_LA_REVOCATION,
   codesDejaRendus: (nombre) =>
     nombre <= 1
       ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas " +

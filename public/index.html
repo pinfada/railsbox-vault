@@ -101,6 +101,13 @@
         <p id="parcours-reussite" role="status" aria-live="polite"></p>
         <p id="parcours-refus" role="alert"></p>
         <!--
+          La révocation EN VOL ou d'issue INCERTAINE (#265, relecture de #308). Hors de tout bloc : elle
+          reste lisible quelle que soit l'étape, et un clic ne l'efface pas. Levée par une révocation
+          qui aboutit, ou par la réouverture du coffre. `status` + `assertive` : annoncée comme une
+          alerte, sans devenir un second `role="alert"` (les épreuves en attendent un seul).
+        -->
+        <p id="parcours-incertitude" role="status" aria-live="assertive"></p>
+        <!--
           Le GESTE QUI ROUVRE, après la mort du Worker de confiance (#163, ADR 0030, décision 3).
           Caché tant qu'aucune mort n'a été constatée ; il RECHARGE la coquille, il ne ressuscite rien.
           Il est ici, hors des blocs d'étape, pour être visible quel que soit l'écran.
@@ -348,17 +355,51 @@
             </button>
           </p>
         </div>
-        <div data-bloc="revocation" hidden>
-          <p id="parcours-avertissement-revocation"></p>
-          <p>
-            <button id="revoquer-en-urgence" type="button" data-danger>
-              Révoquer tous les autres moyens d'ouvrir ce coffre
-            </button>
-          </p>
-        </div>
         <!-- L'étape 9 est facultative : la visite se termine sans rien retirer (décision du 19/09). -->
         <div data-bloc="sans-revoquer" hidden>
           <p><button id="parcours-sans-revoquer" type="button">Terminer sans révoquer</button></p>
+        </div>
+        <!--
+          La RÉVOCATION vient APRÈS « Terminer sans révoquer » dans le DOM, donc à l'écran ET à la
+          tabulation : aucun `order` CSS ne remet l'écran en ordre (#265). Irréversible, elle se fait en
+          deux temps : « Révoquer… » ouvre la confirmation, « Annuler » y a le focus, et seul « Oui,
+          révoquer » appelle le Worker (`confirmation-en-deux-temps.mjs`).
+        -->
+        <div data-bloc="revocation" hidden>
+          <p id="parcours-avertissement-revocation"></p>
+          <p>
+            <button
+              id="revoquer-en-urgence"
+              type="button"
+              data-danger
+              aria-expanded="false"
+              aria-controls="revocation-confirmation"
+            >
+              Révoquer tous les autres moyens d'ouvrir ce coffre
+            </button>
+          </p>
+          <div
+            id="revocation-confirmation"
+            role="group"
+            aria-labelledby="revocation-confirmation-titre"
+            hidden
+          >
+            <p id="revocation-confirmation-titre"></p>
+            <p id="revocation-confirmation-texte"></p>
+            <p>
+              <button
+                id="revoquer-annuler"
+                type="button"
+                aria-describedby="revocation-confirmation-texte"
+              >
+                Annuler
+              </button>
+              <button id="revoquer-confirmer" type="button" data-danger>
+                Oui, révoquer les autres moyens
+              </button>
+            </p>
+          </div>
+          <p id="revocation-etat" role="status"></p>
         </div>
       </section>
 

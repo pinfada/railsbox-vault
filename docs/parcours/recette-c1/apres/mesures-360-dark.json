@@ -1,0 +1,193 @@
+{
+  "nom": "360-dark",
+  "moment": "apres",
+  "ecrans": {
+    "etape-9": {
+      "blocsVisibles": ["sans-revoquer", "revocation"],
+      "boutons": [
+        {
+          "id": "parcours-sans-revoquer",
+          "texte": "Terminer sans révoquer",
+          "y": 953,
+          "principal": true,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1188,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": ["parcours-sans-revoquer", "revoquer-en-urgence"],
+      "ordreVisuel": ["parcours-sans-revoquer", "revoquer-en-urgence"],
+      "revocationsEnvoyees": 0,
+      "focus": "parcours-titre",
+      "confirmation": false,
+      "descriptionDuFocus": null
+    },
+    "etape-9-confirmation": {
+      "blocsVisibles": ["sans-revoquer", "revocation"],
+      "boutons": [
+        {
+          "id": "parcours-sans-revoquer",
+          "texte": "Terminer sans révoquer",
+          "y": 880,
+          "principal": true,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1114,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-annuler",
+          "texte": "Annuler",
+          "y": 1672,
+          "principal": false,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-confirmer",
+          "texte": "Oui, révoquer les autres moyens",
+          "y": 1733,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": [
+        "parcours-sans-revoquer",
+        "revoquer-en-urgence",
+        "revoquer-annuler",
+        "revoquer-confirmer"
+      ],
+      "ordreVisuel": [
+        "parcours-sans-revoquer",
+        "revoquer-en-urgence",
+        "revoquer-annuler",
+        "revoquer-confirmer"
+      ],
+      "revocationsEnvoyees": 0,
+      "focus": "revoquer-annuler",
+      "confirmation": true,
+      "descriptionDuFocus": "Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. Seul le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de l'ouvrir. Votre phrase ne fonctionnera plus sur ce coffre : seul le code de votre feuille l'ouvrira. Vos sauvegardes déjà faites ne changent pas : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler » ne change rien."
+    },
+    "etape-9-annulee": {
+      "blocsVisibles": ["sans-revoquer", "revocation"],
+      "boutons": [
+        {
+          "id": "parcours-sans-revoquer",
+          "texte": "Terminer sans révoquer",
+          "y": 880,
+          "principal": true,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1114,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": ["parcours-sans-revoquer", "revoquer-en-urgence"],
+      "ordreVisuel": ["parcours-sans-revoquer", "revoquer-en-urgence"],
+      "revocationsEnvoyees": 0,
+      "focus": "revoquer-en-urgence",
+      "confirmation": false,
+      "descriptionDuFocus": null
+    },
+    "accueil": {
+      "blocsVisibles": ["sauvegarde", "revocation"],
+      "boutons": [
+        {
+          "id": "sauvegarder-le-coffre",
+          "texte": "Sauvegarder mon coffre",
+          "y": 1105,
+          "principal": false,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1339,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": ["sauvegarder-le-coffre", "revoquer-en-urgence"],
+      "ordreVisuel": ["sauvegarder-le-coffre", "revoquer-en-urgence"],
+      "revocationsEnvoyees": 0,
+      "focus": "parcours-titre",
+      "confirmation": false,
+      "descriptionDuFocus": null
+    },
+    "accueil-confirmation": {
+      "blocsVisibles": ["sauvegarde", "revocation"],
+      "boutons": [
+        {
+          "id": "sauvegarder-le-coffre",
+          "texte": "Sauvegarder mon coffre",
+          "y": 1105,
+          "principal": false,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1339,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-annuler",
+          "texte": "Annuler",
+          "y": 1897,
+          "principal": false,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-confirmer",
+          "texte": "Oui, révoquer les autres moyens",
+          "y": 1958,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": [
+        "sauvegarder-le-coffre",
+        "revoquer-en-urgence",
+        "revoquer-annuler",
+        "revoquer-confirmer"
+      ],
+      "ordreVisuel": [
+        "sauvegarder-le-coffre",
+        "revoquer-en-urgence",
+        "revoquer-annuler",
+        "revoquer-confirmer"
+      ],
+      "revocationsEnvoyees": 0,
+      "focus": "revoquer-annuler",
+      "confirmation": true,
+      "descriptionDuFocus": "Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. Seul le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de l'ouvrir. Votre phrase ne fonctionnera plus sur ce coffre : seul le code de votre feuille l'ouvrira. Vos sauvegardes déjà faites ne changent pas : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler » ne change rien."
+    }
+  }
+}

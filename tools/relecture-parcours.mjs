@@ -156,7 +156,18 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "ouvertureEnCours",
     "coffreOuvert",
   ],
-  revoquer: ["avertissementDeRevocation", "revoque", "revoqueSansRien"],
+  revoquer: [
+    "avertissementDeRevocation",
+    "titreDeLaConfirmationDeRevocation",
+    "confirmationDeRevocation",
+    "revocationAnnulee",
+    "revocationAVerifier",
+    "relectureEchouee",
+    "revocationEnCours",
+    "revocationIncertaine",
+    "revoque",
+    "revoqueSansRien",
+  ],
 });
 
 /** Les messages de STRUCTURE, communs à tous les écrans, dits une fois dans l'introduction. */
@@ -292,13 +303,16 @@ function texteDuMessage(nom) {
   if (nom === "miseAJourProposee") {
     return `${message("A", "B", true)} — ou, sans migration — ${message("A", "B", false)}`;
   }
-  if (nom === "avertissementDeRevocation") {
-    return ["phrase", "webauthn-prf", "recuperation"]
-      .map(
+  if (nom === "avertissementDeRevocation" || nom === "confirmationDeRevocation") {
+    // Le cas des PLUSIEURS feuilles, ouvert par l'une : l'autre feuille part aussi (#308).
+    const plusieurs = `(ouvert par le code, avec plusieurs feuilles) ${message("recuperation", ["recuperation"], { codes: 2 })}`;
+    return [
+      ...["phrase", "webauthn-prf", "recuperation"].map(
         (moyen) =>
           `(ouvert par ${moyen === "recuperation" ? "le code" : moyen === "phrase" ? "la phrase" : "la passkey"}) ${message(moyen)}`,
-      )
-      .join(" — ou — ");
+      ),
+      plusieurs,
+    ].join(" — ou — ");
   }
   return message(N);
 }

@@ -9,6 +9,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 
+import {
+  TYPES_PRIVILEGIES,
+  enveloppePrivilegiee,
+} from "../../src/coquille/contrat-de-messages.mjs";
+
 import { expect, test as base } from "../support/test.mjs";
 
 export { expect };
@@ -244,4 +249,118 @@ export async function jusquAuTravail(page) {
   const feuille = await afficherLeCode(page);
   await eprouverLaFeuille(page, feuille.code);
   return feuille;
+}
+
+/**
+ * Compte, dans le document de la coquille, les messages de révocation d'urgence envoyés au Worker de
+ * confiance (#265). À poser AVANT la première navigation : le script revit à chaque chargement. Le
+ * compte est celui de l'APPEL — ce que la personne a déclenché —, pas celui de ses effets.
+ */
+export async function compterLesRevocations(page) {
+  await page.addInitScript(() => {
+    globalThis.__revocationsEnvoyees = 0;
+    const envoyer = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (message, ...reste) {
+      if (typeof message?.type === "string" && message.type.endsWith("revoquer-en-urgence")) {
+        globalThis.__revocationsEnvoyees += 1;
+      }
+      return envoyer.call(this, message, ...reste);
+    };
+  });
+  return () => page.evaluate(() => globalThis.__revocationsEnvoyees ?? 0);
+}
+
+/** Des étapes 1 à 8, par le CODE, jusqu'à l'étape 9 « Révoquer en urgence » (coquille réelle, sans VM). */
+export async function jusquALEtape9(page) {
+  const { code, version } = await jusquAuTravail(page);
+  await bouton(page, "Continuer : Verrouiller et rouvrir").click();
+  await verrouillerEtRecharger(page);
+  await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
+  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+  await bouton(page, "Ouvrir mon coffre").click();
+  await expect(titre(page, "Sauvegarder votre coffre")).toBeVisible(LONG);
+  await bouton(page, "Continuer : Restaurer sur un autre appareil").click();
+  await bouton(page, "Continuer : Récupérer votre coffre avec le code").click();
+  await verrouillerEtRecharger(page);
+  await page
+    .getByLabel("Numéro de feuille noté sur votre feuille (facultatif)", { exact: true })
+    .fill(version);
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(titre(page, "Révoquer en urgence")).toBeVisible(LONG);
+}
+
+/**
+ * RETIENT le message de révocation entre la page et le Worker (#265, relecture de #308) : la page croit
+ * la demande partie et attend, comme avec un Worker lent. À poser AVANT la première navigation ;
+ * `retenir(true)` arme la retenue, `relacher()` livre le message tel quel, `relacher(true)` le livre
+ * ALTÉRÉ — le Worker ne le décode pas et cesse de répondre (la page voit un Worker mort), sans rien révoquer.
+ */
+export async function retenirLaRevocation(page) {
+  await page.addInitScript(() => {
+    globalThis.__retenir = false;
+    globalThis.__retenues = [];
+    const envoyer = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (message, ...reste) {
+      const revoque =
+        typeof message?.type === "string" && message.type.endsWith("revoquer-en-urgence");
+      // Une relecture d'INVENTAIRE qui échoue (refus typé immédiat, jamais livré au Worker).
+      if (
+        globalThis.__echecInventaire !== undefined &&
+        typeof message?.type === "string" &&
+        message.type.endsWith("inventaire-prive")
+      ) {
+        const gabarit = { ...globalThis.__echecInventaire, correlation: message.correlation };
+        setTimeout(() => this.dispatchEvent(new MessageEvent("message", { data: gabarit })), 0);
+        return undefined;
+      }
+      if (revoque && globalThis.__retenir === true) {
+        globalThis.__retenues.push({ port: this, message, reste });
+        return undefined;
+      }
+      return envoyer.call(this, message, ...reste);
+    };
+    globalThis.__relacher = (alterer) => {
+      for (const { port, message, reste } of globalThis.__retenues.splice(0)) {
+        envoyer.call(port, alterer ? { ...message, version: 999 } : message, ...reste);
+      }
+    };
+  });
+  return {
+    /** Les relectures d'inventaire suivantes ÉCHOUENT (refus typé) : après une révocation, par exemple. */
+    echouerLInventaire: (code) =>
+      page.evaluate(
+        ([gabarit]) => (globalThis.__echecInventaire = gabarit),
+        [
+          enveloppePrivilegiee(TYPES_PRIVILEGIES.refus, {
+            code,
+            message: "refus de l'épreuve",
+            correlation: "x",
+          }),
+        ],
+      ),
+    /**
+     * Répond à la demande retenue par un REFUS TYPÉ du Worker (jamais livré à ce dernier) : la page voit
+     * un échec reçu APRÈS l'envoi, sans que le Worker meure — l'étape 9 reste à l'écran.
+     */
+    refuser: (code) =>
+      page.evaluate(
+        ([gabarit]) => {
+          const { port, message } = globalThis.__retenues.shift();
+          port.dispatchEvent(
+            new MessageEvent("message", { data: { ...gabarit, correlation: message.correlation } }),
+          );
+        },
+        [
+          enveloppePrivilegiee(TYPES_PRIVILEGIES.refus, {
+            code,
+            message: "refus de l'épreuve",
+            correlation: "x",
+          }),
+        ],
+      ),
+    retenir: (armee) => page.evaluate((v) => (globalThis.__retenir = v), armee),
+    retenues: () => page.evaluate(() => globalThis.__retenues.length),
+    relacher: (alterer = false) => page.evaluate((a) => globalThis.__relacher(a), alterer),
+  };
 }

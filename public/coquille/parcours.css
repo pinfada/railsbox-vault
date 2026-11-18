@@ -238,7 +238,7 @@ button,
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-button:not(:disabled):hover {
+button:not(:disabled):not([aria-disabled="true"]):hover {
   background: var(--survol);
 }
 button[data-principal] {
@@ -256,19 +256,23 @@ button[data-danger] {
   color: var(--danger);
   border-color: var(--danger);
 }
-button:disabled {
+button:disabled,
+button[aria-disabled="true"] {
   background: var(--support);
   color: var(--secondaire);
   border-color: var(--separateur);
   cursor: default;
 }
-/* La révocation passe en DERNIER dans sa section, après la sauvegarde et « Terminer sans révoquer ». */
-#portabilite {
-  display: flex;
-  flex-direction: column;
+/* La révocation est DERNIÈRE dans sa section parce qu'elle l'est dans le DOM (#265) : l'ordre de
+   tabulation est celui de l'écran, et aucun `order` ne les sépare. */
+/* La confirmation de la révocation : un cadre au bord du danger, au-dessus de ses deux gestes. */
+#revocation-confirmation {
+  border: 1px solid var(--danger);
+  padding: 4px 16px;
+  margin-bottom: 16px;
 }
-#portabilite > [data-bloc="revocation"] {
-  order: 1;
+#revocation-confirmation-titre {
+  font-weight: 700;
 }
 [data-bloc] p:has(> button + button) {
   display: flex;
@@ -304,6 +308,7 @@ button:disabled {
 }
 #parcours-attente:not(:empty),
 #parcours-refus:not(:empty),
+#parcours-incertitude:not(:empty),
 #parcours-reussite:not(:empty) {
   border-left: 3px solid var(--bord);
   background: var(--support);
@@ -311,7 +316,8 @@ button:disabled {
   font-size: 16px;
   margin-bottom: 24px;
 }
-#parcours-refus:not(:empty) {
+#parcours-refus:not(:empty),
+#parcours-incertitude:not(:empty) {
   border: 1px solid var(--bord);
   border-left-width: 4px;
 }
@@ -635,7 +641,7 @@ html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open]))
   visibility: hidden;
 }
 html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open]))
-  :is(#parcours-attente, #parcours-refus):not(:empty),
+  :is(#parcours-attente, #parcours-refus, #parcours-incertitude):not(:empty),
 html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coquille:not([hidden]) {
   visibility: visible;
   position: fixed;
@@ -650,6 +656,9 @@ html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coqu
 }
 html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coquille:not([hidden]) {
   bottom: 96px;
+}
+html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #parcours-incertitude:not(:empty) {
+  bottom: 176px;
 }
 /* Menu OUVERT : le panneau du coffre s'ouvre à droite, l'application se resserre à sa gauche. */
 html[data-travail-pret="true"]:has(#menu-du-coffre[open]) main {

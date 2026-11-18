@@ -55,6 +55,14 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     dire("parcours-refus", conduiteHumaine(code));
   }
 
+  /**
+   * Une révocation PARTIE dont l'issue n'est pas connue : le diagnostic va en console. L'annonce, elle,
+   * vit dans `parcours-incertitude`, hors du bloc, écrite par le geste : aucune alerte « refusée ».
+   */
+  function incertaine(code) {
+    console.warn(`[RailsBox Vault] révocation incertaine : ${code ?? "sans code"}`);
+  }
+
   function refuserSansCode(texte) {
     dire("parcours-reussite", "");
     dire("parcours-refus", texte);
@@ -122,10 +130,13 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
       etat.referenceDesRefus = null;
       return dire("parcours-attente", MESSAGES.sauvegardeEnCours);
     }
+    // La révocation EN VOL se dit dans son bloc (`revocation-etat`) ; elle n'est pas une restauration.
+    if (ligne.evenement === "revocation-en-cours") return dire("parcours-attente", "");
     if (ligne.evenement.endsWith("-en-cours")) {
       return dire("parcours-attente", MESSAGES.restaurationEnCours);
     }
     dire("parcours-attente", "");
+    if (ligne.evenement === "revocation-incertaine") return incertaine(ligne.code);
     if (ligne.evenement.endsWith("-refusee")) return refuser(ligne.code);
     if (ligne.evenement === "sauvegarde-prete") {
       const ecrite = lireJson("coquille-rapport").portabilite?.sauvegarde?.taille ?? null;

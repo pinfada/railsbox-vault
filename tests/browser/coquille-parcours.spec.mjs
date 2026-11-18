@@ -431,6 +431,9 @@ test("#239 : une enveloppe pleine dit sa sortie, et la révocation fait de la pl
   await expect(page.getByRole("alert")).not.toContainText("Rechargez la page");
   await expect(ecran(page, "Recevoir votre code de récupération")).toBeVisible();
   await bouton(page, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
+  // Deux temps (#265) : rien n'est retiré avant « Oui ».
+  await expect(page.getByText(/^7 moyen\(s\) retiré\(s\)/)).toBeHidden();
+  await bouton(page, "Oui, révoquer les autres moyens").click();
   await expect(page.getByText(/^7 moyen\(s\) retiré\(s\)/)).toBeVisible({ timeout: DELAI });
   await bouton(page, "Afficher mon code de récupération").click();
   await expect(ecran(page, "Recopier votre code de récupération")).toBeVisible({ timeout: DELAI });

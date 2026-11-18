@@ -1,0 +1,5 @@
+{
+  "avertissement": "Seul le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de l'ouvrir. Votre phrase et vos autres codes de récupération ne fonctionneront plus sur ce coffre : seul le code avec lequel vous venez de l'ouvrir l'ouvrira.",
+  "confirmation": "Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. Seul le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de l'ouvrir. Votre phrase et vos autres codes de récupération ne fonctionneront plus sur ce coffre : seul le code avec lequel vous venez de l'ouvrir l'ouvrira. Vos sauvegardes déjà faites ne changent pas : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler » ne change rien.",
+  "revocationsEnvoyees": 0
+}

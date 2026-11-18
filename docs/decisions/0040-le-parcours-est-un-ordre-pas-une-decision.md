@@ -366,7 +366,9 @@ datée sur #239.
   dit sa CONSÉQUENCE en clair, selon le moyen de la séance (correction ci-dessous), et offre deux
   sorties : « Révoquer tous les autres moyens… » (inchangé) et « Terminer sans révoquer » (écran
   `termine-sans-revoquer`). La révocation reste sur l'accueil, avec le même avertissement. Redonner
-  une phrase à un coffre révoqué est hors de cette tranche (issue à part).
+  une phrase à un coffre révoqué est hors de cette tranche (issue à part). _Note du 18/11/2026
+  (#265) : à l'écran 9, « Terminer sans révoquer » précède « Révoquer… » dans le DOM — donc à la
+  tabulation —, et « Révoquer… » ouvre une confirmation au lieu de révoquer : voir l'ADR 0043._
 - **« J'ai oublié ma phrase » est une ouverture de ROUTINE.** Elle menait à l'étape 8
   (`rouvrir:perdu`), donc à 9 après l'ouverture, et marquait 5 à 8 comme faites : un saut vers
   l'AVANT, contraire au § 2. Elle montre désormais le formulaire du code sans déplacer la visite ;

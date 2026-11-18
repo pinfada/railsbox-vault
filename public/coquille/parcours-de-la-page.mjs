@@ -21,6 +21,11 @@ import { ecrireLaPromesse } from "./promesse-de-l-entree.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
 import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
+import { montrerLesBlocs } from "/src/coquille/blocs-montres.mjs";
+import { ecranDuParcours } from "/src/coquille/ecran-du-parcours.mjs";
+import { REVOCATION } from "/src/coquille/etat-de-la-revocation.mjs";
+import { brancherUnGesteDuParcours } from "/src/coquille/geste-du-parcours.mjs";
+import { effacerLesMessagesDeGeste } from "/src/coquille/messages-de-geste.mjs";
 import { refusJugeLaValeur } from "/src/coquille/refus-qui-jugent-une-valeur.mjs";
 import {
   COFFRE,
@@ -39,8 +44,6 @@ import {
   STATUTS,
   annonceDeLaSaisie,
   attenteDeLaPhrase,
-  coffreObserve,
-  ecranCourant,
   ecrireProgression,
   etapeAdmise,
   etapeApres,
@@ -58,9 +61,6 @@ import { brancherLesObservateurs } from "./observateurs-du-parcours.mjs";
 import { surveillerLaPression } from "./pression-du-bouton.mjs";
 import { ancreSaisie } from "/src/coquille/interface-de-deverrouillage.mjs";
 import { etatDeLaSaisie } from "/src/coquille/saisie-du-code.mjs";
-
-/** Les sections qui regroupent des blocs : cachées quand aucun de leurs blocs n'est montré. */
-const SECTIONS = ["deverrouillage", "feuille", "cycle", "portabilite"];
 
 /** Entrée dans un champ vaut le clic sur le bouton qu'il sert (revue de la PR #213, constat 12). */
 const ENTREE_VAUT = Object.freeze({
@@ -230,18 +230,6 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     });
   }
 
-  function montrerLesBlocs(visibles) {
-    for (const element of doc.querySelectorAll("[data-bloc]")) {
-      element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);
-    }
-    for (const id of SECTIONS) {
-      const section = noeud(id);
-      if (section === null) continue;
-      section.hidden =
-        !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);
-    }
-  }
-
   function nommerLesGestes(ecranId) {
     const creation = ecranId === "choisir";
     dire("ouvrir-par-phrase", creation ? "Créer mon coffre" : "Ouvrir mon coffre");
@@ -402,31 +390,14 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     evitement.textContent = dansLaBarre ? "Aller à l'application" : "Aller au parcours";
   }
 
-  function ecranAMontrer(releve, rapport) {
-    etat.coffre = coffreObserve({
-      etat: rapport.etat,
+  const ecranAMontrer = (releve, rapport) =>
+    ecranDuParcours({
+      etat,
+      releve,
+      rapport,
       texteDesMoyens: noeud("deverrouillage-moyens").textContent,
-      moyensProposes: releve.moyensProposes,
-      dernierRefus: releve.dernierRefus,
-    });
-    if (!etat.progressionLue) return "chargement";
-    return ecranCourant({
-      pointeur: etat.pointeur,
-      coffre: etat.coffre,
-      moyens: releve.moyensProposes ?? [],
-      nombreDeCodes: releve.nombreDeCodes,
-      // Le CONSTAT du Worker, jamais l'indice du fichier : c'est la garde des étapes 4 à 9 (#239).
-      feuilleEprouvee: rapport.feuilleEprouvee === true,
-      progression: etat.progression,
-      sousEtatDuCode: etat.sousEtatDuCode,
-      revocationFaite: etat.revocationFaite,
-      sansRevoquer: etat.sansRevoquer,
-      phrasePerdue: etat.phrasePerdue,
-      nouveauCodeDemande: etat.nouveauCodeDemande,
-      refus: releve.dernierRefus ?? null,
       moteur,
     });
-  }
 
   function rendre({ deplacerLeFocus = true } = {}) {
     if (pression.differerLeRendu(() => rendre({ deplacerLeFocus }))) return;
@@ -498,19 +469,22 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
     nommerLesGestes(ecranId);
     dire("sauvegarde-annonce", accueil.annonceDeSauvegarde(rapport)); // AVANT le geste (#269)
-    dire(
-      "parcours-avertissement-revocation",
-      MESSAGES.avertissementDeRevocation(releve.moyenDOuverture, releve.moyensProposes ?? null),
-    );
     // L'application démarrée reste à l'écran à TOUTES les étapes (ADR 0043) : l'écran d'une étape
     // qui ne la nomme pas ne la masque plus, il s'ajoute dans le panneau du coffre.
     const cycleLu = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;
     const applicationVisible = cycleLu === "application-demarree" && !etat.applicationArretee;
-    montrerLesBlocs(
-      applicationVisible && !visibles.includes("espace-de-travail")
-        ? [...visibles, "espace-de-travail"]
-        : visibles,
-    );
+    montrerLesBlocs({
+      doc,
+      noeud,
+      vueComplete,
+      dire,
+      releve,
+      revocation: REVOCATION,
+      visibles:
+        applicationVisible && !visibles.includes("espace-de-travail")
+          ? [...visibles, "espace-de-travail"]
+          : visibles,
+    });
     noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
     // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
     noeud("promesse-garanties").hidden = ecranId === "rouvrir";
@@ -597,12 +571,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
 
   // --- Les gestes PROPRES au parcours : aucun ne parle au Worker -------------------------------------
 
-  function geste(id, faire) {
-    noeud(id)?.addEventListener("click", () => {
-      faire();
-      rendre();
-    });
-  }
+  const geste = (id, faire) =>
+    brancherUnGesteDuParcours({ noeud, id, faire, rendre, revocation: REVOCATION });
 
   geste("parcours-commencer", () => allerA(etapeApres("creer", "commencer", etat.pointeur)));
   geste("parcours-j-ai-une-sauvegarde", () =>
@@ -674,8 +644,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       const id = event.target.closest("button").id;
       etat.idDuGeste = id;
       etat.boutonDuGeste = GESTES_LONGS.includes(id) ? id : null;
-      dire("parcours-refus", "");
-      dire("parcours-reussite", "");
+      effacerLesMessagesDeGeste(dire);
     },
     { capture: true },
   );

@@ -13,9 +13,13 @@
 // public n'en porte que la taille, l'empreinte et la cohérence. Le document applicatif n'en voit
 // rien : aucun de ces trois types n'existe sur le port restreint.
 
+import { brancherUneConfirmation } from "./confirmation-en-deux-temps.mjs";
+import { REVOCATION } from "./etat-de-la-revocation.mjs";
+import { ETAT_DE_L_INVENTAIRE } from "./etat-de-l-inventaire.mjs";
 import { AVERTISSEMENT_SANS_RECUPERATION } from "./feuille-de-recuperation.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
+import { MESSAGES } from "./textes-du-parcours.mjs";
 import { ARCHIVE_ERROR_CODES } from "../vm/archive-errors.mjs";
 import { IMPORT_ERROR_CODES } from "../vm/import-errors.mjs";
 
@@ -69,6 +73,7 @@ export function brancherLesGestesDePortabilite(liaison) {
   const noeud = (id) => liaison.racine.querySelector(`#${id}`);
   const contexte = {
     ...liaison,
+    revocation: liaison.revocation ?? REVOCATION,
     noeud,
     dire: (id, texte) => {
       const cible = noeud(id);
@@ -83,7 +88,24 @@ export function brancherLesGestesDePortabilite(liaison) {
   noeud("restaurer-le-coffre")?.addEventListener("click", () => {
     void restaurer(noeud("archive-a-restaurer")?.files?.[0] ?? null);
   });
-  noeud("revoquer-en-urgence")?.addEventListener("click", () => void revoquer());
+  // Irréversible : le clic sur « Révoquer… » DEMANDE ; seul « Oui, révoquer » appelle le Worker (#265).
+  // Une aide à la personne, pas une garde : la garde du geste reste celle du Worker.
+  brancherUneConfirmation({
+    noeud,
+    declencheur: "revoquer-en-urgence",
+    panneau: "revocation-confirmation",
+    annuler: "revoquer-annuler",
+    confirmer: "revoquer-confirmer",
+    confirmee: revoquer,
+    enCours: () => contexte.revocation.enVol(),
+    // Après une issue INCERTAINE, aucune nouvelle révocation n'est offerte avant la vérification
+    // (réouverture du coffre, qui recharge le document) : annuler une NOUVELLE demande dirait « rien
+    // n'a été révoqué » à côté d'une révocation qui a peut-être eu lieu (relecture de #308).
+    interdite: () => contexte.revocation.incertaine(),
+    refusee: () => contexte.dire("revocation-etat", MESSAGES.revocationAVerifier),
+    demandee: () => contexte.dire("revocation-etat", ""),
+    annulee: () => contexte.dire("revocation-etat", MESSAGES.revocationAnnulee),
+  });
   return Object.freeze({ sauvegarder, restaurer, revoquer });
 }
 
@@ -177,12 +199,29 @@ async function restaurerLeCoffre(contexte, fichier) {
   }
 }
 
-/** RÉVOQUER EN URGENCE : tout ce qui ouvre ce coffre, sauf ce qui vient de l'ouvrir. */
+/**
+ * RÉVOQUER EN URGENCE : tout ce qui ouvre ce coffre, sauf ce qui vient de l'ouvrir.
+ *
+ * L'état de la révocation (`etat-de-la-revocation.mjs`) est posé EN PREMIER, de façon synchrone,
+ * AVANT l'envoi : chaque gestionnaire de sortie de l'étape 9 le lit, sans attendre aucun rendu.
+ * L'avertissement vit dans `parcours-incertitude`, HORS du bloc de la révocation (relecture de #308).
+ */
 async function revoquerEnUrgence(contexte) {
-  const { demander, rapport, publier, dire } = contexte;
+  const { demander, rapport, publier, dire, revocation } = contexte;
+  revocation.commencer();
   dire("portabilite-refus", "");
+  dire("parcours-incertitude", MESSAGES.revocationEnCours);
+  // La ligne « en cours » : ce que la page lit pour fermer ses autres gestes longs.
+  conclure(contexte, "portabilite:revocation-en-cours");
   try {
-    const rendu = await demander("revoquerEnUrgence", {});
+    let rendu;
+    try {
+      rendu = await demander("revoquerEnUrgence", {});
+    } catch (erreur) {
+      return douterDeLaRevocation(contexte, erreur);
+    }
+    revocation.aboutir();
+    dire("parcours-incertitude", ""); // la réussite se dit par le parcours : « N moyen(s) retiré(s) »
     rapport.portabilite.revocation = {
       versionEnveloppe: rendu.versionEnveloppe,
       restants: rendu.restants,
@@ -198,13 +237,42 @@ async function revoquerEnUrgence(contexte) {
       contexte,
       `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`,
     );
-    await contexte.apresRevocation?.();
+    await relireApresLaRevocation(contexte);
     return rapport.portabilite.revocation;
-  } catch (erreur) {
-    return refuser(contexte, "revocation", erreur);
   } finally {
     publier();
   }
+}
+
+/**
+ * Relire l'inventaire n'est pas la révocation : son échec ne la défait pas, le SUCCÈS confirmé tient.
+ * Mais ce que la page savait AVANT (les moyens, le compte de feuilles, le constat de feuille éprouvée)
+ * peut ne plus être vrai — une feuille retirée n'a plus rien prouvé : le constat est INVALIDÉ (jamais
+ * gardé comme garde du parcours), l'interface a invalidé son relevé, et la page DIT l'échec et sa
+ * reprise. Aucune donnée d'avant n'est présentée comme actuelle (relecture de #308).
+ */
+async function relireApresLaRevocation(contexte) {
+  try {
+    await contexte.apresRevocation?.(ETAT_DE_L_INVENTAIRE.apresRevocation);
+  } catch {
+    contexte.rapport.feuilleEprouvee = false;
+    contexte.dire("parcours-incertitude", MESSAGES.relectureEchouee);
+  }
+}
+
+/**
+ * Tout échec reçu APRÈS l'envoi laisse la révocation INCERTAINE : un refus typé peut survenir après la
+ * publication de la page neuve (ADR 0026), et le Worker n'atteste pas la phase. Aucune conduite
+ * « refusé » n'est écrite ; le code reste au relevé et dans la ligne d'état (diagnostic).
+ */
+function douterDeLaRevocation(contexte, erreur) {
+  const { rapport, dire, revocation } = contexte;
+  const code = erreur?.code ?? CODES_REFUS_COQUILLE.gesteRompu;
+  revocation.douter();
+  rapport.portabilite.revocation = { incertaine: true, code };
+  dire("parcours-incertitude", MESSAGES.revocationIncertaine);
+  conclure(contexte, `portabilite:revocation-incertaine:${code}`);
+  return rapport.portabilite.revocation;
 }
 
 /**

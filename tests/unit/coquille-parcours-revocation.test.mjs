@@ -35,6 +35,7 @@ test("après rechargement, un coffre révoqué rend « Parcours terminé », et 
     coffre: COFFRE.ouvert,
     moyens: ["phrase", "recuperation"],
     feuilleEprouvee: true,
+    inventaire: "relu",
     progression: relue,
   });
   assert.equal(ecran, "termine");
@@ -46,6 +47,7 @@ test("sans révocation, l'étape 9 reste « revoquer »", () => {
     coffre: COFFRE.ouvert,
     moyens: ["phrase", "recuperation"],
     feuilleEprouvee: true,
+    inventaire: "relu",
     progression: aLEtape9,
   });
   assert.equal(ecran, "revoquer");
