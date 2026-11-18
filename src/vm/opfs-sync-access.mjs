@@ -273,6 +273,11 @@ export function voisinsDunVolume(nom) {
   ].map((suffixe) => `${nom}${suffixe}`);
 }
 
+/** Garde actuelle : la PRÉSENCE de la fonction — c'est ce que les épreuves rouges mesurent. */
+export async function opfsAtteignable() {
+  return typeof globalThis.navigator?.storage?.getDirectory === "function";
+}
+
 async function volumeDirectory({ create }) {
   const storage = globalThis.navigator?.storage;
   if (typeof storage?.getDirectory !== "function") {
