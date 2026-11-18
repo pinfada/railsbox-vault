@@ -386,7 +386,8 @@ test("un fichier de descripteur démesuré n'est pas chargé : il est rendu vide
   const primitives = primitivesEnMemoire();
   const magasin = creerMagasinDArtefacts({ primitives });
   primitives.fichiers.set("descripteur.scelle", new Uint8Array(2 * 1024 * 1024));
-  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(0));
+  // `byteLength`, pas `deepEqual` : sur 2 Mio, le message d'un échec d'`assert` coûterait des gigaoctets.
+  assert.equal((await magasin.lireLeDescripteurScelle()).byteLength, 0);
 });
 
 test("oublier le descripteur rangé retire le fichier et son partiel", async () => {
