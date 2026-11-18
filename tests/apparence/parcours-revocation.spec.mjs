@@ -216,6 +216,33 @@ test("issue incertaine : l'avertissement vit hors du bloc, survit à « Revenir 
   await expect(avertissement).toBeEmpty();
 });
 
+test("issue incertaine → rouvrir → Annuler / Échap : aucune nouvelle confirmation, jamais « Rien n'a été révoqué »", async ({
+  page,
+}) => {
+  const retenue = await revoquerSansReponse(page);
+  await retenue.refuser("VAULT_X");
+  const avertissement = page.locator("#parcours-incertitude");
+  await expect(avertissement).toContainText("peut-être eu lieu", { timeout: 60_000 });
+  const declencheur = bouton(page, REVOQUER);
+  await expect(declencheur).toHaveAttribute("aria-disabled", "true");
+  for (const geste of ["clic", "echap"]) {
+    if (geste === "clic") await declencheur.click();
+    else await page.keyboard.press("Escape");
+    await expect(page.locator("#revocation-confirmation")).toBeHidden();
+    // Tout ce qu'une personne lit ou entend : l'avertissement persistant ET l'état du bloc.
+    await expect(page.locator("#revocation-etat")).toContainText("Rouvrez votre coffre");
+    for (const texte of [
+      await avertissement.textContent(),
+      await page.locator("#revocation-etat").textContent(),
+      ...(await page.getByRole("alert").allTextContents()),
+    ]) {
+      expect(texte, `après ${geste}`).not.toMatch(/Rien n'a été révoqué|ouvre toujours/);
+    }
+  }
+  await expect(avertissement).toContainText("peut-être eu lieu");
+  expect(await retenue.retenues()).toBe(0);
+});
+
 test("issue incertaine (le Worker ne décode pas le message et meurt : aucune réponse) : « a peut-être eu lieu » partout, « refusée » nulle part, « Terminer sans révoquer » fermé", async ({
   page,
 }) => {
