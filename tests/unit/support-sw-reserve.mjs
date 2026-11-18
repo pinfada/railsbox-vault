@@ -183,7 +183,7 @@ export function instancier(config, { reseau = {}, caches: initiaux = {}, clients
       matchAll: async () =>
         clients.map((client) => ({
           ...client,
-          postMessage: (message) => messagesAuxClients.push(message),
+          postMessage: (message) => messagesAuxClients.push(JSON.parse(JSON.stringify(message))),
         })),
     },
     registration: {
@@ -279,12 +279,13 @@ export function instancier(config, { reseau = {}, caches: initiaux = {}, clients
       }
     },
     /** Un message d'un client ; rend la réponse reçue sur le port, ou `undefined` s'il n'y en a pas. */
-    async message(
-      donnees,
-      { source = { type: "window", frameType: "top-level" }, ports = 1 } = {},
-    ) {
+    async message(donnees, options = {}) {
+      const source =
+        "source" in options ? options.source : { type: "window", frameType: "top-level" };
+      const ports = options.ports ?? 1;
       let recu;
-      const port = { postMessage: (valeur) => (recu = valeur) };
+      // Le port rend ce que `postMessage` ferait cloner : un aller-retour JSON, sans prototypes d'un autre contexte.
+      const port = { postMessage: (valeur) => (recu = JSON.parse(JSON.stringify(valeur))) };
       const attentes = [];
       const evenement = {
         data: donnees,

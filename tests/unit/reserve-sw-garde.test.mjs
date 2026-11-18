@@ -110,22 +110,39 @@ test("le passage refuse TOUTE destination exécutable, sans aller au réseau (ga
   assert.deepEqual(sw.appels, [], "une destination exécutable n'atteint pas l'origine");
 });
 
-test("le passage refuse un chemin qui contient %2e, %2f, %5c, un antislash ou %00 (garde 12)", async () => {
+test("le passage refuse un chemin qui contient %2e, %2f, %5c ou %00 (garde 12)", async () => {
   const sw = await installe(FICHIERS, {}, { "/artifacts/ok.json": { corps: "{}" } });
   sw.appels.length = 0;
   for (const chemin of [
-    "/artifacts/%2e%2e/secret",
+    "/artifacts/a%2eb",
+    "/artifacts/a%2Eb",
     "/artifacts/a%2fb",
     "/artifacts/a%2Fb",
     "/artifacts/a%5cb",
     "/artifacts/a%5Cb",
-    "/artifacts/a\\b",
     "/artifacts/a%00b",
   ]) {
     const resultat = await sw.requete(chemin, { destination: "" });
     assert.equal(resultat.reponse.status, 503, chemin);
     assert.equal(refus(resultat), "PASSAGE_CHEMIN_SUSPECT", chemin);
   }
+  assert.deepEqual(sw.appels, []);
+});
+
+test("un antislash est NORMALISÉ en `/` par l'URL elle-même : `pathname` n'en porte jamais, la garde n'a donc rien à y lire (preuve d'équivalence, ADR 0048 amendé)", () => {
+  assert.equal(new URL("https://coquille.test/artifacts/a\\b").pathname, "/artifacts/a/b");
+  assert.equal(
+    new URL("https://coquille.test/artifacts/a%5cb").pathname,
+    "/artifacts/a%5cb",
+    "%5c, lui, n'est pas décodé : c'est lui que la garde lit",
+  );
+});
+
+test("`%2e%2e` est normalisé par l'URL elle-même : la requête sort de `/artifacts/` et tombe dans la garde fermée", async () => {
+  const sw = await installe(FICHIERS, {}, { "/secret": { corps: "x" } });
+  sw.appels.length = 0;
+  const resultat = await sw.requete("/artifacts/%2e%2e/secret", { destination: "" });
+  assert.equal(resultat.reponse.status, 503);
   assert.deepEqual(sw.appels, []);
 });
 
