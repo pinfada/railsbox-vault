@@ -13,7 +13,7 @@
 //    utilisateur préalable → le produit la borne à quatre secondes et rend `pending` ;
 //  - Firefox sous préférence d'essai de l'invite : `true` en 6–8 ms, ou `false` en 0–2 ms ;
 //  - WebKit : `unsupported` sous Playwright 1.62.1 (WebKit 26.5, `persist` absent) ; `denied` depuis
-//    Playwright 1.65.0 (WebKit 27.2, relevé du 18/11/2026) : `persist()` existe et rend `false` sans
+//    Playwright 1.64.0 (WebKit 27.2, relevé du 18/11/2026, confirmé sous 1.65.0) : `persist()` existe et rend `false` sans
 //    attente, en contexte éphémère comme persistant. Le projet est épinglé à la version du verrou ;
 //    l'ancienne valeur n'est pas conservée, parce qu'une table qui admettrait les deux ne
 //    détecterait plus le retour d'un moteur à l'autre état.

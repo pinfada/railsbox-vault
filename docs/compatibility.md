@@ -441,10 +441,10 @@ la directive dit, et c'est ce qui montre que la sonde sait lire un opener quand 
 
 ## WebKit 26.6 et suivants : l'OPFS est exposé, mais REJETÉ en contexte éphémère (#231)
 
-Relevé du **18/11/2026** : Playwright **1.65.0**, WebKit **27.2** (v2388), Linux x86_64, Node 22. La
-matrice « mesurée » plus haut date du 23/08/2026 (Playwright 1.62.1, WebKit 26.5) et n'est pas
-réécrite : elle décrit ce build-là. La montée de Playwright à 1.65.0 est la référence de la CI
-depuis la PR qui ferme #231.
+Relevé du **18/11/2026** : Playwright **1.65.0**, WebKit **27.2** (v2388), Linux x86_64, Node 22 ;
+les suites WebKit passent à l'identique sous Playwright **1.64.0**, WebKit 27.2 (v2370), qui est le
+verrou de la CI (voir « Firefox 159 », plus bas). La matrice « mesurée » plus haut date du
+23/08/2026 (Playwright 1.62.1, WebKit 26.5) et n'est pas réécrite : elle décrit ce build-là.
 
 | Question                                                  | WebKit 26.5 (1.62.1) | WebKit 27.2 (1.65.0), contexte éphémère | WebKit 27.2, contexte persistant   |
 | --------------------------------------------------------- | -------------------- | --------------------------------------- | ---------------------------------- |
@@ -488,6 +488,47 @@ reste muette (`data-coquille` figé sur `demarrage`, puis `worker-mort`).
 
 **Observé, non éprouvé :** `PublicKeyCredential` se déclare `function` sous WebKit 27.2 (objet sous
 26.5) ; la sonde le range `supported` dans les deux cas.
+
+## Firefox 159 (Playwright 1.65.x) : le processus de contenu plante sous axe (#231)
+
+**Le verrou est à Playwright 1.64.0, et Playwright 1.65.x est exclu de Dependabot.** Relevé du
+**18/11/2026**, Linux x86_64, Node 22, `@axe-core/playwright` 4.14.0 (axe-core 4.14) :
+
+| Playwright              | Firefox (build)  | Apparence Firefox (`parcours.spec.mjs`)        |
+| ----------------------- | ---------------- | ---------------------------------------------- |
+| 1.64.0                  | 157.0 (**1555**) | verte (81 verts sur les trois moteurs)         |
+| 1.65.0 et 1.65.1        | 159.0 (**1572**) | **10 rouges** : `frame.evaluate: Page crashed` |
+| 1.66.0-alpha-2026-11-18 | (**1578**)       | pas de plantage (sonde minimale ci-dessous)    |
+
+**Ce qui plante** : le processus de contenu de Firefox (SIGSEGV, `process … exited on signal 11`),
+pendant `AxeBuilder.analyze()`, sur la page du parcours (`/index.html`, étape « Créer votre coffre
+»). Les règles axe qui lisent le rôle ou le nom accessible (`aria-allowed-attr`,
+`aria-conditional-attr`, `aria-prohibited-attr`, `label-content-name-mismatch`,
+`nested-interactive`, `target-size`) sont celles qui plantent, une à une.
+
+**Reproduction minimale** (sur la page du produit ; **pas autonome** : une page triviale — `<main>`,
+un bouton, un `fieldset` — ne plante pas) : charger la page du parcours sous Firefox, attendre le
+titre « Créer votre coffre », puis, dans un ordre ou dans l'autre, (1) une opération du moteur de
+rôles de Playwright qui calcule des noms accessibles — `locator("#parcours").ariaSnapshot()` ou
+`expect(getByRole("heading", { name: … })).toBeVisible()` — et (2)
+`new AxeBuilder({ page }).analyze()`. Mesures : `ariaSnapshot()` puis axe plante ; axe puis
+`ariaSnapshot()` plante ; axe seul, `ariaSnapshot()` seul, `getByRole(…).waitFor()` puis axe, et un
+parcours entièrement à sélecteurs CSS puis axe ne plantent pas. Le plantage ne dépend ni de la durée
+d'attente, ni de la trace, ni des préférences d'accessibilité de Firefox
+(`accessibility.force_disabled` sans effet), ni du nombre d'ouvriers. L'inclusion axe de `#parcours`
+seul plante ; chacun de ses enfants seul, non.
+
+**Ce que ce n'est pas** : un défaut du produit (le produit n'est pas en cause : Firefox 157 et le
+build 1578 passent la même page), ni de l'oracle d'accessibilité (`outils-d-apparence.mjs`, #290).
+**Non établi** : la cause exacte dans Firefox, et si le build 1578 est corrigé ou ne fait que
+déplacer le déclencheur (une seule sonde, sans les 81 épreuves d'apparence).
+
+**Conséquences retenues** : `.github/dependabot.yml` exclut `@playwright/test` 1.65.x ; le verrou
+`~1.64.0` empêche une montée mineure silencieuse ; la montée à Playwright 1.66 se refait quand son
+Firefox est de build ≥ 1578 **et** que `npm run test:apparence` passe sur les trois moteurs (suivi :
+#309). Contourner par des épreuves d'apparence à sélecteurs CSS a été essayé et écarté (8 des 10
+épreuves repassaient, deux restaient rouges, et chaque nouveau `getByRole` avant `verifier` aurait
+replanté).
 
 ## WebKit Playwright n'est pas une qualification Safari
 

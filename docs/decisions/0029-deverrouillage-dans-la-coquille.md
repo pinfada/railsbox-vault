@@ -552,9 +552,9 @@ Cette note n'amende pas la décision 6 : elle en précise le DÉTECTEUR. L'absen
 déclenche l'absence.
 
 **Le fait** (`docs/compatibility.md`, § WebKit 26.6 et suivants). Depuis WebKit 26.6, observé sous
-Playwright 1.65.0 / WebKit 27.2, `navigator.storage.getDirectory` est une fonction mais son appel
-REJETTE (`UnknownError`) dans un contexte éphémère, page comme Worker. Le Worker de confiance ne
-constatait l'absence que par `typeof` : il se croyait capable, l'inventaire levait
+Playwright 1.64.0 et 1.65.0 / WebKit 27.2, `navigator.storage.getDirectory` est une fonction mais
+son appel REJETTE (`UnknownError`) dans un contexte éphémère, page comme Worker. Le Worker de
+confiance ne constatait l'absence que par `typeof` : il se croyait capable, l'inventaire levait
 `VAULT_STORAGE_SUPPORT_FAILURE` (un nom d'erreur inconnu n'est pas classé), et la coquille passait
 en `erreur` — 76 épreuves WebKit rouges.
 
