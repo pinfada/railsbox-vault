@@ -90,3 +90,79 @@ test("[I12] le modèle n'exporte aucun texte final : les seules chaînes sont de
     );
   }
 });
+
+// --- Les collections EXPORTÉES sont réellement immuables (#315) -----------------------------------------
+// `Object.freeze(new Set(...))` n'empêche pas `add`, `delete`, `clear` : un appelant pouvait faire dire
+// « révoqué » à la phase I, pour toutes les instances. Aucune collection exportée n'est un Set ou une Map ;
+// toute valeur exportée est gelée en profondeur.
+
+const EXPORTS = await Promise.all(MODULES.map((nom) => import(`../../src/coquille/${nom}.mjs`)));
+const exportsDeLaCollection = EXPORTS.flatMap((module, rang) =>
+  Object.entries(module).map(([nom, valeur]) => [`${MODULES[rang]}.${nom}`, valeur]),
+);
+
+function gelee(valeur) {
+  if (valeur === null || (typeof valeur !== "object" && typeof valeur !== "function")) return true;
+  if (typeof valeur === "function") return true;
+  return Object.isFrozen(valeur) && Object.values(valeur).every(gelee);
+}
+
+test("[I1] aucune collection exportée n'est un Set, une Map ni une valeur non gelée", () => {
+  assert.ok(exportsDeLaCollection.length >= 25, "trop peu d'exports examinés");
+  for (const [nom, valeur] of exportsDeLaCollection) {
+    for (const interdit of [Set, Map, WeakSet, WeakMap]) {
+      assert.ok(
+        !(valeur instanceof interdit),
+        `${nom} est un ${interdit.name} : muable par add/set/delete/clear`,
+      );
+    }
+    assert.ok(gelee(valeur), `${nom} n'est pas gelé en profondeur`);
+  }
+});
+
+test("[I1] aucun Set ni Map n'est créé au niveau du module (même gelé)", () => {
+  for (const nom of MODULES) {
+    const code = codeSeul(source(nom));
+    assert.doesNotMatch(
+      code,
+      /^(?:export\s+)?const\s+\w+\s*=\s*(?:Object\.freeze\(\s*)?new (?:Set|Map)\b/m,
+      `${nom} : Set ou Map de module`,
+    );
+  }
+});
+
+test("[I1] tenter de MUTER chaque export ne fausse aucune affirmation et ne contamine aucune instance", async () => {
+  const { affirmationsDe } = await import("../../src/coquille/vue-de-la-revocation.mjs");
+  const { LISTE_DES_PHASES: phases, etatDeLaPhase } = await import("./support-revocation.mjs");
+  const attendu = () => phases.map((phase) => affirmationsDe(etatDeLaPhase(phase)).revoque);
+  const avant = attendu();
+  const instance = (await import("./support-magasin-revocation.mjs")).fabriquer();
+  const phaseAvant = instance.magasin.etat().phase;
+  for (const [, valeur] of exportsDeLaCollection) {
+    for (const mutation of [
+      (v) => v.add?.("I"),
+      (v) => v.set?.("I", true),
+      (v) => v.delete?.("RL"),
+      (v) => v.clear?.(),
+      (v) => v.push?.("I"),
+      (v) => v.splice?.(0, 1),
+      (v) => {
+        v.I = "pirate";
+      },
+      (v) => {
+        v[0] = "pirate";
+      },
+    ]) {
+      try {
+        if (valeur !== null && typeof valeur === "object") mutation(valeur);
+      } catch {
+        // un objet gelé refuse : c'est le comportement attendu
+      }
+    }
+  }
+  assert.deepEqual(attendu(), avant, "une mutation d'un export a changé une affirmation");
+  assert.equal(affirmationsDe(etatDeLaPhase("I")).revoque, false, "« révoqué » est dit en I");
+  const autre = (await import("./support-magasin-revocation.mjs")).fabriquer();
+  assert.equal(autre.magasin.etat().phase, "F0", "une instance neuve ne démarre pas à F0");
+  assert.equal(instance.magasin.etat().phase, phaseAvant);
+});
