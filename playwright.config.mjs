@@ -230,6 +230,9 @@ for (const moteur of moteurs) {
 
 export default defineConfig({
   testDir: "tests/browser",
+  // Les COURSES ENTRE ONGLETS (#311, C5) ont leur configuration : elles exigent le serveur à point
+  // d'arrêt (`playwright.course-onglets.config.mjs`) et n'ont aucun sens sur un serveur ordinaire.
+  testIgnore: ["**/coquille-course-*.spec.mjs"],
   fullyParallel: false,
   // Les relevés du spike #35 exécutent dix-neuf sondes dont plusieurs attendent volontairement un
   // silence de l'API (origine opaque) : le délai par défaut de 30 s ne leur suffit pas.
@@ -302,6 +305,7 @@ export default defineConfig({
       name: nom,
       use: { browserName: nom },
       testIgnore: [
+        "**/coquille-course-*.spec.mjs",
         ...FRONTIERE_CSP,
         ...FRONTIERE_HIERARCHIE,
         ...FRONTIERE_DESCRIPTEUR,

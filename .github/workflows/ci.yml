@@ -20,7 +20,7 @@ jobs:
     # Conserve le nom déjà requis par la protection de main. Un simple `needs`
     # sans `always()` sauterait ce job après un échec, au lieu de le faire échouer.
     name: Qualité et tests
-    needs: [check, couverture, audits]
+    needs: [check, couverture, courses, audits]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -32,14 +32,47 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           const resultats = JSON.parse(process.env.VAULT_RESULTATS_CI);
-          const attendus = ["check", "couverture", "audits"];
+          const attendus = ["check", "couverture", "courses", "audits"];
           const echecs = attendus.filter((nom) => resultats[nom]?.result !== "success");
           if (echecs.length) {
             console.error("Contrôles absents ou non réussis : " + echecs.join(", "));
             process.exit(1);
           }
-          console.log("Qualité, couverture et audits réussis.");
+          console.log("Qualité, couverture, courses entre onglets et audits réussis.");
           JS
+
+  courses:
+    # Les COURSES ENTRE ONGLETS (#311, C5) : un job à part, parce qu'elles exigent leur propre serveur de
+    # test — celui qui sert la copie instrumentée de `openOpfsSyncAccess` — et leur propre
+    # configuration (`playwright.course-onglets.config.mjs`). Le job « Vérifications » tourne déjà à
+    # 26 minutes sur 28 : y ajouter trois moteurs de plus n'est pas une option.
+    name: Courses entre onglets (Chromium, Firefox, WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Installation de Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Installation des dépendances
+        run: npm ci
+      - name: Installation des moteurs de navigateur
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Courses entre onglets
+        run: npm run test:course-onglets
+      - name: Rapport Playwright en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-course-onglets
+          path: |
+            playwright-report/
+            test-results/course-onglets/
+          if-no-files-found: ignore
+          retention-days: 7
 
   couverture:
     name: Couverture unitaire (Node ${{ matrix.node }})
