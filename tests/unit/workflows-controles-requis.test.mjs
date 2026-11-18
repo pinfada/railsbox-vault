@@ -13,9 +13,9 @@ const code = gate.match(/node --input-type=module <<'JS'\n(?<code>[\s\S]*?)\n\s+
   .code;
 assert.ok(code, "Le code réellement exécuté dans le workflow doit être éprouvé.");
 
-test("le contrôle déjà requis attend les tests, les deux couvertures et les audits", () => {
+test("le contrôle déjà requis attend les tests, les deux couvertures, les courses entre onglets et les audits", () => {
   assert.match(gate, /^ {4}name: Qualité et tests$/mu);
-  assert.match(gate, /^ {4}needs: \[check, couverture, audits\]$/mu);
+  assert.match(gate, /^ {4}needs: \[check, couverture, courses, audits\]$/mu);
   assert.match(gate, /^ {4}if: \$\{\{ always\(\) \}\}$/mu);
   assert.match(gate, /VAULT_RESULTATS_CI: \$\{\{ toJSON\(needs\) \}\}/u);
   assert.match(ci, /^ {2}audits:\n {4}uses: \.\/\.github\/workflows\/security.yml$/mu);
@@ -23,7 +23,9 @@ test("le contrôle déjà requis attend les tests, les deux couvertures et les a
 });
 
 const reussis = () =>
-  Object.fromEntries(["check", "couverture", "audits"].map((nom) => [nom, { result: "success" }]));
+  Object.fromEntries(
+    ["check", "couverture", "courses", "audits"].map((nom) => [nom, { result: "success" }]),
+  );
 function executer(resultats) {
   return spawnSync(process.execPath, ["--input-type=module", "--eval", code], {
     env: { ...process.env, VAULT_RESULTATS_CI: JSON.stringify(resultats) },
@@ -32,12 +34,12 @@ function executer(resultats) {
   });
 }
 
-test("le gate accepte uniquement trois contrôles réussis", () => {
+test("le gate accepte uniquement quatre contrôles réussis", () => {
   const resultat = executer(reussis());
   assert.equal(resultat.status, 0, resultat.stderr);
 });
 
-for (const nom of ["check", "couverture", "audits"]) {
+for (const nom of ["check", "couverture", "courses", "audits"]) {
   for (const etat of ["failure", "cancelled", "skipped", "", undefined]) {
     test(`le gate refuse ${nom} : ${etat ?? "absent"}`, () => {
       const resultats = reussis();
