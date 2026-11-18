@@ -20,7 +20,8 @@
 // `opfs-sync-access.mjs` dont `openOpfsSyncAccess` attend un signal avant d'ouvrir le volume
 // `coquille` — le « point d'arrêt d'épreuve ». L'onglet A reçoit le module tel quel.
 //
-// **WebKit** n'offre pas l'OPFS synchrone dans un Worker : la coquille y publie `indisponible`, et la
+// **Firefox et WebKit** : la course n'est mesurée que sous Chromium (`LIMITE_DU_POINT_D_ARRET`).
+// WebKit n'offre pas l'OPFS synchrone dans un Worker : la coquille y publie `indisponible`, et la
 // limite est EXIGÉE, pas sautée.
 
 import { expect, test } from "../support/test.mjs";
@@ -31,6 +32,16 @@ import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.m
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 
 const DELAI = 120_000;
+
+/**
+ * LA LIMITE DU POINT D'ARRÊT, écrite plutôt que maquillée : `page.route` n'intercepte pas, sous
+ * Firefox, le module qu'un Worker dédié importe — mesuré le 19/11/2026, le gestionnaire n'est
+ * jamais appelé et la pause n'est jamais atteinte — et WebKit n'a pas l'OPFS synchrone. La course
+ * elle-même n'est donc mesurée que sous Chromium ; le contrôle du handle exclusif, qui ne pose
+ * aucune pause, l'est sur les deux moteurs qui ont l'OPFS synchrone.
+ */
+const LIMITE_DU_POINT_D_ARRET =
+  "le point d'arrêt d'épreuve (page.route sur un module de Worker) n'existe que sous Chromium";
 const PHRASE = "une phrase de course entre onglets assez longue pour la calibration";
 const CANAL = "c5-311-point-d-arret";
 
@@ -188,7 +199,7 @@ test("C5 : B retardé entre l'enveloppe et le handle est REFUSÉ quand A a révo
   context,
   browserName,
 }) => {
-  test.skip(browserName === "webkit", "pas d'OPFS synchrone dans un Worker");
+  test.skip(browserName !== "chromium", LIMITE_DU_POINT_D_ARRET);
   test.setTimeout(300_000);
   const course = await courseJusquALaPause(context, browserName);
   const { a, b } = course;
@@ -224,7 +235,7 @@ test("C5 : le Worker de B TUÉ à la pause ne laisse aucun effet — ni écritur
   context,
   browserName,
 }) => {
-  test.skip(browserName === "webkit", "pas d'OPFS synchrone dans un Worker");
+  test.skip(browserName !== "chromium", LIMITE_DU_POINT_D_ARRET);
   test.setTimeout(300_000);
   const { a, b, feuille } = await courseJusquALaPause(context, browserName);
 
