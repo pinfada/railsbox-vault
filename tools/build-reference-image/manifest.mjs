@@ -85,15 +85,14 @@ export function descripteurApplicatif(manifeste, versionRuntime) {
     };
   };
   const artefact = (role) => morceau(manifeste.boot[role], manifeste.boot.servis?.[role], role);
-  // Les EMPREINTES du noyau, de l'initrd et des deux BIOS (#247, D1g) : tout ou rien — un manifeste qui
-  // n'en décrit pas un seul ne produit aucune empreinte, et le descripteur reste lisible sans hors ligne.
-  const epingles = {};
+  // Les EMPREINTES du noyau, de l'initrd et des deux BIOS (#247, D1g) : OBLIGATOIRES. Un manifeste qui
+  // n'en décrit pas un seul des quatre ne produit PAS un descripteur dégradé — il échoue ici, à la
+  // fabrication, plutôt que de laisser booter des octets sans épingle (revue de #298, constat 2).
+  const empreintes = {};
   for (const role of ["kernel", "initrd", "bios", "vgaBios"]) {
-    const trouve = manifeste.artifacts.find((candidat) => candidat.name === manifeste.boot[role]);
-    if (trouve === undefined) break;
-    epingles[role] = { sha256: trouve.sha256, octets: trouve.byteSize };
+    const trouve = trouver(manifeste.boot[role], `l'empreinte du boot (${role})`);
+    empreintes[role] = { sha256: trouve.sha256, octets: trouve.byteSize };
   }
-  const empreintes = Object.keys(epingles).length === 4 ? { empreintes: epingles } : {};
   return {
     descripteurVersion: DESCRIPTEUR_APPLICATIF_VERSION,
     application: {
@@ -112,7 +111,7 @@ export function descripteurApplicatif(manifeste, versionRuntime) {
       initrd: manifeste.boot.initrd,
       bios: manifeste.boot.bios,
       vgaBios: manifeste.boot.vgaBios,
-      ...empreintes,
+      empreintes,
     },
     /** Où les artefacts ci-dessus sont servis. Le chemin est celui de `tools/serve.mjs`. */
     prefixeDesArtefacts: "/artifacts/reference-image/",

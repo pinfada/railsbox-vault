@@ -19,6 +19,7 @@ import { IDENTIFIANT_DU_COFFRE } from "../../src/coquille/identites-du-coffre.mj
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { createManifest, serializeManifest } from "../../src/vm/volume-manifest.mjs";
 import { MESSAGES } from "../../src/coquille/textes-du-parcours.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 const DELAI = 120_000;
 const M = "20260101000002";
@@ -52,6 +53,7 @@ function descripteur({ precedent = true, id = "reference-essai" } = {}) {
       initrd: "i",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
     },
     prefixeDesArtefacts: "/artifacts/essai/",
   };

@@ -10,6 +10,7 @@
  * atteindre est une garde qu'on croit sur parole.
  */
 
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -180,6 +181,7 @@ function descripteur(champs = {}) {
       initrd: "reference-rootfs-initrd",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      empreintes: structuredClone(EMPREINTES_DU_BOOT_D_EPREUVE),
     },
     prefixeDesArtefacts: "/artifacts/reference-image/",
     ...champs,

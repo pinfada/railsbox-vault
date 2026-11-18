@@ -183,15 +183,17 @@ const EMPREINTE = /^[0-9a-f]{64}$/;
 const ARTEFACT_DE_BOOT_MAX = 256 * 1024 * 1024;
 
 /**
- * Les EMPREINTES du noyau, de l'initrd et des deux BIOS (#247, D1g), facultatives et TOUT OU RIEN :
- * sans elles le descripteur reste lisible mais ces quatre artefacts ne passent pas par le magasin, et
- * il n'y a pas de démarrage hors connexion. Un champ de plus, ou une URL, est refusé : l'adresse
- * d'un artefact vient du NOM, jamais d'ici.
+ * Les EMPREINTES du noyau, de l'initrd et des deux BIOS (#247, D1g), OBLIGATOIRES et TOUT OU RIEN :
+ * **aucun octet n'atteint le guest sans empreinte épinglée** (revue de sécurité de #298, constat 2 ;
+ * ADR 0046). Un descripteur qui n'en porte pas n'est pas une application : il est refusé ICI, avant
+ * tout boot — il n'y a plus de « descripteur ancien » toléré, et un descripteur scellé avant cette
+ * règle est refusé à l'ouverture (`ouvrirLeDescripteurScelle` rejoue cette forme). Un champ de plus,
+ * ou une URL, est refusé : l'adresse d'un artefact vient du NOM, jamais d'ici.
  *
  * @param {unknown} empreintes @returns {string | null} le motif, ou `null`
  */
 function formeDesEmpreintesDuBoot(empreintes) {
-  if (empreintes === undefined) return null;
+  if (empreintes === undefined) return "empreintes du boot absentes : aucun octet sans épingle";
   const cles = ["kernel", "initrd", "bios", "vgaBios"];
   if (typeof empreintes !== "object" || empreintes === null || Array.isArray(empreintes)) {
     return "empreintes du boot illisibles";

@@ -366,8 +366,8 @@ export const MUTATIONS = Object.freeze([
     nom: "hors connexion, un petit artefact absent est un refus, jamais un téléchargement",
     garde: "acquerirUnPetit — horsConnexion",
     fichier: ARTEFACTS,
-    avant: "  if (horsConnexion) {\n    throw artefactAbsentHorsConnexion(",
-    apres: "  if (false) {\n    throw artefactAbsentHorsConnexion(",
+    avant: '  if (horsConnexion) throw artefactAbsentHorsConnexion(nom, "manque à la réserve");\n',
+    apres: '  if (false) throw artefactAbsentHorsConnexion(nom, "manque à la réserve");\n',
     epreuves: [T.petits],
   },
   {
@@ -394,14 +394,57 @@ export const MUTATIONS = Object.freeze([
     apres: "  if (false) {\n",
     epreuves: [T.petits],
   },
+  // --- Aucun octet n'atteint le guest sans empreinte épinglée (revue de #298, constat 2) ----------
   {
-    nom: "sans empreinte épinglée, un artefact n'entre pas au magasin",
-    garde: "acquerirUnPetit — pin null",
+    nom: "une épingle absente est refusée AVANT tout téléchargement",
+    garde: "acquerirLesPetitsArtefacts — exigerLesEpingles",
     fichier: ARTEFACTS,
-    avant:
-      '  if (pin === null) return { octets, transfere: octets.byteLength, magasin: "sans-empreinte" };\n',
+    avant: "  exigerLesEpingles(pins, horsConnexion);\n",
     apres: "",
     epreuves: [T.petits],
+  },
+  {
+    nom: "une épingle `null` est une épingle absente",
+    garde: "exigerLesEpingles — null",
+    fichier: ARTEFACTS,
+    avant: "    if (pins[nom] !== null && pins[nom] !== undefined) continue;\n",
+    apres: "    if (pins[nom] !== undefined) continue;\n",
+    epreuves: [T.petits],
+  },
+  {
+    nom: "une épingle d'une clé manquante (`undefined`) est une épingle absente",
+    garde: "exigerLesEpingles — undefined",
+    fichier: ARTEFACTS,
+    avant: "    if (pins[nom] !== null && pins[nom] !== undefined) continue;\n",
+    apres: "    if (pins[nom] !== null) continue;\n",
+    epreuves: [T.petits],
+  },
+  {
+    nom: "hors connexion, une épingle absente reste le refus typé de l'artefact absent",
+    garde: "exigerLesEpingles — horsConnexion",
+    fichier: ARTEFACTS,
+    avant:
+      "    if (horsConnexion) throw artefactAbsentHorsConnexion(nom, \"n'a pas d'empreinte épinglée\");\n",
+    apres: "",
+    epreuves: [T.petits],
+  },
+  {
+    nom: "un descripteur sans boot.empreintes n'est pas une application",
+    garde: "formeDesEmpreintesDuBoot — absence",
+    fichier: APPLICATIF,
+    avant:
+      '  if (empreintes === undefined) return "empreintes du boot absentes : aucun octet sans épingle";\n',
+    apres: "  if (empreintes === undefined) return null;\n",
+    epreuves: [T.empreintes, T.scelle],
+  },
+  {
+    nom: "la fabrication du descripteur échoue quand le manifeste ne décrit pas un artefact de boot",
+    garde: "descripteurApplicatif — empreintes obligatoires",
+    fichier: "tools/build-reference-image/manifest.mjs",
+    avant: "    const trouve = trouver(manifeste.boot[role], `l'empreinte du boot (${role})`);\n",
+    apres:
+      "    const trouve = manifeste.artifacts.find((c) => c.name === manifeste.boot[role]);\n    if (trouve === undefined) continue;\n",
+    epreuves: [T.empreintes],
   },
   {
     nom: "la réserve n'est complète que si TOUT y est",

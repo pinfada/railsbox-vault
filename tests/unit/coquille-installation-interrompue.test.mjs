@@ -45,6 +45,7 @@ import {
   MARQUEUR_SCELLEMENT_COMPLET,
   SCELLEMENT_COMPLET_OFFSET,
 } from "../../src/vm/volume-chiffre-format.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 const NOM = "application";
 const TAILLE = 8 * SECTOR_SIZE;
@@ -75,6 +76,7 @@ function descripteur() {
       initrd: "i",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
     },
     prefixeDesArtefacts: "/artifacts/essai/",
   };

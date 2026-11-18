@@ -33,7 +33,11 @@ import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
 import { E2E_ORIGIN_A, E2E_ORIGIN_B } from "../../playwright.e2e.config.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
-import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
+import {
+  disqueSystemeDuManifeste,
+  graineDuManifeste,
+  empreintesDuBootDuManifeste,
+} from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -162,6 +166,7 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+    empreintes: empreintesDuBootDuManifeste(manifeste),
     disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   const configBoot = {

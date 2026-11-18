@@ -52,7 +52,7 @@ export const PETITS_ARTEFACTS = Object.freeze(["wasm", "bios", "vgaBios", "kerne
 /**
  * Les ÉPINGLES — empreinte et taille — de ces cinq artefacts : celle du wasm vient du manifeste v86
  * (`vendor/v86/MANIFEST.json`), les quatre autres du descripteur (`boot.empreintes`, #247 D1g). Une
- * épingle absente dit « pas vérifiable » : l'artefact n'entre pas au magasin, et hors connexion il manque.
+ * épingle absente est REFUSÉE (`exigerLesEpingles`) : aucun octet n'atteint le guest sans empreinte.
  *
  * @param {Record<string, any>} runtime @param {{ artifacts: object[] }} manifeste
  */
@@ -82,22 +82,31 @@ async function verifierContreLEpingle(nom, octets, pin) {
   }
 }
 
+/**
+ * Aucun octet n'atteint le guest sans empreinte épinglée : une épingle absente refuse AVANT tout
+ * téléchargement. Hors connexion c'est le refus typé de l'artefact absent ; en ligne, une erreur
+ * ordinaire que l'acquisition marque (« cette adresse n'a pas fourni l'application »).
+ */
+function exigerLesEpingles(pins, horsConnexion) {
+  for (const nom of PETITS_ARTEFACTS) {
+    if (pins[nom] !== null && pins[nom] !== undefined) continue;
+    if (horsConnexion) throw artefactAbsentHorsConnexion(nom, "n'a pas d'empreinte épinglée");
+    throw new Error(
+      `Artefact ${nom} refusé : aucune empreinte épinglée, aucun octet sans épingle.`,
+    );
+  }
+}
+
 async function acquerirUnPetit({ nom, url, pin, magasin, recuperer, horsConnexion }) {
-  if (pin !== null && magasin) {
+  if (magasin) {
     const cible = new Uint8Array(pin.octets);
     const servi = await magasin
       .servir({ sha256: pin.sha256, octets: pin.octets }, cible)
       .catch(() => false);
     if (servi) return { octets: cible, transfere: 0, magasin: "servi" };
   }
-  if (horsConnexion) {
-    throw artefactAbsentHorsConnexion(
-      nom,
-      pin === null ? "n'a pas d'empreinte épinglée" : "manque à la réserve",
-    );
-  }
+  if (horsConnexion) throw artefactAbsentHorsConnexion(nom, "manque à la réserve");
   const octets = await fetchBytes(url, recuperer);
-  if (pin === null) return { octets, transfere: octets.byteLength, magasin: "sans-empreinte" };
   await verifierContreLEpingle(nom, octets, pin);
   if (!magasin) return { octets, transfere: octets.byteLength, magasin: "absent" };
   try {
@@ -129,6 +138,7 @@ export async function acquerirLesPetitsArtefacts({
   recuperer = globalThis.fetch,
   horsConnexion = false,
 }) {
+  exigerLesEpingles(pins, horsConnexion);
   // En SÉRIE : un artefact de plusieurs Mio en vol à la fois ne sert à rien sur une origine unique.
   const octets = {};
   const statuts = {};

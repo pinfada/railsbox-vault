@@ -8,6 +8,7 @@
  * sur ce magasin : c'est le même code de production qui écrit et relit, sans OPFS.
  */
 
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 import { installerSiNecessaire } from "../../src/coquille/application-de-reference.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "../../src/coquille/identites-du-coffre.mjs";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
@@ -56,6 +57,8 @@ export function descripteurDEpreuve() {
       initrd: "i",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      // Obligatoires : aucun octet de boot sans épingle (revue de #298, constat 2 ; ADR 0046).
+      empreintes: structuredClone(EMPREINTES_DU_BOOT_D_EPREUVE),
     },
     prefixeDesArtefacts: "/artifacts/epreuve/",
   };

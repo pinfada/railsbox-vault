@@ -34,7 +34,11 @@ import { TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
 
 import { E2E_ORIGIN_A, E2E_ORIGIN_B } from "../../playwright.e2e.config.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
-import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
+import {
+  disqueSystemeDuManifeste,
+  graineDuManifeste,
+  empreintesDuBootDuManifeste,
+} from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ADRESSES_V86 = adressesServiesV86();
@@ -137,6 +141,7 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
       vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
       kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
       initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+      empreintes: empreintesDuBootDuManifeste(manifeste),
       disqueSysteme: disqueSystemeDuManifeste(manifeste),
     },
     manifest: descripteurManifeste,

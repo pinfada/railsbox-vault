@@ -43,7 +43,11 @@ import { FORMAT_VOLUME_V3, tailleDeFichier } from "../../src/vm/volume-chiffre-f
 import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { E2E_ORIGIN_A } from "../../playwright.e2e.config.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
-import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
+import {
+  disqueSystemeDuManifeste,
+  graineDuManifeste,
+  empreintesDuBootDuManifeste,
+} from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -151,6 +155,7 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+    empreintes: empreintesDuBootDuManifeste(manifeste),
     disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   const configBoot = {
@@ -597,6 +602,7 @@ test("PALIER v3 — un volume v3 RÉEL est SAUVEGARDÉ par le runtime v4, puis m
       vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
       kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
       initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+      empreintes: empreintesDuBootDuManifeste(manifeste),
       disqueSysteme: disqueSystemeDuManifeste(manifeste),
     },
     manifest: descripteurCourant,

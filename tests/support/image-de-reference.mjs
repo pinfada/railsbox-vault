@@ -32,6 +32,26 @@ export function disqueSystemeDuManifeste(manifeste) {
 }
 
 /**
+ * Les EMPREINTES du noyau, de l'initrd et des deux BIOS, telles que le descripteur servi les porte
+ * (`boot.empreintes`) : le banc les reçoit du manifeste d'image, jamais d'ailleurs. Aucun octet de
+ * boot n'atteint le guest sans empreinte épinglée (revue de #298, constat 2 ; ADR 0046).
+ *
+ * @param {Record<string, any>} manifeste
+ */
+export function empreintesDuBootDuManifeste(manifeste) {
+  const pin = (role) => {
+    const { byteSize, sha256 } = artefact(manifeste, manifeste.boot[role]);
+    return { sha256, octets: byteSize };
+  };
+  return {
+    kernel: pin("kernel"),
+    initrd: pin("initrd"),
+    bios: pin("bios"),
+    vgaBios: pin("vgaBios"),
+  };
+}
+
+/**
  * Le RUNTIME que `acquerirRuntime` attend : les artefacts v86 épinglés, les tampons de l'image, et
  * le disque système composé.
  *
@@ -46,6 +66,7 @@ export function runtimeDuManifeste(manifeste, adressesV86) {
     vgaBios: `${PREFIXE}${manifeste.boot.vgaBios}`,
     kernel: `${PREFIXE}${manifeste.boot.kernel}`,
     initrd: `${PREFIXE}${manifeste.boot.initrd}`,
+    empreintes: empreintesDuBootDuManifeste(manifeste),
     disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
 }

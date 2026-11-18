@@ -164,10 +164,3 @@ test("hors connexion, adressesDuRuntime n'appelle PAS le réseau : le manifeste 
   assert.deepEqual(runtime.manifesteV86, MANIFESTE_V86);
   assert.match(runtime.lib, /libv86-4444444444444444\.mjs$/);
 });
-
-test("sans empreintes au descripteur, le runtime les rend nulles", async () => {
-  const runtime = await adressesDuRuntime(descripteurDEpreuve(), {
-    recuperer: async () => ({ ok: true, json: async () => MANIFESTE_V86 }),
-  });
-  assert.equal(runtime.empreintes, null);
-});

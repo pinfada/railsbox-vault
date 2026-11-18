@@ -20,6 +20,7 @@ import {
 } from "../../src/coquille/dephasage.mjs";
 import { formeDuDescripteur } from "../../src/coquille/descripteur-applicatif.mjs";
 import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 const M = "20260101000002";
 const N = "20260919000001";
@@ -45,6 +46,7 @@ function descripteur(surcharge = {}) {
       initrd: "i",
       bios: "b",
       vgaBios: "v",
+      empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
     },
     prefixeDesArtefacts: "/artifacts/reference-image/",
     ...surcharge,

@@ -18,6 +18,7 @@
 // mesuré ici est l'ORDRE — et l'ordre se prouve par le refus de son inverse, qui ne demande aucun
 // artefact.
 
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
@@ -825,6 +826,7 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
         initrd: "reference-rootfs-initrd",
         bios: "seabios.bin",
         vgaBios: "vgabios.bin",
+        empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
       },
       prefixeDesArtefacts: "https://ailleurs.test/",
     }),
@@ -881,6 +883,7 @@ function descripteurDeReprise(octets) {
       initrd: "i",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
     },
     prefixeDesArtefacts: "/artifacts/reprise-test/",
   };

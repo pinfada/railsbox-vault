@@ -173,6 +173,13 @@ for (const nom of NOMS) {
   });
 }
 
+test("une clé d'épingle MANQUANTE (pas même `null`) est aussi une épingle absente", async () => {
+  const m = monde();
+  delete m.pins.kernel;
+  await assert.rejects(acquerir(m), /kernel.*empreinte/i);
+  assert.equal(m.requetes.length, 0);
+});
+
 test("une admission refusée par le budget ne fait pas échouer le démarrage : réserve incomplète", async () => {
   const m = monde();
   m.magasin = creerMagasinDArtefacts({

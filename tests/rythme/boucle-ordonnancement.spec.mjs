@@ -23,7 +23,11 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "../e2e/contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
-import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
+import {
+  disqueSystemeDuManifeste,
+  graineDuManifeste,
+  empreintesDuBootDuManifeste,
+} from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -140,6 +144,7 @@ test("coût de la boucle de Vault sur l'image de référence : cinq essais par b
       vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
       kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
       initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+      empreintes: empreintesDuBootDuManifeste(manifeste),
       disqueSysteme: disqueSystemeDuManifeste(manifeste),
     },
     manifest: descripteurManifeste,

@@ -26,6 +26,7 @@ import { SHELL_ORIGIN, SHELL_PORT } from "../../src/spike/origin-topology.mjs";
 import { ARCHIVE_ERROR_CODES } from "../../src/vm/archive-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 /** L'AUTRE origine de confiance : le même serveur, un autre nom, donc un autre OPFS. */
 const AUTRE_ORIGINE = `http://localhost:${SHELL_PORT}`;
@@ -58,6 +59,7 @@ const DESCRIPTEUR = {
     initrd: "i",
     bios: "seabios.bin",
     vgaBios: "vgabios.bin",
+    empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
   },
   prefixeDesArtefacts: "/artifacts/portabilite-test/",
 };

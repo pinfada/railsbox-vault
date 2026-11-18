@@ -51,7 +51,11 @@ import { fileURLToPath } from "node:url";
 import { INSTANTANE_ERROR_CODES } from "../../src/vm/instantane/instantane-errors.mjs";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
-import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
+import {
+  disqueSystemeDuManifeste,
+  graineDuManifeste,
+  empreintesDuBootDuManifeste,
+} from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -146,6 +150,7 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+    empreintes: empreintesDuBootDuManifeste(manifeste),
     disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   const descripteurManifeste = {

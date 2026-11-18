@@ -20,6 +20,7 @@ import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.
 import { IDENTIFIANT_DU_COFFRE } from "../../src/coquille/identites-du-coffre.mjs";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { createManifest, serializeManifest } from "../../src/vm/volume-manifest.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 const DELAI = 90_000;
 const PHRASE = "marqueur-de-phrase-du-parcours-250-une-phrase-assez-longue";
@@ -53,6 +54,7 @@ function descripteurDEpreuve(octets, { gzip = false } = {}) {
       initrd: "i",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
     },
     prefixeDesArtefacts: "/artifacts/installation-interrompue/",
   };

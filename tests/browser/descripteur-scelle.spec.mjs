@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "../support/test.mjs";
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 // FRONTIÈRE du DESCRIPTEUR SCELLÉ, sur les trois moteurs (#247, D1g ; ADR 0045).
 //
@@ -51,6 +52,7 @@ const DESCRIPTEUR = {
     initrd: "i",
     bios: "seabios.bin",
     vgaBios: "vgabios.bin",
+    empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
   },
   prefixeDesArtefacts: "/artifacts/epreuve/",
 };
