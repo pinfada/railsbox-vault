@@ -4,6 +4,7 @@
 // l'éprouve sur une page factice : ce qui disparaît de l'écran n'y laisse pas de demande périmée.
 
 import { suivreLaConfirmationDeRevocation } from "./confirmation-de-la-revocation.mjs";
+import { poserLaSortie } from "./sortie-de-la-revocation.mjs";
 
 /** Les sections qui regroupent des blocs : cachées quand aucun de leurs blocs n'est montré. */
 export const SECTIONS = ["deverrouillage", "feuille", "cycle", "portabilite"];
@@ -14,9 +15,10 @@ export const SECTIONS = ["deverrouillage", "feuille", "cycle", "portabilite"];
  *
  * @param {{ doc: { querySelectorAll: (s: string) => Iterable<any> },
  *           noeud: (id: string) => any, visibles: readonly string[], vueComplete: boolean,
- *           dire: (id: string, texte: string) => void, releve: object }} page
+ *           dire: (id: string, texte: string) => void, releve: object,
+ *           revocation?: { ligneDePortabilite?: string | null, revocationIncertaine?: boolean } }} page
  */
-export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve }) {
+export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve, revocation }) {
   for (const element of doc.querySelectorAll("[data-bloc]")) {
     element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);
   }
@@ -27,4 +29,5 @@ export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, relev
       !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);
   }
   suivreLaConfirmationDeRevocation({ noeud, dire, releve });
+  if (revocation !== undefined) poserLaSortie({ noeud, ...revocation });
 }

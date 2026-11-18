@@ -494,6 +494,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       vueComplete,
       dire,
       releve,
+      revocation: {
+        ligneDePortabilite: noeud("portabilite-etat")?.textContent,
+        revocationIncertaine: etat.revocationIncertaine === true,
+      },
       visibles:
         applicationVisible && !visibles.includes("espace-de-travail")
           ? [...visibles, "espace-de-travail"]
