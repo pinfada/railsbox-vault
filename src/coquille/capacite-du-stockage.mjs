@@ -128,3 +128,8 @@ export function refusDeCapacite(capacite) {
   }
   return null;
 }
+
+/** ROUGE : stub — une lecture en échec ne change rien. */
+export function apresUnEchecDeLecture(capacite) {
+  return capacite;
+}
