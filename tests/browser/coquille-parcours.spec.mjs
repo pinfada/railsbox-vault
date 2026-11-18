@@ -22,8 +22,8 @@
 // rechargements : le produit n'en tient aucun.
 
 import { expect, test } from "../support/test.mjs";
+import { ETATS_SANS_VOLUME } from "../support/refus-de-capacite.mjs";
 
-import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { TYPES_PRIVILEGIES } from "../../src/coquille/contrat-de-messages.mjs";
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 
@@ -69,7 +69,7 @@ async function ouvrirLaCoquille(page, requete = "") {
  */
 async function exigerLaLimiteDuMoteur(page) {
   await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBeTruthy();
-  if ((await releve(page)).etat !== ETATS_DU_VOLUME.indisponible) return false;
+  if (!ETATS_SANS_VOLUME.includes((await releve(page)).etat)) return false;
   await bouton(page, "Commencer").click();
   await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
   await bouton(page, "Créer mon coffre").click();

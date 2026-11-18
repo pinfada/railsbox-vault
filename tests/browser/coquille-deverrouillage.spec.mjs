@@ -43,6 +43,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
+import { ETATS_SANS_VOLUME } from "../support/refus-de-capacite.mjs";
 
 import { ATTENTE_MESUREE } from "../../src/coquille/attente-annoncee.mjs";
 import { DELAI_PASSKEY_MS } from "../../src/coquille/moyens-de-deverrouillage.mjs";
@@ -237,7 +238,7 @@ async function porte(page) {
   await expect
     .poll(async () => (await releve(page)).etat, { timeout: DELAI })
     .not.toBe(ETATS_DU_VOLUME.verrouille);
-  return (await releve(page)).etat !== ETATS_DU_VOLUME.indisponible;
+  return !ETATS_SANS_VOLUME.includes((await releve(page)).etat);
 }
 
 /**
@@ -255,7 +256,7 @@ async function porte(page) {
  */
 async function exigerLaLimiteDuMoteur(page, info, nom) {
   const rapport = await releve(page);
-  if (rapport.etat !== ETATS_DU_VOLUME.indisponible) return false;
+  if (!ETATS_SANS_VOLUME.includes(rapport.etat)) return false;
   await attacher(info, `limite-${nom}`, {
     moteur: info.project.name,
     etat: rapport.etat,
@@ -283,7 +284,7 @@ async function exigerLaLimiteDuMoteur(page, info, nom) {
  */
 async function exigerLEtatFerme(page) {
   const etat = (await releve(page)).etat;
-  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...ETATS_SANS_VOLUME]).toContain(etat);
   return etat;
 }
 
@@ -350,7 +351,7 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
     .poll(
       async () => {
         const vu = await releve(page);
-        return vu.etat === ETATS_DU_VOLUME.indisponible || vu.journal.includes("volume-ouvert");
+        return ETATS_SANS_VOLUME.includes(vu.etat) || vu.journal.includes("volume-ouvert");
       },
       { timeout: DELAI },
     )
@@ -373,7 +374,7 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
   expect(annonces.some((texte) => texte.includes("coûteuse"))).toBe(true);
   expect(annonces.some((texte) => texte.includes("Dérivation en cours"))).toBe(true);
 
-  if (rapport.etat === ETATS_DU_VOLUME.indisponible) {
+  if (ETATS_SANS_VOLUME.includes(rapport.etat)) {
     // WebKit : l'état DIT l'absence — l'OPFS synchrone manque au Worker —, et le geste n'est pas
     // compté comme un échec de phrase. L'annonce a tout de même été faite, ci-dessus : la coquille
     // ne sait pas d'avance que ce moteur répondra vite.
