@@ -942,9 +942,11 @@ de bout en bout que sous CHROMIUM, Rails n'ayant jamais répondu dans le guest s
 tourne six fois moins vite : un boot Rails y demande environ dix minutes, et le silence du pont
 observé à quinze minutes reste inexpliqué) ; et rien n'est su de ce qu'il fait d'une application
 Rails autre que celle de référence. **Aucun Service Worker sur l'origine de confiance** : le refus
-de l'ADR 0030 décision 4 est inchangé, et celui de la coquille de cadre vit sur l'origine
-APPLICATIVE, où l'ADR 0002 l'autorise nommément — il n'ouvre aucune voie vers la coquille que le
-port restreint n'ouvre déjà.
+de l'ADR 0030 décision 4 est inchangé (une révision est décidée par
+l'[ADR 0048](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
+mais **n'est pas en vigueur** avant D1h-b : voir § « Aucun Service Worker sur l'origine de confiance
+»), et celui de la coquille de cadre vit sur l'origine APPLICATIVE, où l'ADR 0002 l'autorise
+nommément — il n'ouvre aucune voie vers la coquille que le port restreint n'ouvre déjà.
 
 | Invariant                              | Statut                  | Réserve, quand il y en a une                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Épreuve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1088,6 +1090,21 @@ restent assumés et écrits.**
 
 ## Aucun Service Worker sur l'origine de confiance
 
+> **État au 18/11/2026.** Cette section porte **deux rédactions**. La **règle en vigueur** est celle
+> du 07/09/2026 (ci-dessous, inchangée) : **aucun Service Worker n'existe sur l'origine de
+> confiance.** Le mainteneur a décidé le 18/11/2026
+> ([#299](https://github.com/pinfada/railsbox-vault/issues/299), option (b)) qu'**un seul** Service
+> Worker de la coquille servira la réserve hors connexion ;
+> l'[ADR 0048](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
+> la décrit et la **révise**. La rédaction révisée est donnée plus bas : **elle n'est PAS en
+> vigueur**. Elle le devient à la fusion de la tranche **D1h-b** (l'implémentation, qui ferme #299).
+> À cette fusion, la rédaction du 07/09/2026 passe en historique et celle-ci devient la règle. Tant
+> que D1h-b n'est pas fusionnée, aucun Service Worker n'est publié, et
+> `tests/unit/coquille-sans-service-worker.test.mjs` continue de rougir si un appel d'enregistrement
+> apparaît.
+
+### Règle EN VIGUEUR — rédaction du 07/09/2026 (jusqu'à la fusion de D1h-b)
+
 C'est une décision, pas une abstention (#163,
 [ADR 0030](docs/decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md), décision 4). La question
 était ouverte : l'ADR 0010 la posait nommément — « #24 doit dire si un Service Worker injectant COOP
@@ -1114,6 +1131,82 @@ appartient.
 #163, et attesté par `window.opener === null` sur les trois moteurs. Il ferme une relation de
 **fenêtres** ; il ne cloisonne aucun stockage, et `SEC-ORIGIN-001` reste démontré par la partition
 d'origine.
+
+### Rédaction RÉVISÉE du 18/11/2026 — « Aucun autre Service Worker que celui de la réserve » (ADR 0048 ; **pas encore en vigueur**)
+
+Le refus d'un Service Worker **quelconque** devient le refus de **tout Service Worker autre qu'un
+seul**, `/sw-coquille.mjs`, classique, sans `import`, à la racine, **généré et épinglé dans la
+publication**. Les motifs de l'ADR 0030 sont repris un à un par l'ADR 0048 § 15 : le code privilégié
+interposé est **accepté** (un seul, épinglé, éprouvé, qui ne voit aucune clé) ; la survie à la
+fermeture de l'onglet est **la fonction** ; la mise à jour par un chemin distinct est **encadrée**
+(version = contenu, jamais en cours de session) ; « l'hébergeur à en-têtes rend le SW inutile » est
+**faux pour le hors connexion et pour la liaison** des octets exécutés, qu'aucun en-tête n'apporte.
+Le SW n'est **pas** une substitution à l'hébergeur à en-têtes (ADR 0017 § 3 bis) : il rejoue
+`securityHeaders()`, il ne les invente pas. `worker-src 'self'` est inchangé, **`blob:` n'entre
+pas** (ADR 0013).
+
+**Ce qu'il protège** (mesuré sur le banc `tools/spike-sw-coquille/`, trois moteurs, 18/11/2026) :
+l'accident (cache à côté d'une autre version, octet retourné, installation interrompue, éviction
+partielle) ; une **origine qui répond autrement selon la requête**, après l'installation : les
+octets exécutés sont ceux de la réserve vérifiée ; un écrivain de même origine dans le `Cache`
+(détecté à chaque service) ; le **mélange de versions** en session (une mise à jour ne s'applique
+qu'à la disparition de **tous** les clients de l'ancienne version) ; la disponibilité hors
+connexion, après fermeture du navigateur.
+
+**Ce qu'il ne protège PAS** :
+
+- **une origine hostile qui sert un Service Worker hostile.** La liste d'empreintes est dans le
+  script que l'origine contrôle ; un SW altéré s'installe comme une mise à jour. **Rien n'y répond
+  avant la signature des paquets (jalon 6).** La liaison est _relative_ à la liste du SW ;
+- la **première visite** et toute page **sans contrôleur** : confiance à la première utilisation, le
+  bootstrap (`index.html`, `main.mjs` et ses imports) n'est pas vérifié ; la garantie commence au
+  premier client **contrôlé** ;
+- le **gel de version** et le **retour arrière** : une réserve ancienne reste servie hors connexion,
+  indéfiniment si l'origine disparaît ; une origine peut publier une version plus ancienne (elle est
+  **dite**, pas empêchée) ; aucune durée maximale hors connexion ;
+- **la persistance d'un SW altéré** : il reste actif jusqu'à ce que le navigateur voie un script
+  différent (une navigation le redemande ici, la spécification n'exige que 24 h, et le comportement
+  n'est pas garanti : mesuré variable sur Chromium). Il peut servir du code hostile pendant
+  l'intervalle ;
+- une **fenêtre ouverte depuis longtemps**, qui reste sur sa version : elle l'affiche, avec son
+  statut de vérification ;
+- `v86.wasm` et ce que porte `/artifacts/` : liés par le magasin d'artefacts (ADR 0044/0046), pas
+  par le SW.
+
+**Le plancher de révocation n'est pas une protection.** Il est **non signé** : c'est un signal de
+révocation **connue**, rien de plus — ni contre une origine hostile (qui peut le refuser ou publier
+plus ancien), ni contre le gel, ni contre le retour arrière, **sans promesse de fraîcheur**. Hors
+connexion, une révocation est invisible. Les sept états de fraîcheur (vérification en cours,
+échouée, version courante non vérifiable, mise à jour prête, révocation connue, attente muette non
+vérifiable, version en attente différente ou plus ancienne) disent **ce qui a été observé**, jamais
+« à jour » ; seule une révocation **connue** refuse le déverrouillage. Cet état est **monotone** (il
+ne recule jamais pendant la vie de la page), partagé par l'observateur et par tous les portails, et
+relu **dans le même tour**, sans `await`, juste avant la création du Worker de confiance : une
+révocation observée pendant une vérification suspendue n'est pas contournée. Une révocation **non
+encore observée** reste hors de portée.
+
+**Le refus sans Service Worker est un coût d'accès, assumé.** Sans l'API, sans contrôleur ou sans
+réserve installable (navigation privée de certains navigateurs, modes ou politiques qui désactivent
+les SW, quota), la coquille **refuse de démarrer** (`VAULT_COQUILLE_RESERVE_ABSENTE`) : un seul
+chemin de code, la liaison inconditionnelle. Aucun mode « en ligne, sans réserve ».
+
+**Surveillance.** L'absence devient une **liste blanche** : exactement un appelant d'enregistrement
+dans l'arbre `coquille`, exactement un script SW publié ; côté `application`, uniquement
+`service-worker-du-cadre.mjs`. Le Service Worker applicatif (ADR 0038) reste sur **son** origine :
+le SW de la coquille n'y voit aucune requête, et le cadre applicatif ne peut pas enregistrer de SW
+sur l'origine de la coquille.
+
+**Retrait.** Un script de retrait publié à la **même URL** (un 404 ou un 410 ne retire rien) ; il
+suit la règle d'activation commune (tous les clients disparus) ; un geste de la personne retire la
+copie. Le retrait est **borné à l'inscription de la coquille et aux caches `reserve-*`**. L'URL et
+le préfixe de cache sont **stables, pas irréversibles** ; la procédure d'évolution est écrite (ADR
+0048 § 11) et **non éprouvée**.
+
+**Non prouvé** : Safari macOS/iOS réel, éviction réelle, règle des 7 jours d'ITP, navigation privée
+réelle, hébergeur réel, boot Rails sous Firefox, déverrouillage et boot sous WebKit (OPFS absent du
+build de test), rechargement forcé, bfcache, la procédure de migration de l'URL. **Le banc n'est pas
+le produit** : le portail typé, l'enregistrement par la page et la liste générée à la publication
+sont livrés par D1h-b, avec une campagne de mutation du source (`reserve`).
 
 ## Gates d'utilisation
 
