@@ -94,8 +94,11 @@ Fichier `vault-artefacts/descripteur.scelle`, gros-boutiste :
   remplacé par le démarrage EN LIGNE suivant.
 - **Écriture** : sous `descripteur.scelle.partiel`, écrite ENTIÈRE, puis le nom définitif est
   remplacé (suppression de l'ancien, renommage). Les primitives n'ont pas de troncature ; une
-  coupure entre les deux laisse « aucun descripteur » — jamais un fichier à moitié neuf, que le
-  sceau refuserait de toute façon. La purge du magasin ne retire jamais ce nom.
+  coupure entre les deux laisse « aucun descripteur ». Le renommage n'est atomique que si l'OPFS
+  offre `move` ; à défaut (`magasin-opfs.mjs`), le fichier est COPIÉ puis l'ancien supprimé, et une
+  coupure pendant la copie peut laisser un fichier incomplet : la garantie n'est pas l'atomicité,
+  c'est que le sceau — vérifié avant toute lecture du contenu — **refuse un fichier incomplet ou
+  altéré**, quel qu'en soit le motif. La purge du magasin ne retire jamais ce nom.
 
 ### 3. « Injoignable » = un `TypeError` levé par `fetch` sur le descripteur, et rien d'autre
 
@@ -154,10 +157,22 @@ d'être lu.
   descripteur scellé (la forme est rejouée : un descripteur scellé avant cette règle est refusé sur
   son contenu, et remplacé par le démarrage en ligne suivant). `image:manifest` les produit TOUJOURS
   : un manifeste d'image qui ne décrit pas l'un des quatre artefacts fait échouer la fabrication au
-  lieu de produire un descripteur dégradé. `descripteurVersion` reste **2** : aucun déploiement réel
-  n'existe (ADR 0041), le descripteur et la coquille qui le lit partent ensemble, et une version 3
-  n'apporterait que de quoi refuser, ce que la forme fait déjà. Le lecteur d'avant ce lot ignorait
-  le bloc : le retour arrière est sans effet sur lui.
+  lieu de produire un descripteur dégradé. **`descripteurVersion` passe à 3** (revue du second tour
+  de #298, constat 1). Garder le numéro 2 laissait un ancien lecteur — un onglet resté ouvert, une
+  coquille en cache — accepter le nouveau descripteur en ignorant `boot.empreintes`, donc démarrer
+  sans la vérification que le contrat exige : « le descripteur et la coquille partent ensemble » ne
+  démontre pas que les anciens lecteurs ont disparu. Le lecteur de `86ae8dc` (celui de `main` avant
+  cette PR) refuse une v3 par `version de descripteur inconnue : 3` — aucune application n'est
+  démarrée —, et le nouveau lecteur ne lit QUE la v3 : la v2 est refusée de la même façon
+  (`version de descripteur inconnue : 2`), même complète.
+  `tests/unit/coquille-compatibilite-ancien-lecteur.test.mjs` importe l'ancien lecteur tel quel
+  (`tests/support/lecteur-de-main-86ae8dc/`) et éprouve les deux sens ; deux mutants gardent le
+  numéro (lecteur et fabrication). **Ce que devient un descripteur v2 rangé et scellé avant la
+  règle** : le sceau porte la v2, l'ouverture rejoue `formeDuDescripteur` et le refuse sur son
+  contenu (`HORS_LIGNE_DESCRIPTEUR_REFUSE`, raison `contenu`), sans repli ; le démarrage en ligne
+  suivant range un v3. Aucun fichier de cette sorte n'existe hors développement : le hors ligne
+  n'était pas implémenté avant la PR. Un retour arrière (revert) rend à l'ancien lecteur son
+  descripteur v2 : l'origine doit servir celui d'avant, ce que la publication fait avec le code.
 - **Défense en profondeur** : `acquerirLesPetitsArtefacts` refuse AVANT tout téléchargement une
   épingle absente (`null` ou clé manquante) — y compris celle du wasm, qui ne se trouverait pas au
   manifeste v86 —, quel que soit l'appelant : les bancs de bout en bout reçoivent leurs empreintes
@@ -212,11 +227,15 @@ code de la coquille » de #299, plus dure que « non garantie » : **tant que le
 avec une fraîcheur, ou par un Service Worker, il n'y a pas de démarrage hors connexion en
 production.** Cette tranche livre la DÉCISION (repli sur le descripteur scellé, lecture de la
 réserve, refus typés) ; la condition qu'elle suppose — le code de la coquille disponible sans réseau
-— relève de #299. L'E2E la modélise par un harnais : `VAULT_E2E_CODE_MAX_AGE` (`tools/serve.mjs`)
-donne au code (hors `/artifacts/`, qui reste `no-cache` : c'est l'origine « injoignable ») une
-fraîcheur, et le scénario l'exige en préalable. Avec lui, le scénario passe sur l'image réelle :
-premier boot en ligne, redémarrage réseau coupé depuis la réserve sans un octet d'image par le
-réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
+— relève de #299. L'E2E la modélise par un harnais : `VAULT_E2E_CODE_MAX_AGE` (`tools/serve.mjs`,
+seul endroit où elle est lue) donne au code (hors `/artifacts/`, qui reste `no-cache` : c'est
+l'origine « injoignable ») une fraîcheur, et le scénario l'exige en préalable. **Le harnais est
+borné au banc** : il exige la variable ET le drapeau `--harnais-e2e-hors-ligne`, que seul
+`playwright.e2e.config.mjs` passe au serveur de la coquille ; l'un sans l'autre, le serveur refuse
+de démarrer (un `npm start` dont l'environnement porterait la variable ne change jamais d'en-têtes
+en silence ; `tests/unit/serve-harnais-hors-ligne.test.mjs`). Avec lui, le scénario passe sur
+l'image réelle : premier boot en ligne, redémarrage réseau coupé depuis la réserve sans un octet
+d'image par le réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
 
 ### 7. Ce que la personne voit
 

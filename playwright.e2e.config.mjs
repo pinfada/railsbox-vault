@@ -119,7 +119,10 @@ export default defineConfig({
       // drapeau elle nomme l'origine par défaut du dépôt (`localhost:4174`) — le cadre vers
       // `localhost:4180` est alors refusé par la politique, et le document applicatif ne se charge
       // jamais. La frontière fonctionnait ; c'est le serveur qui ne servait pas la bonne.
-      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_COQUILLE_PORT} --app-origin ${E2E_ORIGIN_COQUILLE_APP}`,
+      // `--harnais-e2e-hors-ligne` : SEUL ce serveur le reçoit, et il n'a d'effet que si `VAULT_E2E_CODE_MAX_AGE` est
+      // posée (le lot 5 de `reprise.yml`) ; sans la variable, le serveur refuse de démarrer SEULEMENT si le drapeau
+      // est là — d'où la condition ci-dessous (`tools/serve.mjs`, ADR 0046 § 6).
+      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_COQUILLE_PORT} --app-origin ${E2E_ORIGIN_COQUILLE_APP}${process.env.VAULT_E2E_CODE_MAX_AGE ? " --harnais-e2e-hors-ligne" : ""}`,
       url: `${E2E_ORIGIN_COQUILLE}/index.html`,
       reuseExistingServer: false,
     },

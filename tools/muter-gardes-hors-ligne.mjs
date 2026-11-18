@@ -46,6 +46,7 @@ const T = {
   annulation: "tests/unit/vm-magasin-annulation-a-chaque-attente.test.mjs",
   accueil: "tests/unit/coquille-accueil-mise-a-jour.test.mjs",
   compat: "tests/unit/coquille-compatibilite-ancien-lecteur.test.mjs",
+  reserve: "tests/unit/vm-reserve-complete-du-boot.test.mjs",
   cle: "tests/unit/vm-cle-du-descripteur-scelle.test.mjs",
   demarrage: "tests/unit/coquille-demarrage-hors-connexion.test.mjs",
   preparation: "tests/unit/coquille-preparation-du-demarrage.test.mjs",
@@ -527,13 +528,12 @@ export const MUTATIONS = Object.freeze([
     epreuves: [T.empreintes],
   },
   {
-    nom: "PRODUCTION : la réserve transmise au crochet de scellement exige le rootfs ET le paquet",
-    garde: "loadRuntime — reserveComplete (l'expression exécutée par le boot)",
+    nom: "le boot calcule la réserve par reserveTientTout, la fonction mutée ci-dessous (une seule définition)",
+    garde: "loadRuntime — reserveComplete = reserveTientTout(...)",
     fichier: ARTEFACTS,
-    avant:
-      "    reserveComplete:\n      petits.complet && Object.values(disqueSysteme.mesures.magasin).every(dansLaReserve),\n",
+    avant: "    reserveComplete: reserveTientTout(petits, disqueSysteme.mesures),\n",
     apres: "    reserveComplete: petits.complet,\n",
-    epreuves: [T.preparation, T.petits, T.disque, T.intention],
+    epreuves: [T.reserve],
   },
   {
     nom: "la réserve n'est complète que si TOUT y est",
@@ -541,7 +541,7 @@ export const MUTATIONS = Object.freeze([
     fichier: ARTEFACTS,
     avant: "  return petits.complet && Object.values(disque.magasin).every(dansLaReserve);\n",
     apres: "  return petits.complet;\n",
-    epreuves: [T.preparation],
+    epreuves: [T.preparation, T.reserve],
   },
   {
     nom: "un statut hors « servi/admis » n'est pas dans la réserve",

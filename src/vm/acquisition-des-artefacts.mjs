@@ -201,18 +201,23 @@ async function retenirLaReserve({ magasin, runtime, pins }) {
  * (#236, ADR 0041). Les deux morceaux restent exposés comme artefacts — ce sont eux, et non le
  * disque composé, que l'empreinte d'image et la liaison d'un instantané nomment.
  */
-async function loadRuntime(runtime) {
+export async function loadRuntime(
+  runtime,
+  {
+    magasin = ouvrirLeMagasinOpfs({
+      peutAdmettre: admissionSelonLeBudget(
+        createStorageBudget(bindNavigatorStorage(globalThis.navigator?.storage)),
+      ),
+    }),
+    acquerirLeDisque = acquerirLeDisqueSysteme,
+  } = {},
+) {
   const horsConnexion = runtime.horsConnexion === true;
   const manifeste = runtime.manifesteV86 ?? (await chargerAdressesV86()).manifeste;
-  const magasin = ouvrirLeMagasinOpfs({
-    peutAdmettre: admissionSelonLeBudget(
-      createStorageBudget(bindNavigatorStorage(globalThis.navigator?.storage)),
-    ),
-  });
   const pins = epinglesDuRuntime(runtime, manifeste);
   const petits = await acquerirLesPetitsArtefacts({ runtime, pins, magasin, horsConnexion });
   const { wasm, bios, vgaBios, kernel, initrd } = petits.octets;
-  const disqueSysteme = await acquerirLeDisqueSysteme({
+  const disqueSysteme = await acquerirLeDisque({
     ...runtime.disqueSysteme,
     magasin,
     horsConnexion,
@@ -239,8 +244,8 @@ async function loadRuntime(runtime) {
     disqueSysteme: disqueSysteme.mesures,
     empreintesVerifiees: disqueSysteme.empreintesVerifiees,
     // La réserve tient-elle TOUT ce que le boot a lu ? Seul un oui autorise à ranger le descripteur.
-    reserveComplete:
-      petits.complet && Object.values(disqueSysteme.mesures.magasin).every(dansLaReserve),
+    // UNE seule définition, celle que le boot exécute : `reserveTientTout`.
+    reserveComplete: reserveTientTout(petits, disqueSysteme.mesures),
     petitsArtefacts: petits.magasin,
   };
 }

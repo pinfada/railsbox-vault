@@ -25,19 +25,38 @@ const artifactRoot = resolve("artifacts");
 const options = parseServerOptions(process.argv.slice(2), process.env);
 
 /**
- * HARNAIS de l'E2E hors ligne SEULEMENT (#247, D1g ; ADR 0046 § 6, #299) : `VAULT_E2E_CODE_MAX_AGE=<s>`
- * donne au CODE de la coquille (tout ce que la politique de cache classe `coquille`, hors
- * `/artifacts/`) une fraîcheur de `<s>` secondes. Les en-têtes de production le laissent en
- * `no-cache` : un Worker NEUF, créé réseau coupé, ne peut alors pas importer ses modules, et le
- * démarrage hors connexion échoue AVANT de lire la réserve — mesuré le 18/11/2026, c'est la moitié
- * « code de la coquille » de #299. Ce harnais modélise la condition préalable que la décision de
- * #299 devra garantir (code en cache) pour éprouver ce que cette tranche livre : la décision de
- * repli et la lecture de la réserve. `/artifacts/` (le descripteur, l'image) reste `no-cache` : c'est
- * cela, l'origine « injoignable ». Jamais posé par `npm start`.
+ * HARNAIS de l'E2E hors ligne SEULEMENT (#247, D1g ; ADR 0046 § 6, #299) : donne au CODE de la coquille (tout ce
+ * que la politique de cache classe `coquille`, hors `/artifacts/`) une fraîcheur de `<s>` secondes. Les en-têtes de
+ * production le laissent en `no-cache` : un Worker NEUF, créé réseau coupé, ne peut alors pas importer ses modules,
+ * et le démarrage hors connexion échoue AVANT de lire la réserve — c'est la moitié « code de la coquille » de #299.
+ * Ce harnais modélise la condition que la décision de #299 devra garantir, pour éprouver ce que cette tranche livre.
+ *
+ * **Borné au banc de test** (revue de #298, second tour, constat 4) : il exige DEUX choses, la variable
+ * `VAULT_E2E_CODE_MAX_AGE=<s>` ET le drapeau `--harnais-e2e-hors-ligne`, que seul `playwright.e2e.config.mjs` passe,
+ * au serveur de la coquille. L'un sans l'autre, le serveur REFUSE de démarrer : un `npm start` dont l'environnement
+ * porterait la variable ne change jamais d'en-têtes en silence. Cette variable n'est lue qu'ici.
  */
-const dureeDuCodeEnCache = Number.parseInt(process.env.VAULT_E2E_CODE_MAX_AGE ?? "", 10);
+const FANION_DU_HARNAIS = "--harnais-e2e-hors-ligne";
+const dureeDuCodeEnCache = lireLeHarnais(process.argv.slice(2), process.env);
+
+/** @returns {number | null} la fraîcheur du code en secondes, ou `null` sans harnais ; arrête le processus si mal posé. */
+function lireLeHarnais(argv, env) {
+  const valeur = env.VAULT_E2E_CODE_MAX_AGE;
+  const fanion = argv.includes(FANION_DU_HARNAIS);
+  if (valeur === undefined && !fanion) return null;
+  const secondes = /^[1-9][0-9]*$/.test(valeur ?? "") ? Number.parseInt(valeur, 10) : null;
+  if (!fanion || secondes === null) {
+    process.stderr.write(
+      `Harnais de cache du code refusé : VAULT_E2E_CODE_MAX_AGE (secondes, entier positif) et ${FANION_DU_HARNAIS} ` +
+        "vont ENSEMBLE, et seul le banc de l'E2E hors ligne (playwright.e2e.config.mjs) les pose.\n",
+    );
+    process.exit(1);
+  }
+  return secondes;
+}
+
 function enTetesDeCacheDuHarnais(pathname) {
-  if (!Number.isInteger(dureeDuCodeEnCache) || dureeDuCodeEnCache <= 0) return {};
+  if (dureeDuCodeEnCache === null) return {};
   if (pathname.startsWith("/artifacts/")) return {};
   if (natureDArtefact({ role: options.role, pathname }) !== NATURES_DARTEFACT.coquille) return {};
   return { "Cache-Control": `public, max-age=${dureeDuCodeEnCache}` };
