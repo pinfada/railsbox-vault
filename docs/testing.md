@@ -2544,7 +2544,16 @@ sans `load` du second contexte (`tests/apparence/parcours.spec.mjs`, 15/09, une 
 0 échec sur 90 exécutions WebKit locales (cinq passes des dix-huit épreuves), le 18/11/2026 — ; et
 `coquille-frontiere.spec.mjs` « témoin positif » (`html[data-hostile]` resté `demarrage` après 60 s,
 18/11/2026 01:50 UTC, run 44216457749, verte à la relance). Cette dernière a été **reproduite en
-local** : voir le décompte ci-dessous. Aucun `retries` n'est ajouté, aucune épreuve n'est assouplie.
+local, sous une autre forme** : sur 440 exécutions WebKit de l'épreuve le 18/11/2026 (40 + 120 + 40
+sous saturation des quatre cœurs + 300 ; Playwright 1.65.0, x86_64, quatre cœurs), **3 échecs**,
+soit ≈ 0,7 %. Un seul a gardé sa trace (`--trace retain-on-failure`, 300 exécutions, 05:58–06:30
+UTC) : le `page.goto("/index.html?vue=complete")` de `ouvrirLaCoquille` n'a jamais reçu `load` en 60
+s, et la trace réseau montre la requête du document **sans réponse** (statut −1) — le même signe que
+la navigation sans `load` du second contexte d'apparence (famille de #178), avant que la coquille ne
+démarre. Ce n'est donc PAS la signature du 18/11 01:50 (`data-hostile` resté `demarrage`, page
+chargée), et l'attribution à la même cause reste une hypothèse. Non établi : si le document n'a pas
+été servi (serveur de l'épreuve) ou pas reçu (réseau du moteur). Aucun `retries` n'est ajouté,
+aucune épreuve n'est assouplie ; la mesure est celle d'une machine sans autre charge que la sienne.
 
 #### Le support des scénarios : un profil de navigateur PERSISTANT
 
