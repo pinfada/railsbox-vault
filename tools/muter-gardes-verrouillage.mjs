@@ -209,10 +209,19 @@ export const MUTATIONS = Object.freeze([
     fichier: VERROUILLAGE,
     avant:
       "  const etat =\n" +
-      "    etatConnu === ETATS_DU_VOLUME.indisponible\n" +
-      "      ? ETATS_DU_VOLUME.indisponible\n" +
+      "    etatConnu === ETATS_DU_VOLUME.indisponible || etatConnu === ETATS_DU_VOLUME.indetermine\n" +
+      "      ? etatConnu\n" +
       "      : ETATS_DU_VOLUME.verrouille;",
     apres: "  const etat = ETATS_DU_VOLUME.verrouille;",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "un stockage INDÉTERMINÉ ne se voit pas inventer un verrou",
+    garde: "conduiteApresLeVerrouillage — `indetermine` n'est pas `verrouille` (#231)",
+    fichier: VERROUILLAGE,
+    avant:
+      "    etatConnu === ETATS_DU_VOLUME.indisponible || etatConnu === ETATS_DU_VOLUME.indetermine\n",
+    apres: "    etatConnu === ETATS_DU_VOLUME.indisponible\n",
     epreuves: [EPREUVE],
   },
   {

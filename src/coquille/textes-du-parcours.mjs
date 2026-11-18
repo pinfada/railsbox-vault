@@ -49,6 +49,7 @@ export const ETAPES = Object.freeze([
  * sont bien ceux du document.
  */
 export const LIBELLES_DES_BLOCS = Object.freeze({
+  reessayer: ["« Réessayer »"],
   commencer: ["« Commencer »", "« J'ai déjà une sauvegarde »"],
   ancre: ["« Numéro de feuille noté sur votre feuille (facultatif) » (champ)"],
   phrase: ["« Votre phrase » (champ)", "« Créer mon coffre » ou « Ouvrir mon coffre »"],
@@ -206,6 +207,17 @@ export const ECRANS = Object.freeze({
       "modifié. Lisez le message ci-dessous : il dit quoi faire.",
     attendu: "Suivez les indications du message.",
     blocs: [],
+  }),
+  // Le stockage ne répond pas pour l'instant (#231) : l'inventaire est INCONNU. Ni création ni moyen
+  // d'ouverture ne sont proposés, et « Réessayer » relance la sonde puis l'inventaire, sans recharger.
+  inaccessible: ecran(1, {
+    titre: "Le stockage du navigateur ne répond pas pour l'instant",
+    ceQuiVaSePasser:
+      "RailsBox Vault ne peut pas lire ce que cet appareil contient : le navigateur ne répond pas pour " +
+      "l'instant, et la cause n'est pas établie. Rien n'est proposé tant qu'il ne répond pas, pour ne " +
+      "pas vous faire créer un coffre à la place de celui que vous avez peut-être déjà.",
+    attendu: "Cliquez sur « Réessayer ».",
+    blocs: ["reessayer"],
   }),
   creer: ecran(1, {
     titre: "Créer votre coffre",
@@ -499,6 +511,7 @@ export const PRINCIPAL_DE_L_ECRAN = Object.freeze({
   accueil: "demarrer-application",
   verrouiller: "verrouiller-le-coffre",
   rouvrir: "ouvrir-par-phrase",
+  inaccessible: "reessayer-le-stockage",
   sauvegarder: "sauvegarder-le-coffre",
   "restaurer-ailleurs": "parcours-continuer",
   restaurer: "restaurer-le-coffre",

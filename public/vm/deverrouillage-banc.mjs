@@ -15,6 +15,7 @@ import {
 import { preparerEmplacementDerive } from "/src/vm/derivation/emplacement-derive.mjs";
 import { decoderParametresPublics } from "/src/vm/derivation/parametres-publics.mjs";
 import { TYPES_KEK } from "/src/vm/enveloppe/identite-enveloppe.mjs";
+import { fouilleImpossible, racineDeLOpfs } from "../spike/origin/racine-opfs.mjs";
 
 const etat = document.querySelector("#etat");
 const rapport = document.querySelector("#rapport");
@@ -245,7 +246,8 @@ async function sondeStockages({ appat } = {}) {
   note("cookies", document.cookie);
   note("indexedDB", await lireIndexedDb());
   note("cacheStorage", await lireCacheStorage());
-  note("opfs", await lireOpfs());
+  const opfs = await lireOpfs();
+  morceaux.push({ ou: "opfs", ...opfs });
   note("port", JSON.stringify(reponses));
   note("envois", envois.join("\n"));
 
@@ -356,11 +358,21 @@ async function lireCacheStorage() {
   return morceaux.join("\n");
 }
 
-/** Lit TOUT l'OPFS, fichiers de volume et d'enveloppes compris, en texte ET en hexadécimal. */
+/**
+ * Lit TOUT l'OPFS, fichiers de volume et d'enveloppes compris, en texte ET en hexadécimal.
+ *
+ * Une fouille qui ne peut pas regarder n'est PAS une fouille vide (#231, revues de la PR #305) : le
+ * rendu dit `impossible` — « indisponible » si l'API manque, « indetermine » si `getDirectory()` a
+ * rejeté `UnknownError`, que le moteur dit transitoire —, et c'est l'ÉPREUVE qui décide, à partir de ce
+ * qu'elle sait de son contexte, si c'est une panne (un moteur qui ouvre un volume) ou une limite écrite.
+ * Tout autre rejet remonte : il fait échouer la fouille.
+ *
+ * @returns {Promise<{ texte: string, impossible?: string }>}
+ */
 async function lireOpfs() {
-  if (!navigator.storage?.getDirectory) return "";
+  const { racine, absent } = await racineDeLOpfs();
+  if (absent) return fouilleImpossible(absent);
   const morceaux = [];
-  const racine = await navigator.storage.getDirectory();
   for await (const [nom, poignee] of racine.entries()) {
     morceaux.push(nom);
     if (poignee.kind !== "file") continue;
@@ -370,7 +382,7 @@ async function lireOpfs() {
     for (const octet of octets) hex += octet.toString(16).padStart(2, "0");
     morceaux.push(hex);
   }
-  return morceaux.join("\n");
+  return { texte: morceaux.join("\n") };
 }
 
 globalThis.bancDeverrouillage = Object.freeze({

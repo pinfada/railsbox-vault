@@ -65,6 +65,7 @@ export const CODES_DU_CHEMIN = Object.freeze({
     D.argon2Indisponible,
     CODE_PHRASE_FAIBLE,
     S.unsupported,
+    S.indeterminate,
     S.busy,
     S.quotaExceeded,
     S.volumeSansRacine,
@@ -354,6 +355,15 @@ const TABLE = Object.freeze({
   [S.unsupported]: [
     K.autreAppareil,
     "Ce navigateur ne sait pas garder un coffre. " + CHROME_OU_EDGE + " " + RIEN_PERDU,
+  ],
+  // Le stockage a rejeté ce que le moteur dit lui-même transitoire : AUCUNE absence n'est affirmée, rien
+  // n'a été tenté sur le coffre, et le même geste peut aboutir plus tard (#231).
+  [S.indeterminate]: [
+    K.recommencer,
+    "Le stockage du navigateur est inaccessible pour l'instant, cause non établie. Rien n'a été " +
+      "tenté sur le coffre : réessayez dans un instant. Si cela dure, essayez une autre fenêtre ou un " +
+      "autre navigateur. " +
+      RIEN_PERDU,
   ],
   [S.busy]: [
     K.recommencer,

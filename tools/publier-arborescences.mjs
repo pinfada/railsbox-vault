@@ -59,6 +59,14 @@ export const SOURCES_COQUILLE = Object.freeze([
       "qu'il manipule ne franchissent aucun `postMessage`.",
   }),
   Object.freeze({
+    depuis: "public/capacite-du-worker.mjs",
+    vers: "capacite-du-worker.mjs",
+    role:
+      "La CAPACITÉ du stockage tenue par le Worker de confiance (#231) : la sonde de l'OPFS, ses " +
+      "réessais bornés et le constat d'un échec de lecture. Importé par `runtime-worker.mjs` et exécuté " +
+      "dans lui seul ; il ne touche à aucun handle ni à aucune clé.",
+  }),
+  Object.freeze({
     depuis: "public/relais-du-worker.mjs",
     vers: "relais-du-worker.mjs",
     role:

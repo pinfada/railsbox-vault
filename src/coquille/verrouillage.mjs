@@ -234,9 +234,11 @@ export function delaiDInactivite(valeur) {
  * @param {{ etatConnu?: string }} constat
  */
 export function conduiteApresLeVerrouillage({ etatConnu = ETATS_DU_VOLUME.verrouille } = {}) {
+  // Ni `indisponible` ni `indetermine` ne se transforment en `verrouille` : rien n'a pu s'ouvrir, et la
+  // coquille n'invente pas un verrou là où le stockage ne répondait pas.
   const etat =
-    etatConnu === ETATS_DU_VOLUME.indisponible
-      ? ETATS_DU_VOLUME.indisponible
+    etatConnu === ETATS_DU_VOLUME.indisponible || etatConnu === ETATS_DU_VOLUME.indetermine
+      ? etatConnu
       : ETATS_DU_VOLUME.verrouille;
   return Object.freeze({
     /** Le verrouillage EST la troisième cause de mort : la coquille se la donne à elle-même. */

@@ -24,6 +24,7 @@
 // reste celui du spike, en topologie T1a — une des raisons pour lesquelles ce banc reste vivant.
 
 import { expect, test } from "../support/test.mjs";
+import { etatsSansVolume } from "../support/refus-de-capacite.mjs";
 
 import {
   CLE_IDB_HOSTILE,
@@ -531,7 +532,7 @@ test("témoin positif : la même fixture, servie par l'origine de confiance, obt
     expect(parNom["lecture-enveloppe-opfs-coquille"].resultat).toBe("aboutit");
   } else {
     // Une capacité ABSENTE du moteur n'est pas une frontière : le relevé le dit au lieu de le taire.
-    expect(avant.etat).toBe(ETATS_DU_VOLUME.indisponible);
+    expect(etatsSansVolume(page)).toContain(avant.etat);
   }
 
   // Ce que la fixture persiste atterrit cette fois DANS la partition de la coquille.
@@ -630,7 +631,7 @@ test("les documents NEUFS de la coquille portent la CSP et le durcissement, sans
  */
 async function exigerLEtatFerme(page) {
   const etat = (await relevéDeLaCoquille(page)).etat;
-  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(etat);
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(etat);
   return etat;
 }
 

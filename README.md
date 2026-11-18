@@ -196,6 +196,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0044 — le magasin d'artefacts : rangé sous l'empreinte, vérifié contre la racine du descripteur, cédant au volume](docs/decisions/0044-le-magasin-d-artefacts.md)
 - [ADR 0045 — les workflows de l'image et des épreuves VM restent sur ubuntu-24.04, à titre provisoire](docs/decisions/0045-les-workflows-d-image-restent-sur-ubuntu-24-04.md)
 - [ADR 0046 — le descripteur scellé et le démarrage hors connexion : HMAC sous la clé du coffre, « injoignable » = un `TypeError` de `fetch`](docs/decisions/0046-le-descripteur-scelle-et-le-demarrage-hors-connexion.md)
+- [ADR 0047 — un rejet « transitoire » du stockage n'est pas une absence : état et refus indéterminés, réessayables](docs/decisions/0047-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md)
 
 ## Licence
 

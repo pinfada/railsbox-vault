@@ -119,6 +119,20 @@ export async function verifierAux(page, testInfo, nom, largeurs) {
   }
 }
 
+/** Le titre de l'écran que la coquille montre quand le stockage du navigateur ne répond pas (#231). */
+export const TITRE_STOCKAGE_INACCESSIBLE = "Le stockage du navigateur ne répond pas pour l'instant";
+
+/**
+ * La raison, lisible au rapport, pour laquelle les épreuves de l'écran de CRÉATION ne se jouent pas sous
+ * WebKit : dans le contexte ÉPHÉMÈRE de la fixture, `getDirectory()` y rejette `UnknownError` (mesuré,
+ * `docs/compatibility.md`), l'inventaire est inconnu et la coquille n'offre ni création ni moyen (ADR 0047).
+ * Le moteur est celui du PROJET — jamais ce que la page affiche : sur Chromium et Firefox, un écran
+ * « inaccessible » FAIT ÉCHOUER `ouvrir`.
+ */
+export const RAISON_WEBKIT_EPHEMERE =
+  "WebKit éphémère : getDirectory() rejette UnknownError (mesuré), l'écran de création n'existe pas ; l'écran inaccessible a ses épreuves";
+
+/** Ouvre la coquille et attend l'écran de création. Il ÉCHOUE si l'écran est autre chose. */
 export async function ouvrir(page) {
   await page.goto(`${ORIGINE_A}/index.html`);
   await expect(titre(page, "Créer votre coffre")).toBeVisible({ timeout: 60_000 });

@@ -21,6 +21,17 @@ export const STORAGE_ERROR_CODES = Object.freeze({
   busy: "VAULT_STORAGE_BUSY",
   /** Capacité absente : jamais remplacée par un repli silencieux. */
   unsupported: "VAULT_STORAGE_UNSUPPORTED",
+  /**
+   * Le stockage du navigateur est INACCESSIBLE POUR L'INSTANT, et la cause n'est pas établie (#231).
+   *
+   * Distinct de `unsupported` : celui-ci affirme qu'une capacité est ABSENTE, durablement, et
+   * conseille de changer de navigateur. Celui-là n'affirme rien d'autre que ce qui a été vu — un
+   * rejet que le moteur dit lui-même « transitoire » (`UnknownError` de `getDirectory()`, WebKit ≥ 26.6,
+   * mesuré en contexte éphémère) — et il est RÉESSAYABLE : rien n'a été tenté sur le volume, et le
+   * même geste, un instant plus tard, peut aboutir. Distinct aussi de `supportFailure`, qui nomme
+   * l'échec d'une opération sur un volume qu'on a pu atteindre.
+   */
+  indeterminate: "VAULT_STORAGE_INDETERMINE",
   /** Le quota de stockage de l'origine est épuisé (#6). Distinct d'une écriture partielle. */
   quotaExceeded: "VAULT_STORAGE_QUOTA_EXCEEDED",
   /** La géométrie du support diffère de celle de la session (#6). Jamais suivie en silence. */

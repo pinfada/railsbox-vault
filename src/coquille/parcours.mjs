@@ -41,6 +41,7 @@
 // et chaque écran des étapes 5 à 9 offre d'y revenir. La VISITE (neuf étapes, une fois, vers
 // l'avant) n'est pas l'USAGE (ouvrir, travailler, verrouiller, chaque jour).
 
+import { STORAGE_ERROR_CODES } from "../vm/storage-errors.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { GROUPES } from "./saisie-du-code.mjs";
 import { ECRANS, ETAPES, MESSAGES } from "./textes-du-parcours.mjs";
@@ -80,6 +81,11 @@ export const COFFRE = Object.freeze({
   verrouille: "verrouille",
   ouvert: "ouvert",
   refuse: "refuse",
+  /**
+   * Le stockage du navigateur ne répond pas pour l'instant : l'inventaire du coffre est INCONNU, ni
+   * « absent » (qui proposerait de CRÉER un coffre à qui en possède un) ni « refusé » (#231).
+   */
+  inaccessible: "inaccessible",
 });
 
 /**
@@ -87,6 +93,7 @@ export const COFFRE = Object.freeze({
  * n'en montre que quelques-uns ; l'ordre du document est celui du parcours, donc l'ordre du focus.
  */
 export const BLOCS = Object.freeze([
+  "reessayer",
   "commencer",
   "ancre",
   "phrase",
@@ -302,6 +309,8 @@ export function coffreObserve({
   if (REFUS_D_INVENTAIRE.includes(dernierRefus) && texte.startsWith("Ce coffre ne peut pas")) {
     return COFFRE.refuse;
   }
+  // L'inventaire INCONNU (#231) : reconnu au refus TYPÉ que le Worker rend, non aux mots.
+  if (dernierRefus === STORAGE_ERROR_CODES.indeterminate) return COFFRE.inaccessible;
   if (moyensProposes.length > 0) return COFFRE.verrouille;
   return COFFRE.absent;
 }
@@ -364,6 +373,7 @@ export function ecranCourant({
   // montre est celui de la restauration, et non un refus sans issue.
   if (coffre === COFFRE.refuse)
     return refus === CODE_RESTAURATION_INTERROMPUE ? "restaurer" : "refuse";
+  if (coffre === COFFRE.inaccessible) return "inaccessible";
   if (coffre === COFFRE.absent) return ecranSansCoffre(pointeur);
   if (coffre === COFFRE.verrouille)
     return ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande, phrasePerdue);
