@@ -284,3 +284,36 @@ export async function jusquALEtape9(page) {
   await bouton(page, "Ouvrir mon coffre avec le code").click();
   await expect(titre(page, "Révoquer en urgence")).toBeVisible(LONG);
 }
+
+/**
+ * RETIENT le message de révocation entre la page et le Worker (#265, relecture de #308) : la page croit
+ * la demande partie et attend, comme avec un Worker lent. À poser AVANT la première navigation ;
+ * `retenir(true)` arme la retenue, `relacher()` livre le message tel quel, `relacher(true)` le livre
+ * ALTÉRÉ — le Worker ne le décode pas et cesse de répondre (la page voit un Worker mort), sans rien révoquer.
+ */
+export async function retenirLaRevocation(page) {
+  await page.addInitScript(() => {
+    globalThis.__retenir = false;
+    globalThis.__retenues = [];
+    const envoyer = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (message, ...reste) {
+      const revoque =
+        typeof message?.type === "string" && message.type.endsWith("revoquer-en-urgence");
+      if (revoque && globalThis.__retenir === true) {
+        globalThis.__retenues.push({ port: this, message, reste });
+        return undefined;
+      }
+      return envoyer.call(this, message, ...reste);
+    };
+    globalThis.__relacher = (alterer) => {
+      for (const { port, message, reste } of globalThis.__retenues.splice(0)) {
+        envoyer.call(port, alterer ? { ...message, version: 999 } : message, ...reste);
+      }
+    };
+  });
+  return {
+    retenir: (armee) => page.evaluate((v) => (globalThis.__retenir = v), armee),
+    retenues: () => page.evaluate(() => globalThis.__retenues.length),
+    relacher: (alterer = false) => page.evaluate((a) => globalThis.__relacher(a), alterer),
+  };
+}

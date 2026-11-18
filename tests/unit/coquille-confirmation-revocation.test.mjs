@@ -97,7 +97,7 @@ test("un refus du Worker est dit, et le focus reste sur le geste qui a demandé"
   page.noeud("revoquer-confirmer").click();
   await apres();
   assert.equal(revocations(), 1);
-  assert.deepEqual(rapport.portabilite.revocation, { refus: "VAULT_X" });
+  assert.deepEqual(rapport.portabilite.revocation, { incertaine: true, code: "VAULT_X" });
   assert.equal(page.actif, "revoquer-en-urgence");
 });
 
