@@ -3,7 +3,7 @@
  *
  * Une opération du magasin qui dépasse son délai est ABANDONNÉE : l'appelant a repris la main (il
  * télécharge, ou il écrit autre chose), et son jeton est annulé. Une opération abandonnée ne doit
- * plus RIEN écrire, renommer ni supprimer — sinon elle remplace ce qu'un plus récent vient de poser.
+ * plus rien écrire, renommer ni supprimer d'entrée — sinon elle remplace ce qu'un plus récent vient de poser.
  * Le jeton testé AVANT une attente ne dit rien de ce qui se passe PENDANT elle : il se teste de
  * nouveau après chaque attente, avant tout geste qui modifie le magasin.
  *
@@ -15,9 +15,12 @@
  *
  *  - un appel déjà lancé (la k-ième primitive) va à son terme : un `move` en vol n'est pas annulable,
  *    et ce test ne le prétend pas ;
- *  - seule exception : une admission ou un rangement abandonnés retirent LEUR partiel (le nom du
- *    partiel est partagé entre sessions — limite écrite, ADR 0046 : le pire est un téléchargement de
- *    plus, jamais un octet servi non vérifié).
+ *  - SEULE EXCEPTION, que ce test AUTORISE donc explicitement : une admission ou un rangement abandonnés
+ *    SUPPRIMENT encore leur partiel (`autorise`, `partielDe`) après l'annulation. Le nom du partiel est
+ *    partagé entre sessions et peut appartenir à une opération plus récente : risque de DISPONIBILITÉ
+ *    (un téléchargement de plus), jamais d'intégrité — `servir` revérifie tout (ADR 0046 § 8, SECURITY.md).
+ *    Ce test ne prouve donc PAS « aucune suppression après l'échéance » pour `admettre` et
+ *    `ecrireLeDescripteurScelle`.
  */
 
 import assert from "node:assert/strict";
@@ -129,7 +132,7 @@ const partielDe = (nom) => (appel) => appel.nom === "supprimer" && appel.cible =
 
 // --- admettre --------------------------------------------------------------------------------------
 
-test("admettre : annulée pendant N'IMPORTE quelle attente, plus aucun geste modificateur ne part", async () => {
+test("admettre : annulée pendant N'IMPORTE quelle attente, rien ne part après sauf la suppression de SON partiel (nom partagé : disponibilité seulement)", async () => {
   const { octets, sha256 } = artefact();
   await balayer({
     lancer: (magasin, jeton) => magasin.admettre({ sha256, octets }, jeton),
@@ -138,7 +141,7 @@ test("admettre : annulée pendant N'IMPORTE quelle attente, plus aucun geste mod
   });
 });
 
-test("admettre, racine fausse : annulée pendant N'IMPORTE quelle attente, rien ne part après", async () => {
+test("admettre, racine fausse : annulée pendant N'IMPORTE quelle attente, rien ne part après sauf la suppression de SON partiel", async () => {
   const { octets, sha256 } = artefact();
   await balayer({
     lancer: (magasin, jeton) => magasin.admettre({ sha256, octets, racine: "0".repeat(64) }, jeton),
@@ -147,7 +150,7 @@ test("admettre, racine fausse : annulée pendant N'IMPORTE quelle attente, rien 
   });
 });
 
-test("admettre, l'ancienne entrée est oubliée AVANT l'écriture : annulée pendant ces suppressions, aucune suivante ne part", async () => {
+test("admettre, l'ancienne entrée est oubliée AVANT l'écriture : annulée pendant ces suppressions, aucune suppression d'entrée ne suit (seule celle de SON partiel est permise)", async () => {
   const { octets, sha256 } = artefact();
   await balayer({
     preparer: (memoire) => {
@@ -162,7 +165,7 @@ test("admettre, l'ancienne entrée est oubliée AVANT l'écriture : annulée pen
 
 // --- ecrireLeDescripteurScelle ---------------------------------------------------------------------
 
-test("ecrireLeDescripteurScelle : annulée pendant N'IMPORTE quelle attente, rien ne part après — le renommage en tête", async () => {
+test("ecrireLeDescripteurScelle : annulée pendant N'IMPORTE quelle attente, ni renommage ni écriture ne part après ; seule la suppression de SON partiel est permise", async () => {
   await balayer({
     preparer: (memoire) => memoire.fichiers.set("descripteur.scelle", new Uint8Array(5).fill(1)),
     lancer: (magasin, jeton) =>

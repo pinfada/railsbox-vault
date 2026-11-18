@@ -195,7 +195,11 @@ async function lireLeDescripteurScelle({ primitives }) {
 /**
  * Le partiel est écrit ENTIER, puis le nom définitif est remplacé. Les primitives n'ayant pas de
  * troncature, l'ancien fichier est retiré avant le renommage : une coupure entre les deux laisse
- * « aucun descripteur » — jamais un fichier à moitié neuf, que le sceau refuserait de toute façon.
+ * « aucun descripteur ». Le renommage n'est atomique que si l'OPFS offre `move` ; sinon (copie), un
+ * fichier incomplet est possible et c'est le sceau qui le refuse (ADR 0046 § 2).
+ *
+ * Abandonnée (jeton annulé), elle ne renomme ni n'écrit plus ; elle SUPPRIME encore son partiel, dont le nom
+ * est partagé entre sessions : risque de disponibilité seulement (ADR 0046 § 8).
  */
 async function ecrireLeDescripteurScelle({ primitives }, octets, jeton = SANS_ANNULATION) {
   const partiel = NOM_DU_DESCRIPTEUR_SCELLE + SUFFIXE_PARTIEL;

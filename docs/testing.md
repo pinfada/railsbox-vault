@@ -98,7 +98,9 @@ job requis « Campagnes de mutation » :
   avant `renommer`, `.partiel` retiré à l'abandon) et, depuis la revue de #298, le jeton testé APRÈS
   CHAQUE ATTENTE : `tests/unit/vm-magasin-annulation-a-chaque-attente.test.mjs` suspend la k-ième
   attente de chaque opération, annule le jeton pendant qu'elle est suspendue, et exige qu'aucun
-  geste modificateur ne parte ensuite — un mutant par contrôle ;
+  geste modificateur ne parte ensuite, À UNE EXCEPTION autorisée explicitement : la suppression du
+  partiel de l'opération abandonnée (nom partagé, risque de disponibilité, ADR 0046 § 8) — un mutant
+  par contrôle ;
 - **`hors-ligne`** (`tools/muter-gardes-hors-ligne.mjs`) : la DÉCISION de démarrer sans l'origine.
   **72 gardes, 72 tuées** — « injoignable » = un `TypeError` (ni `Error`, ni 5xx, ni portail
   captif), le sceau et tout ce qu'il couvre (magie, date, longueur, charge), la forme du contenu

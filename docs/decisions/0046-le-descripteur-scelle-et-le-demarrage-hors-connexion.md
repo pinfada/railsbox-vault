@@ -1,7 +1,9 @@
 # ADR 0046 — Le descripteur scellé et le démarrage hors connexion
 
-- Statut : **proposé** — format persistant et cryptographie : la fusion attend l'accord du
-  propriétaire, et une revue de sécurité distincte
+- Statut : **proposé** — format persistant et cryptographie. Règle de fusion actuelle (délégation du
+  propriétaire, 18/11/2026) : fusion sur APPROUVÉ du relecteur de sécurité au SHA EXACT, contrôles
+  requis verts et limites écrites (ci-dessous, et dans `SECURITY.md` et la description de la PR) ;
+  plus d'accord préalable du propriétaire
 - Date : 2026-11-17 · amendé le 2026-11-18 (revue de sécurité de #298 : redirections, empreintes du
   boot obligatoires, `libv86`, annulation)
 - Numéro : 0046 — le 0045 est pris par le lot CI-0 (#296)
@@ -270,24 +272,47 @@ après un seul contrôle.
 **Règle** : le jeton est testé après chaque attente, avant tout geste qui modifie le magasin
 (écriture, renommage, suppression). **Opérations en vol** : un appel de primitive déjà lancé — un
 `move`, une suppression — va à son terme ; il n'est pas annulable, et rien ici ne le prétend. Ce qui
-est garanti est qu'**aucun geste modificateur NE PART après l'annulation**, sauf le nettoyage de SON
-propre partiel (`<sha256>.partiel`, `descripteur.scelle.partiel`). Concrètement : `oublier` teste le
-jeton avant chacune de ses trois suppressions ; `admettre` après le budget (avant d'oublier
-l'ancienne entrée), au début de chaque tranche, après chaque hachage de tranche (avant de l'écrire)
-et après le hachage de la racine — et une admission abandonnée ne hache plus une tranche de plus ;
-`ecrireLeDescripteurScelle` à l'entrée et après la suppression de l'ancien descripteur, avant de
-renommer ; `servir`, `purger` et l'oubli du descripteur transmettent le jeton à `oublier`. Un
-rangement abandonné après la suppression de l'ancien descripteur laisse « aucun descripteur » —
-l'état sûr que ce module annonçait déjà pour une coupure.
+est garanti est qu'**aucun geste modificateur NE PART après l'annulation, À UNE EXCEPTION : la
+suppression du partiel que l'opération abandonnée croit sien** (`<sha256>.partiel`,
+`descripteur.scelle.partiel`) — elle part bel et bien après l'annulation, et son nom est partagé
+(voir « Collisions »). La promesse n'est donc PAS « aucune suppression après l'échéance ».
+Concrètement : `oublier` teste le jeton avant chacune de ses trois suppressions ; `admettre` après
+le budget (avant d'oublier l'ancienne entrée), au début de chaque tranche, après chaque hachage de
+tranche (avant de l'écrire) et après le hachage de la racine — et une admission abandonnée ne hache
+plus une tranche de plus ; `ecrireLeDescripteurScelle` à l'entrée et après la suppression de
+l'ancien descripteur, avant de renommer ; `servir`, `purger` et l'oubli du descripteur transmettent
+le jeton à `oublier`. Un rangement abandonné après la suppression de l'ancien descripteur laisse «
+aucun descripteur » — l'état sûr que ce module annonçait déjà pour une coupure.
 
 **Collisions entre sessions.** Le nom d'un partiel est partagé : deux onglets qui admettent la même
 empreinte, ou une opération abandonnée suivie d'une nouvelle sur la même empreinte, écrivent sous le
 même `<sha256>.partiel`. Le nettoyage tardif d'une opération abandonnée peut donc retirer le partiel
-d'une plus récente ; une écriture concurrente peut échouer sur la poignée exclusive de l'OPFS. Le
-pire est un téléchargement de plus : jamais un octet servi non vérifié, puisque `servir` revérifie
-tout. Des noms de partiel uniques par opération élimineraient la collision ; ils compliquent la
-purge (retrouver les partiels d'une empreinte) et ne sont pas pris ici. La rétention (`retenir`) a
-le même régime : jeton testé avant chaque geste visible.
+d'une plus récente ; une écriture concurrente peut échouer sur la poignée exclusive de l'OPFS. **Le
+risque est de disponibilité seulement** — la suppression d'un partiel d'une opération plus récente
+fait échouer cette admission, et coûte un téléchargement de plus —, jamais un octet servi non
+vérifié, puisque `servir` revérifie tout. Des noms de partiel uniques par opération élimineraient la
+collision ; ils compliquent la purge (retrouver les partiels d'une empreinte) et ne sont pas pris
+ici. La rétention (`retenir`) a le même régime : jeton testé avant chaque geste visible.
+
+## Limites connues à la fusion
+
+- **(a) Démarrage hors connexion avec les en-têtes de production : il ne fonctionne PAS.** Le code
+  de la coquille est servi `no-cache` (ADR 0023) ; un Worker neuf créé réseau coupé ne peut pas
+  importer ses modules, et le démarrage échoue en `VAULT_COQUILLE_GESTE_ROMPU` avant de lire la
+  réserve. Le lot 5 vert ne l'éprouve que sous un harnais qui met le code en cache. Décision prise
+  (option b de #299 : un Service Worker de la coquille) ; livraison par la tranche D1h, pas par #298
+  ; suivi #299.
+- **(b) WebKit ignore `only-if-cached`.** Une requête réseau part ; la lecture de `libv86` n'est «
+  hors réseau » que si le réseau est réellement coupé — la requête échoue alors, et le refus typé
+  est le même. Chromium et Firefox ne touchent pas au réseau. Suivi #299/D1h.
+- **(c) Les octets de `libv86` exécutés ne sont pas liés aux octets hachés.** `libv86` a la
+  confiance de l'origine, comme tout le code de la coquille ; la confrontation au manifeste ne
+  protège que de l'accident. Le Service Worker de D1h est la voie décidée pour les lier ; il n'est
+  pas livré. Suivi #299/D1h.
+- **(d) L'atteinte de chaque mutant par le chemin de production n'est pas prouvée**, sauf pour
+  `reserveTientTout` (preuve ciblée, qui traverse `loadRuntime`). Les 72 + 32 mutants tués montrent
+  que les épreuves rougissent, pas que chaque garde est exécutée en production. Suivi #299/D1h : à
+  reprendre avec cette tranche, sans que sa livraison la lève d'elle-même.
 
 ## Modèle d'adversaire
 

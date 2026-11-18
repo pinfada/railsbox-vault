@@ -1541,6 +1541,24 @@ L'[ADR 0044](docs/decisions/0044-le-magasin-d-artefacts.md) range le rootfs et l
 
 ### Le démarrage hors connexion : le descripteur scellé (#247, D1g, ADR 0046)
 
+- **(a) Démarrage hors connexion avec les en-têtes de production : il ne fonctionne PAS.** Le code
+  de la coquille est servi `no-cache` (ADR 0023) ; un Worker neuf créé réseau coupé ne peut pas
+  importer ses modules, et le démarrage échoue en `VAULT_COQUILLE_GESTE_ROMPU` avant de lire la
+  réserve. Le lot 5 vert ne l'éprouve que sous un harnais qui met le code en cache. Décision prise
+  (option b de #299 : un Service Worker de la coquille) ; livraison par la tranche D1h, pas par #298
+  ; suivi #299.
+- **(b) WebKit ignore `only-if-cached`.** Une requête réseau part ; la lecture de `libv86` n'est «
+  hors réseau » que si le réseau est réellement coupé — la requête échoue alors, et le refus typé
+  est le même. Chromium et Firefox ne touchent pas au réseau. Suivi #299/D1h.
+- **(c) Les octets de `libv86` exécutés ne sont pas liés aux octets hachés.** `libv86` a la
+  confiance de l'origine, comme tout le code de la coquille ; la confrontation au manifeste ne
+  protège que de l'accident. Le Service Worker de D1h est la voie décidée pour les lier ; il n'est
+  pas livré. Suivi #299/D1h.
+- **(d) L'atteinte de chaque mutant par le chemin de production n'est pas prouvée**, sauf pour
+  `reserveTientTout` (preuve ciblée, qui traverse `loadRuntime`). Les 72 + 32 mutants tués montrent
+  que les épreuves rougissent, pas que chaque garde est exécutée en production. Suivi #299/D1h : à
+  reprendre avec cette tranche, sans que sa livraison la lève d'elle-même.
+
 Quand l'origine est injoignable, le coffre démarre sur le **descripteur rangé au magasin**. L'OPFS
 n'authentifie rien : ce descripteur est donc **scellé** (HMAC-SHA-256) sous une clé qui descend de
 la clé du coffre par HKDF, dans un domaine dédié (`descripteur`), non extractible, jamais la clé du
@@ -1570,9 +1588,13 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
   est obligatoire dans le descripteur servi (un descripteur sans lui, ou scellé avant cette règle,
   est refusé avant tout boot), `image:manifest` le produit toujours, et l'acquisition refuse une
   épingle absente avant tout téléchargement.
-- **L'annulation est tenue après chaque attente** : une opération du magasin abandonnée à l'échéance
-  (20 s) ne part plus modifier le magasin — pas de renommage qui remplace un descripteur plus
-  récent, pas de suppression de plus. Un appel déjà lancé va à son terme (non annulable).
+- **L'annulation est tenue après chaque attente, À UNE EXCEPTION** : une opération du magasin
+  abandonnée à l'échéance (20 s) ne part plus écrire, renommer ni supprimer d'entrée — pas de
+  renommage qui remplace un descripteur plus récent. **Exception : elle supprime encore SON
+  partiel** (`<sha256>.partiel`, `descripteur.scelle.partiel`) ; ce nom est partagé entre sessions
+  et peut appartenir à une opération plus récente, dont l'admission échoue alors. Risque de
+  disponibilité (un téléchargement de plus), pas d'intégrité : `servir` revérifie tout. Un appel
+  déjà lancé va à son terme (non annulable). ADR 0046 § 8.
 
 **Ce que le scellement ne protège pas.**
 
