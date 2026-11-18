@@ -1,6 +1,6 @@
 {
   "contrat": "spike-sw-coquille-d1h/1",
-  "horodatage": "2026-11-18T09:23:07.632Z",
+  "horodatage": "2026-11-18T10:22:33.179Z",
   "machine": {
     "plateforme": "linux arm64",
     "noyau": "7.0.0-1011-aws",
@@ -11,16 +11,16 @@
     "firefox": "153.0",
     "webkit": "26.5"
   },
-  "filtre": ["S*", "A*", "F*", "G*", "D*", "R*", "P*", "L*", "M*", "B2"],
-  "total": 204,
-  "ok": 204,
+  "filtre": ["S*", "A*", "F*", "G*", "D*", "R*", "P*", "L*", "M*", "B*"],
+  "total": 208,
+  "ok": 208,
   "resultats": [
     {
       "id": "S1",
       "titre": "SW à la racine sous la CSP de production (classique ET module)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 989,
+      "ms": 1045,
       "erreur": null,
       "assertions": [
         {
@@ -92,7 +92,7 @@
       "titre": "Worker module : script, import statique, import() dynamique rendus par le SW ; l'origine hostile n'est jamais exécutée",
       "moteur": "chromium",
       "ok": true,
-      "ms": 651,
+      "ms": 639,
       "erreur": null,
       "assertions": [
         {
@@ -139,7 +139,7 @@
       "titre": "Serveur arrêté : page, Worker, import() servis ; un fetch hors réserve lève TypeError",
       "moteur": "chromium",
       "ok": true,
-      "ms": 707,
+      "ms": 701,
       "erreur": null,
       "assertions": [
         {
@@ -183,7 +183,7 @@
       "titre": "Entrée du Cache altérée par un écrivain de même origine : refus 503 ; entrée supprimée : refus ; `verifier` les nomme",
       "moteur": "chromium",
       "ok": true,
-      "ms": 773,
+      "ms": 782,
       "erreur": null,
       "assertions": [
         {
@@ -240,7 +240,7 @@
       "titre": "Mise à jour : v2 installée EN ATTENTE ; page et Worker neuf restent v1 ; un rechargement n'active pas l'attente",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1084,
+      "ms": 1105,
       "erreur": null,
       "assertions": [
         {
@@ -267,7 +267,7 @@
       "mesures": {
         "maj": {
           "ok": true,
-          "ms": 8,
+          "ms": 9,
           "installing": "installing",
           "waiting": null
         },
@@ -294,7 +294,7 @@
       "titre": "MUTANT skipWaiting en cours de session → mélange de versions (la page v1, le Worker v2)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2050,
+      "ms": 2098,
       "erreur": null,
       "assertions": [
         {
@@ -330,7 +330,7 @@
       "titre": "Installation qui échoue (empreinte fausse) : ancien SW gardé, update() résolue sans erreur ; le Cache partiel est supprimé (le mutant le laisse)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 4395,
+      "ms": 4304,
       "erreur": null,
       "assertions": [
         {
@@ -352,7 +352,7 @@
       ],
       "mesures": {
         "installation-echouee-nominal": {
-          "journal": ["updatefound", "redundant", "updatefound", "redundant"],
+          "journal": ["updatefound", "redundant", "updatefound"],
           "erreur": null,
           "active": true,
           "waiting": false,
@@ -389,7 +389,7 @@
       "titre": "Script du SW en 404, 410, 500 ou réseau coupé : update() rejetée, l'inscription survit",
       "moteur": "chromium",
       "ok": true,
-      "ms": 641,
+      "ms": 649,
       "erreur": null,
       "assertions": [
         {
@@ -452,7 +452,7 @@
       "titre": "Script du SW servi max-age=1 an : update() voit quand même la v2 (updateViaCache none)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1066,
+      "ms": 1083,
       "erreur": null,
       "assertions": [
         {
@@ -476,7 +476,7 @@
       "titre": "Navigations successives : le script du SW est redemandé SANS passer par le SW — mais pas à chaque navigation (on ne s'y fie pas)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 15644,
+      "ms": 15656,
       "erreur": null,
       "assertions": [
         {
@@ -509,7 +509,7 @@
       "titre": "SW de retrait : inscriptions 0, caches du produit vidés ; la page contrôlée le reste jusqu'à sa navigation",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1688,
+      "ms": 1682,
       "erreur": null,
       "assertions": [
         {
@@ -547,7 +547,7 @@
       "titre": "unregister() côté page : renvoie true, le Cache N'est PAS vidé",
       "moteur": "chromium",
       "ok": true,
-      "ms": 638,
+      "ms": 633,
       "erreur": null,
       "assertions": [
         {
@@ -576,7 +576,7 @@
       "titre": "Deux origines : le SW de la coquille ne voit rien de l'origine applicative ; le cadre ne peut pas enregistrer sur la coquille",
       "moteur": "chromium",
       "ok": true,
-      "ms": 667,
+      "ms": 652,
       "erreur": null,
       "assertions": [
         {
@@ -624,7 +624,7 @@
       "titre": "COOP posé sur la réponse fabriquée par le SW : window.opener null ; témoin sans COOP : opener présent ; cadrage tiers",
       "moteur": "chromium",
       "ok": true,
-      "ms": 4720,
+      "ms": 4709,
       "erreur": null,
       "assertions": [
         {
@@ -662,18 +662,18 @@
       "titre": "Réserve réelle : temps d'installation",
       "moteur": "chromium",
       "ok": true,
-      "ms": 544,
+      "ms": 495,
       "erreur": null,
       "assertions": [
         {
           "ok": true,
-          "message": "installation de 216 fichiers (2895217 octets) en 461 ms"
+          "message": "installation de 216 fichiers (2896920 octets) en 410 ms"
         }
       ],
       "mesures": {
-        "installationMs": 461,
+        "installationMs": 410,
         "entrees": 216,
-        "octets": 2895217
+        "octets": 2896920
       },
       "notes": []
     },
@@ -682,7 +682,7 @@
       "titre": "Vérification complète de la réserve (3 passes) et service de libv86 (hachage compris)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1031,
+      "ms": 1008,
       "erreur": null,
       "assertions": [
         {
@@ -705,7 +705,7 @@
       "mesures": {
         "verification": [
           {
-            "ms": 130,
+            "ms": 121,
             "ok": true
           },
           {
@@ -713,7 +713,7 @@
             "ok": true
           },
           {
-            "ms": 127,
+            "ms": 124,
             "ok": true
           }
         ],
@@ -721,15 +721,15 @@
           "chemin": "/vendor/v86/artefacts/libv86-408b0969f943dfd4.mjs",
           "servis": [
             {
-              "ms": 5.3,
+              "ms": 4.4,
               "octets": 356131
             },
             {
-              "ms": 4.2,
+              "ms": 3.7,
               "octets": 356131
             },
             {
-              "ms": 4.2,
+              "ms": 3.8,
               "octets": 356131
             }
           ]
@@ -742,7 +742,7 @@
       "titre": "La vraie coquille publiée, serveur arrêté : prête, canal de confiance établi, argon2.wasm servi, import() de libv86",
       "moteur": "chromium",
       "ok": true,
-      "ms": 747,
+      "ms": 731,
       "erreur": null,
       "assertions": [
         {
@@ -775,7 +775,7 @@
       "titre": "context.setOffline(true) avec un SW installé : ce que chaque moteur coupe (mesure, pas d'exigence)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 652,
+      "ms": 643,
       "erreur": null,
       "assertions": [
         {
@@ -806,7 +806,7 @@
       "titre": "Profil persistant, navigateur fermé puis rouvert, origine morte : page et Worker servis par le SW",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1620,
+      "ms": 1756,
       "erreur": null,
       "assertions": [
         {
@@ -820,7 +820,7 @@
       ],
       "mesures": {
         "reouverture": {
-          "ms": 61,
+          "ms": 63,
           "b": {
             "type": "bonjour",
             "sequence": 1,
@@ -842,7 +842,7 @@
       "titre": "PROTOCOLE : deux onglets, mise à jour publiée, import tardif → aucun mélange ; la v2 ne s'applique qu'après la fermeture de TOUS les clients",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2860,
+      "ms": 2877,
       "erreur": null,
       "assertions": [
         {
@@ -928,7 +928,7 @@
       "titre": "MUTANT skipWaiting : le même scénario MÉLANGE les versions dans l'onglet 1 (l'épreuve A1 le tue)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2255,
+      "ms": 2247,
       "erreur": null,
       "assertions": [
         {
@@ -966,7 +966,7 @@
       "titre": "Pas de claim : la page qui enregistre le SW n'est PAS contrôlée ; MUTANT claim : elle l'est, en cours de vie",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2168,
+      "ms": 2173,
       "erreur": null,
       "assertions": [
         {
@@ -989,7 +989,7 @@
       "titre": "Un seul onglet : navigation vers autre chose puis retour — le contrôleur et la page restent d'accord",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1103,
+      "ms": 1100,
       "erreur": null,
       "assertions": [
         {
@@ -1155,7 +1155,7 @@
       "titre": "Nominal : rien de nouveau → « version vérifiée », le portail autorise",
       "moteur": "chromium",
       "ok": true,
-      "ms": 760,
+      "ms": 763,
       "erreur": null,
       "assertions": [
         {
@@ -1170,7 +1170,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 130,
+          "ms": 132,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -1187,7 +1187,7 @@
       "titre": "COURSE : révocation publiée, script lent. Le portail qui ATTEND refuse ; celui qui ne bloque pas (mutant) autorise avant de savoir",
       "moteur": "chromium",
       "ok": true,
-      "ms": 3000,
+      "ms": 3022,
       "erreur": null,
       "assertions": [
         {
@@ -1196,7 +1196,7 @@
         },
         {
           "ok": true,
-          "message": "le refus a effectivement attendu la vérification (1593 ms)"
+          "message": "le refus a effectivement attendu la vérification (1603 ms)"
         },
         {
           "ok": true,
@@ -1210,14 +1210,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 1593,
+          "ms": 1603,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1210, "update()-resolue"],
-            [1210, "updatefound"],
-            [1592, "installing:installed"],
-            [1592, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
+            [1211, "update()-resolue"],
+            [1211, "updatefound"],
+            [1602, "installing:installed"],
+            [1602, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -1227,7 +1227,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 130,
+          "ms": 132,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -1262,14 +1262,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "verification-echouee",
-          "ms": 148,
+          "ms": 139,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [9, "update()-resolue"],
             [9, "updatefound"],
-            [61, "etat:rejetee"],
-            [61, "installing:redundant"]
+            [58, "etat:rejetee"],
+            [58, "installing:redundant"]
           ],
           "maj": "rejetee"
         }
@@ -1281,7 +1281,7 @@
       "titre": "Installation LENTE : update() résout avant ou après la fin de l'installation ? (chronologie brute), puis état « mise à jour prête »",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2553,
+      "ms": 2533,
       "erreur": null,
       "assertions": [
         {
@@ -1296,14 +1296,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 1912,
+          "ms": 1893,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [9, "update()-resolue"],
             [9, "updatefound"],
-            [1901, "installing:installed"],
-            [1901, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
+            [1882, "installing:installed"],
+            [1882, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
           ],
           "maj": "ok"
         }
@@ -1315,7 +1315,7 @@
       "titre": "Origine qui PEND (script du SW sans réponse) : le portail rend la main au délai, « non vérifiable », jamais un blocage",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2153,
+      "ms": 2151,
       "erreur": null,
       "assertions": [
         {
@@ -1324,7 +1324,7 @@
         },
         {
           "ok": true,
-          "message": "borné par DELAI_VERIFICATION_MS (1512 ms pour 1500)"
+          "message": "borné par DELAI_VERIFICATION_MS (1511 ms pour 1500)"
         }
       ],
       "mesures": {
@@ -1334,11 +1334,11 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 1512,
+          "ms": 1511,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1501, "etat:delai"]
+            [1500, "etat:delai"]
           ],
           "maj": "delai"
         }
@@ -1350,7 +1350,7 @@
       "titre": "Réseau coupé (serveur arrêté) : update() rejetée, « non vérifiable », le portail autorise sans attendre le délai",
       "moteur": "chromium",
       "ok": true,
-      "ms": 770,
+      "ms": 767,
       "erreur": null,
       "assertions": [
         {
@@ -1359,7 +1359,7 @@
         },
         {
           "ok": true,
-          "message": "l'échec réseau est immédiat, pas le délai (133 ms)"
+          "message": "l'échec réseau est immédiat, pas le délai (134 ms)"
         }
       ],
       "mesures": {
@@ -1369,7 +1369,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 133,
+          "ms": 134,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -1386,7 +1386,7 @@
       "titre": "Révocation CONNUE : plancher > version courante → REFUS ; plancher ≤ courante → autorise ; script de retrait en attente → REFUS",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2872,
+      "ms": 2856,
       "erreur": null,
       "assertions": [
         {
@@ -1409,14 +1409,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 401,
+          "ms": 413,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
             [9, "update()-resolue"],
             [9, "updatefound"],
-            [399, "installing:installed"],
-            [400, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
+            [412, "installing:installed"],
+            [412, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -1426,14 +1426,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 425,
+          "ms": 408,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [9, "update()-resolue"],
             [9, "updatefound"],
-            [413, "installing:installed"],
-            [414, "etat:ok attente={\"sequence\":2,\"plancher\":1,\"retrait\":false}"]
+            [398, "installing:installed"],
+            [398, "etat:ok attente={\"sequence\":2,\"plancher\":1,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -1443,14 +1443,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 140,
+          "ms": 126,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [8, "update()-resolue"],
+            [9, "update()-resolue"],
             [9, "updatefound"],
             [9, "installing:installed"],
-            [9, "etat:ok attente={\"sequence\":3,\"plancher\":0,\"retrait\":true}"]
+            [10, "etat:ok attente={\"sequence\":3,\"plancher\":0,\"retrait\":true}"]
           ],
           "maj": "ok"
         }
@@ -1462,7 +1462,7 @@
       "titre": "Révocation connue APRÈS le déverrouillage : la session n'est pas tuée (écrit), l'état passe en « révocation connue »",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2690,
+      "ms": 2691,
       "erreur": null,
       "assertions": [
         {
@@ -1487,7 +1487,7 @@
       "titre": "LIMITES du plancher non signé : une origine hostile peut REFUSER (plancher 99 = déni de service) et PUBLIER UN RETOUR ARRIÈRE (non reconnu)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2096,
+      "ms": 2042,
       "erreur": null,
       "assertions": [
         {
@@ -1506,14 +1506,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 405,
+          "ms": 385,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
             [9, "update()-resolue"],
             [9, "updatefound"],
-            [403, "installing:installed"],
-            [403, "etat:ok attente={\"sequence\":2,\"plancher\":99,\"retrait\":false}"]
+            [384, "installing:installed"],
+            [384, "etat:ok attente={\"sequence\":2,\"plancher\":99,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -1523,14 +1523,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 426,
+          "ms": 392,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [9, "update()-resolue"],
             [9, "updatefound"],
-            [415, "installing:installed"],
-            [415, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
+            [382, "installing:installed"],
+            [383, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
           ],
           "maj": "ok"
         }
@@ -1542,7 +1542,7 @@
       "titre": "AUCUN CONTRÔLEUR : première visite — le bootstrap vient de l'origine (écrit), le portail refuse et ne crée aucun Worker",
       "moteur": "chromium",
       "ok": true,
-      "ms": 77,
+      "ms": 81,
       "erreur": null,
       "assertions": [
         {
@@ -1583,7 +1583,7 @@
       "titre": "PREMIER CONTRÔLE : la page qui enregistre reste non contrôlée ; après navigation, TOUT le code de la vraie coquille vient du SW (aucune requête réseau hors /artifacts, VM et script du SW)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1163,
+      "ms": 1154,
       "erreur": null,
       "assertions": [
         {
@@ -1615,7 +1615,7 @@
       "titre": "URL INATTENDUE : fetch, import(), Worker, wasm, <script>, importScripts d'un fichier que l'origine sert mais que la liste n'épingle pas → refusés, jamais exécutés ; MUTANT « hors liste → réseau » exécute l'origine",
       "moteur": "chromium",
       "ok": true,
-      "ms": 4291,
+      "ms": 4296,
       "erreur": null,
       "assertions": [
         {
@@ -1693,7 +1693,7 @@
       "titre": "VARIANTES DE REQUÊTE : query, fragment, casse, `//`, barre finale, %-encodages, antislash, `..`, `%2f` sous /artifacts/ — jamais d'octets de l'origine hostile",
       "moteur": "chromium",
       "ok": true,
-      "ms": 672,
+      "ms": 679,
       "erreur": null,
       "assertions": [
         {
@@ -1874,7 +1874,7 @@
       "titre": "REDIRECTIONS : sous /artifacts/ une redirection n'est jamais suivie ; à l'installation une redirection fait échouer l'installation ; MUTANT redirection suivie",
       "moteur": "chromium",
       "ok": true,
-      "ms": 7561,
+      "ms": 7536,
       "erreur": null,
       "assertions": [
         {
@@ -1909,7 +1909,7 @@
         },
         "installation-redirigee-nominal": {
           "etat": "actif",
-          "maj": ["updatefound", "redundant", "updatefound", "redundant", "update()=resolue"]
+          "maj": ["updatefound", "redundant", "update()=resolue"]
         },
         "installation-redirigee-mutant-install-suit-les-redirections": {
           "etat": "actif",
@@ -1923,7 +1923,7 @@
       "titre": "TYPES MIME et destinations : sous /artifacts/ aucun type exécutable en passage, aucune destination script/worker ; v86.wasm nommé passe en fetch ; fichiers listés rendus avec le bon type",
       "moteur": "chromium",
       "ok": true,
-      "ms": 659,
+      "ms": 669,
       "erreur": null,
       "assertions": [
         {
@@ -1995,7 +1995,7 @@
       "titre": "SANS SW (mode qui l'interdit : `serviceWorkers: block`) : la page vient du réseau, le portail refuse (aucun-controleur) et ne crée aucun Worker — Q1, refus par défaut",
       "moteur": "chromium",
       "ok": true,
-      "ms": 87,
+      "ms": 85,
       "erreur": null,
       "assertions": [
         {
@@ -2050,7 +2050,7 @@
       "titre": "Argon2 : fetch + WebAssembly.instantiate(octets) servis par le SW, serveur ARRÊTÉ et origine hostile ; mêmes octets de sortie que sous Node ; (instantiateStreaming non invoqué)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 719,
+      "ms": 708,
       "erreur": null,
       "assertions": [
         {
@@ -2085,7 +2085,7 @@
       "titre": "Argon2 : double barrière — entrée altérée (le SW refuse) ; SW sans contrôle de hachage + octets altérés (le produit refuse par son empreinte épinglée)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1280,
+      "ms": 1268,
       "erreur": null,
       "assertions": [
         {
@@ -2124,7 +2124,7 @@
       "titre": "Worker de dérivation RÉEL (/derivation-worker.mjs, octets du produit) : dérive une KEK non extractible, serveur arrêté, origine hostile",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1070,
+      "ms": 1077,
       "erreur": null,
       "assertions": [
         {
@@ -2139,7 +2139,7 @@
           "message": "",
           "extractible": false,
           "algo": "AES-GCM",
-          "ms": 387
+          "ms": 389
         }
       },
       "notes": []
@@ -2149,7 +2149,7 @@
       "titre": "RETRAIT avec onglets actifs : installé puis EN ATTENTE ; l'onglet de session continue en v1 ; un nouvel onglet voit la révocation connue et REFUSE ; tous fermés → désinscription + caches du produit supprimés, autre cache conservé",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2001,
+      "ms": 2000,
       "erreur": null,
       "assertions": [
         {
@@ -2188,7 +2188,7 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 128,
+          "ms": 129,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
@@ -2213,7 +2213,7 @@
       "titre": "RETRAIT et réseau coupé : le script de retrait n'est jamais vu ; l'ancienne version reste servie et le dit (« non vérifiable ») — aucun retrait immédiat n'est promis",
       "moteur": "chromium",
       "ok": true,
-      "ms": 787,
+      "ms": 774,
       "erreur": null,
       "assertions": [
         {
@@ -2228,7 +2228,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 134,
+          "ms": 132,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -2245,7 +2245,7 @@
       "titre": "INTERRUPTION ordre nominal (caches d'abord, désinscription ensuite) coupée au milieu : le SW de retrait reste actif, la page le reconnaît (PERIMEE, retrait) et le geste termine",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1695,
+      "ms": 1723,
       "erreur": null,
       "assertions": [
         {
@@ -2301,7 +2301,7 @@
       "titre": "INTERRUPTION ordre inverse (désinscription d'abord) : caches orphelins SANS inscription ; jamais servis ; nettoyés à la prochaine activation (version suivante)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2232,
+      "ms": 2228,
       "erreur": null,
       "assertions": [
         {
@@ -2328,7 +2328,7 @@
       "titre": "GESTE « Retirer la copie » : unregister ET caches du produit ; la page courante reste contrôlée jusqu'à sa navigation ; MUTANTS (sans caches / tous les caches) tués",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1879,
+      "ms": 1906,
       "erreur": null,
       "assertions": [
         {
@@ -2394,7 +2394,7 @@
       "titre": "404/410 ne retirent rien (S8) ; le retrait se publie à la MÊME URL ; la règle écrite : attendre la fermeture de tous les clients",
       "moteur": "chromium",
       "ok": true,
-      "ms": 643,
+      "ms": 648,
       "erreur": null,
       "assertions": [
         {
@@ -2542,7 +2542,7 @@
       "titre": "SW MUET : le portail rend la main au délai avec VAULT_COQUILLE_RESERVE_ABSENTE (silence-du-sw), jamais un blocage, jamais de Worker",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1230,
+      "ms": 1240,
       "erreur": null,
       "assertions": [
         {
@@ -2578,7 +2578,7 @@
       "titre": "MESSAGES mal formés ou d'un autre client : aucune réponse, compteur de refus ; un Worker (client « worker ») ne peut pas interroger le SW ; MUTANT messagesDeTousLesClients répond au Worker",
       "moteur": "chromium",
       "ok": true,
-      "ms": 8480,
+      "ms": 8482,
       "erreur": null,
       "assertions": [
         {
@@ -2660,7 +2660,7 @@
       "titre": "CONTRÔLEUR CHANGÉ entre la vérification et la création du Worker : refus DIVERGENTE sans Worker ; MUTANTS (sans re-contrôle / sans poignée de main / les deux) tués",
       "moteur": "chromium",
       "ok": true,
-      "ms": 6749,
+      "ms": 6617,
       "erreur": null,
       "assertions": [
         {
@@ -2687,15 +2687,15 @@
           "cause": "controleur-change",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 530,
+          "ms": 529,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [2, "update()-resolue"],
-            [2, "etat:ok"],
-            [140, "updatefound"],
-            [521, "installing:installed"],
-            [529, "installing:activating"]
+            [3, "update()-resolue"],
+            [3, "etat:ok"],
+            [142, "updatefound"],
+            [520, "installing:installed"],
+            [528, "installing:activating"]
           ],
           "maj": "ok"
         },
@@ -2705,15 +2705,15 @@
           "cause": "controleur-change",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 542,
+          "ms": 514,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [2, "update()-resolue"],
-            [2, "etat:ok"],
-            [142, "updatefound"],
-            [534, "installing:installed"],
-            [541, "installing:activating"]
+            [3, "update()-resolue"],
+            [3, "etat:ok"],
+            [139, "updatefound"],
+            [505, "installing:installed"],
+            [513, "installing:activating"]
           ],
           "maj": "ok"
         },
@@ -2723,7 +2723,7 @@
           "cause": "worker-d-une-autre-version",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 1549,
+          "ms": 1532,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -2734,16 +2734,16 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 1608,
+          "ms": 1533,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [2, "update()-resolue"],
             [2, "etat:ok"],
-            [151, "updatefound"],
-            [587, "installing:installed"],
-            [595, "installing:activating"],
-            [1596, "installing:activated"]
+            [139, "updatefound"],
+            [514, "installing:installed"],
+            [521, "installing:activating"],
+            [1523, "installing:activated"]
           ],
           "maj": "ok"
         }
@@ -2755,7 +2755,7 @@
       "titre": "ENTRÉE ALTÉRÉE APRÈS LE PORTAIL (Worker, import statique, entrée supprimée) : refus typé, jamais de clé ; MUTANTS (SW sans hachage ; + portail sans poignée de main) tués",
       "moteur": "chromium",
       "ok": true,
-      "ms": 4140,
+      "ms": 4112,
       "erreur": null,
       "assertions": [
         {
@@ -2786,7 +2786,7 @@
           "cause": "entree-alteree-apres-le-portail",
           "detail": ["/spike/travailleur.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 257,
+          "ms": 245,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -2797,7 +2797,7 @@
           "cause": "entree-alteree-apres-le-portail",
           "detail": ["/spike/lib.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 262,
+          "ms": 258,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -2808,7 +2808,7 @@
           "cause": "entree-absente-apres-le-portail",
           "detail": ["/spike/travailleur.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 254,
+          "ms": 245,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -2819,7 +2819,7 @@
           "cause": "worker-d-une-autre-version",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 127,
+          "ms": 122,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -2830,7 +2830,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 132,
+          "ms": 128,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -2847,7 +2847,7 @@
       "titre": "QUOTA insuffisant à l'installation : installation rejetée, aucun cache, aucun contrôleur → ABSENTE (aucun-controleur) ; simulé (trois moteurs) et RÉEL par CDP (Chromium)",
       "moteur": "chromium",
       "ok": true,
-      "ms": 1381,
+      "ms": 1387,
       "erreur": null,
       "assertions": [
         {
@@ -2881,7 +2881,7 @@
       "titre": "COUPURE pendant l'installation (réseau coupé à la 40e requête) : rejetée, Cache partiel supprimé ; reprise une fois le réseau rendu ; puis navigateur FERMÉ en pleine installation et profil rouvert",
       "moteur": "chromium",
       "ok": true,
-      "ms": 3887,
+      "ms": 3892,
       "erreur": null,
       "assertions": [
         {
@@ -2919,7 +2919,7 @@
       "titre": "REQUÊTE INTER-ORIGINE du propre client du SW (page de la réserve SANS CSP) : le SW la REFUSE (HORS_ORIGINE), l'autre origine ne reçoit rien ; MUTANT « hors origine → réseau » la laisse partir",
       "moteur": "chromium",
       "ok": true,
-      "ms": 2262,
+      "ms": 2272,
       "erreur": null,
       "assertions": [
         {
@@ -2976,7 +2976,7 @@
       "titre": "MÉTHODES : POST sur un chemin listé ou sous /artifacts/ → refus explicite ; la liste ne répond qu'à GET",
       "moteur": "chromium",
       "ok": true,
-      "ms": 640,
+      "ms": 651,
       "erreur": null,
       "assertions": [
         {
@@ -3054,7 +3054,7 @@
       "titre": "taille non comparée (service ET installation) : MUTANT SURVIVANT ÉQUIVALENT — le hachage couvre la taille ; le contrôle de taille reste un garde-fou bon marché avant de hacher",
       "moteur": "chromium",
       "ok": true,
-      "ms": 639,
+      "ms": 630,
       "erreur": null,
       "assertions": [
         {
@@ -3072,7 +3072,7 @@
       "titre": "installAccepteUnEcart : une installation avec un fichier trafiqué n'est plus rejetée",
       "moteur": "chromium",
       "ok": true,
-      "ms": 607,
+      "ms": 602,
       "erreur": null,
       "assertions": [
         {
@@ -3099,7 +3099,7 @@
       "titre": "installAvecCacheHttp : v2 s'installe sur octets frais en nominal, échoue sur octets périmés sous le mutant",
       "moteur": "chromium",
       "ok": true,
-      "ms": 623,
+      "ms": 640,
       "erreur": null,
       "assertions": [
         {
@@ -3130,7 +3130,7 @@
       "titre": "garde de passage /artifacts/** : sans contrôle de destination, de chemin, de type ; ou artefacts servis par le SW",
       "moteur": "chromium",
       "ok": true,
-      "ms": 4967,
+      "ms": 4989,
       "erreur": null,
       "assertions": [
         {
@@ -3199,7 +3199,7 @@
       "titre": "supprimeTout (activation) : la mise à jour supprime AUSSI les caches qui ne sont pas au produit",
       "moteur": "chromium",
       "ok": true,
-      "ms": 4353,
+      "ms": 4267,
       "erreur": null,
       "assertions": [
         {
@@ -3226,7 +3226,7 @@
       "titre": "portail : ignoreLaRevocation, sansVerification, contourneSansSW",
       "moteur": "chromium",
       "ok": true,
-      "ms": 3728,
+      "ms": 3722,
       "erreur": null,
       "assertions": [
         {
@@ -3277,11 +3277,71 @@
       "notes": []
     },
     {
+      "id": "B1",
+      "titre": "E2E : la vraie coquille publiée derrière le SW (origine hostile après l'installation) déverrouille par la phrase et démarre la vraie application Rails ; tout le code vient du SW",
+      "moteur": "chromium",
+      "ok": true,
+      "ms": 155647,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "la coquille réelle est prête, contrôlée par le SW, l'origine répondant MAUVAIS à tout code"
+        },
+        {
+          "ok": true,
+          "message": "la page produit est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "le Worker de confiance est démarré (octets du SW)"
+        },
+        {
+          "ok": true,
+          "message": "DÉVERROUILLAGE COMPLET : Argon2id (Worker de dérivation réel) puis ouverture du volume, derrière le SW"
+        },
+        {
+          "ok": true,
+          "message": "BOOT : cycle:application-demarree"
+        },
+        {
+          "ok": true,
+          "message": "la page de l'application Rails de référence est RENDUE dans le cadre imbriqué"
+        },
+        {
+          "ok": true,
+          "message": "AUCUNE requête de code n'a atteint l'origine : chaque octet exécuté vient du SW"
+        }
+      ],
+      "mesures": {
+        "etatApresDeverrouillage": "ouvert",
+        "cycle": "cycle:application-demarree",
+        "etapes": [
+          ["coquille-prete", 1794995282],
+          ["coffre-ouvert", 1794995282],
+          ["cycle:cycle:application-demarree", 1794995434],
+          ["rails-rendue", 1794995436]
+        ],
+        "refusDuSW": {
+          "refus": [],
+          "messagesRefuses": 0,
+          "horsOrigine": 0
+        },
+        "journalDePage": [
+          "console.error Failed to load resource: the server responded with a status of 503 ()",
+          "console.error Failed to load resource: the server responded with a status of 503 ()",
+          "console.error Failed to load resource: the server responded with a status of 503 ()"
+        ],
+        "requetesDeCodeAuReseau": []
+      },
+      "notes": []
+    },
+    {
       "id": "B2",
       "titre": "REFUS SANS BOOT sur la vraie coquille : Worker de confiance altéré dans le cache ; argon2.wasm retiré du cache — aucun déverrouillage, aucune requête de boot",
       "moteur": "chromium",
       "ok": true,
-      "ms": 29738,
+      "ms": 29707,
       "erreur": null,
       "assertions": [
         {
@@ -3320,7 +3380,7 @@
       "titre": "SW à la racine sous la CSP de production (classique ET module)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 5241,
+      "ms": 6743,
       "erreur": null,
       "assertions": [
         {
@@ -3349,7 +3409,7 @@
       "titre": "Page rendue par le SW avec ses en-têtes embarqués ; CSP effective ; 0 requête réseau",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4084,
+      "ms": 5332,
       "erreur": null,
       "assertions": [
         {
@@ -3392,7 +3452,7 @@
       "titre": "Worker module : script, import statique, import() dynamique rendus par le SW ; l'origine hostile n'est jamais exécutée",
       "moteur": "firefox",
       "ok": true,
-      "ms": 3364,
+      "ms": 5292,
       "erreur": null,
       "assertions": [
         {
@@ -3439,7 +3499,7 @@
       "titre": "Serveur arrêté : page, Worker, import() servis ; un fetch hors réserve lève TypeError",
       "moteur": "firefox",
       "ok": true,
-      "ms": 3617,
+      "ms": 4233,
       "erreur": null,
       "assertions": [
         {
@@ -3483,7 +3543,7 @@
       "titre": "Entrée du Cache altérée par un écrivain de même origine : refus 503 ; entrée supprimée : refus ; `verifier` les nomme",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8689,
+      "ms": 9233,
       "erreur": null,
       "assertions": [
         {
@@ -3540,7 +3600,7 @@
       "titre": "Mise à jour : v2 installée EN ATTENTE ; page et Worker neuf restent v1 ; un rechargement n'active pas l'attente",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8142,
+      "ms": 7825,
       "erreur": null,
       "assertions": [
         {
@@ -3567,7 +3627,7 @@
       "mesures": {
         "maj": {
           "ok": true,
-          "ms": 1024,
+          "ms": 1043,
           "installing": "installing",
           "waiting": null
         },
@@ -3594,7 +3654,7 @@
       "titre": "MUTANT skipWaiting en cours de session → mélange de versions (la page v1, le Worker v2)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 7576,
+      "ms": 7357,
       "erreur": null,
       "assertions": [
         {
@@ -3630,7 +3690,7 @@
       "titre": "Installation qui échoue (empreinte fausse) : ancien SW gardé, update() résolue sans erreur ; le Cache partiel est supprimé (le mutant le laisse)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 10997,
+      "ms": 11465,
       "erreur": null,
       "assertions": [
         {
@@ -3689,7 +3749,7 @@
       "titre": "Script du SW en 404, 410, 500 ou réseau coupé : update() rejetée, l'inscription survit",
       "moteur": "firefox",
       "ok": true,
-      "ms": 7736,
+      "ms": 7852,
       "erreur": null,
       "assertions": [
         {
@@ -3726,22 +3786,22 @@
           "404": {
             "ok": false,
             "erreur": "TypeError",
-            "ms": 1004
+            "ms": 1022
           },
           "410": {
             "ok": false,
             "erreur": "TypeError",
-            "ms": 1030
+            "ms": 1003
           },
           "500": {
             "ok": false,
             "erreur": "TypeError",
-            "ms": 1099
+            "ms": 1003
           },
           "reseau": {
             "ok": false,
             "erreur": "TypeError",
-            "ms": 1003
+            "ms": 1002
           }
         }
       },
@@ -3752,7 +3812,7 @@
       "titre": "Script du SW servi max-age=1 an : update() voit quand même la v2 (updateViaCache none)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8427,
+      "ms": 8530,
       "erreur": null,
       "assertions": [
         {
@@ -3776,7 +3836,7 @@
       "titre": "Navigations successives : le script du SW est redemandé SANS passer par le SW — mais pas à chaque navigation (on ne s'y fie pas)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 20126,
+      "ms": 19739,
       "erreur": null,
       "assertions": [
         {
@@ -3809,7 +3869,7 @@
       "titre": "SW de retrait : inscriptions 0, caches du produit vidés ; la page contrôlée le reste jusqu'à sa navigation",
       "moteur": "firefox",
       "ok": true,
-      "ms": 5622,
+      "ms": 4968,
       "erreur": null,
       "assertions": [
         {
@@ -3847,7 +3907,7 @@
       "titre": "unregister() côté page : renvoie true, le Cache N'est PAS vidé",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4171,
+      "ms": 3861,
       "erreur": null,
       "assertions": [
         {
@@ -3876,7 +3936,7 @@
       "titre": "Deux origines : le SW de la coquille ne voit rien de l'origine applicative ; le cadre ne peut pas enregistrer sur la coquille",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4086,
+      "ms": 4445,
       "erreur": null,
       "assertions": [
         {
@@ -3924,7 +3984,7 @@
       "titre": "COOP posé sur la réponse fabriquée par le SW : window.opener null ; témoin sans COOP : opener présent ; cadrage tiers",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8120,
+      "ms": 8231,
       "erreur": null,
       "assertions": [
         {
@@ -3962,18 +4022,18 @@
       "titre": "Réserve réelle : temps d'installation",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4574,
+      "ms": 3427,
       "erreur": null,
       "assertions": [
         {
           "ok": true,
-          "message": "installation de 216 fichiers (2895217 octets) en 3344 ms"
+          "message": "installation de 216 fichiers (2896920 octets) en 2379 ms"
         }
       ],
       "mesures": {
-        "installationMs": 3344,
+        "installationMs": 2379,
         "entrees": 216,
-        "octets": 2895217
+        "octets": 2896920
       },
       "notes": []
     },
@@ -3982,7 +4042,7 @@
       "titre": "Vérification complète de la réserve (3 passes) et service de libv86 (hachage compris)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4205,
+      "ms": 3978,
       "erreur": null,
       "assertions": [
         {
@@ -4005,7 +4065,7 @@
       "mesures": {
         "verification": [
           {
-            "ms": 114,
+            "ms": 109,
             "ok": true
           },
           {
@@ -4013,7 +4073,7 @@
             "ok": true
           },
           {
-            "ms": 109,
+            "ms": 108,
             "ok": true
           }
         ],
@@ -4021,7 +4081,7 @@
           "chemin": "/vendor/v86/artefacts/libv86-408b0969f943dfd4.mjs",
           "servis": [
             {
-              "ms": 7,
+              "ms": 6,
               "octets": 356131
             },
             {
@@ -4029,7 +4089,7 @@
               "octets": 356131
             },
             {
-              "ms": 5,
+              "ms": 6,
               "octets": 356131
             }
           ]
@@ -4042,7 +4102,7 @@
       "titre": "La vraie coquille publiée, serveur arrêté : prête, canal de confiance établi, argon2.wasm servi, import() de libv86",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4107,
+      "ms": 3754,
       "erreur": null,
       "assertions": [
         {
@@ -4075,7 +4135,7 @@
       "titre": "context.setOffline(true) avec un SW installé : ce que chaque moteur coupe (mesure, pas d'exigence)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 3903,
+      "ms": 3501,
       "erreur": null,
       "assertions": [
         {
@@ -4106,7 +4166,7 @@
       "titre": "Profil persistant, navigateur fermé puis rouvert, origine morte : page et Worker servis par le SW",
       "moteur": "firefox",
       "ok": true,
-      "ms": 6350,
+      "ms": 5457,
       "erreur": null,
       "assertions": [
         {
@@ -4120,7 +4180,7 @@
       ],
       "mesures": {
         "reouverture": {
-          "ms": 244,
+          "ms": 246,
           "b": {
             "type": "bonjour",
             "sequence": 1,
@@ -4142,7 +4202,7 @@
       "titre": "PROTOCOLE : deux onglets, mise à jour publiée, import tardif → aucun mélange ; la v2 ne s'applique qu'après la fermeture de TOUS les clients",
       "moteur": "firefox",
       "ok": true,
-      "ms": 9206,
+      "ms": 8124,
       "erreur": null,
       "assertions": [
         {
@@ -4228,7 +4288,7 @@
       "titre": "MUTANT skipWaiting : le même scénario MÉLANGE les versions dans l'onglet 1 (l'épreuve A1 le tue)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8890,
+      "ms": 7920,
       "erreur": null,
       "assertions": [
         {
@@ -4266,7 +4326,7 @@
       "titre": "Pas de claim : la page qui enregistre le SW n'est PAS contrôlée ; MUTANT claim : elle l'est, en cours de vie",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8558,
+      "ms": 6358,
       "erreur": null,
       "assertions": [
         {
@@ -4289,7 +4349,7 @@
       "titre": "Un seul onglet : navigation vers autre chose puis retour — le contrôleur et la page restent d'accord",
       "moteur": "firefox",
       "ok": true,
-      "ms": 9568,
+      "ms": 6345,
       "erreur": null,
       "assertions": [
         {
@@ -4324,7 +4384,7 @@
       "titre": "TABLE des états (fonction pure) : état de fraîcheur et décision du portail pour chaque combinaison d'observations",
       "moteur": "firefox",
       "ok": true,
-      "ms": 0,
+      "ms": 1,
       "erreur": null,
       "assertions": [
         {
@@ -4455,7 +4515,7 @@
       "titre": "Nominal : rien de nouveau → « version vérifiée », le portail autorise",
       "moteur": "firefox",
       "ok": true,
-      "ms": 6060,
+      "ms": 4539,
       "erreur": null,
       "assertions": [
         {
@@ -4470,12 +4530,12 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 1018,
+          "ms": 1019,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1004, "update()-resolue"],
-            [1004, "etat:ok"]
+            [1003, "update()-resolue"],
+            [1003, "etat:ok"]
           ],
           "maj": "ok"
         }
@@ -4487,7 +4547,7 @@
       "titre": "COURSE : révocation publiée, script lent. Le portail qui ATTEND refuse ; celui qui ne bloque pas (mutant) autorise avant de savoir",
       "moteur": "firefox",
       "ok": true,
-      "ms": 11668,
+      "ms": 10271,
       "erreur": null,
       "assertions": [
         {
@@ -4496,7 +4556,7 @@
         },
         {
           "ok": true,
-          "message": "le refus a effectivement attendu la vérification (4654 ms)"
+          "message": "le refus a effectivement attendu la vérification (4172 ms)"
         },
         {
           "ok": true,
@@ -4510,14 +4570,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 4654,
+          "ms": 4172,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [2229, "update()-resolue"],
-            [2229, "updatefound"],
-            [4653, "installing:installed"],
-            [4654, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
+            [2216, "update()-resolue"],
+            [2216, "updatefound"],
+            [4170, "installing:installed"],
+            [4171, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -4527,7 +4587,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 128,
+          "ms": 126,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -4543,7 +4603,7 @@
       "titre": "Installation rejetée : update() résolue SANS nouveau Worker ; état « vérification échouée » ; le portail n'annonce jamais « à jour »",
       "moteur": "firefox",
       "ok": true,
-      "ms": 5252,
+      "ms": 4845,
       "erreur": null,
       "assertions": [
         {
@@ -4562,14 +4622,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "verification-echouee",
-          "ms": 1541,
+          "ms": 1365,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1051, "update()-resolue"],
-            [1051, "updatefound"],
-            [1524, "etat:rejetee"],
-            [1525, "installing:redundant"]
+            [1024, "update()-resolue"],
+            [1024, "updatefound"],
+            [1348, "etat:rejetee"],
+            [1348, "installing:redundant"]
           ],
           "maj": "rejetee"
         }
@@ -4581,7 +4641,7 @@
       "titre": "Installation LENTE : update() résout avant ou après la fin de l'installation ? (chronologie brute), puis état « mise à jour prête »",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8161,
+      "ms": 9005,
       "erreur": null,
       "assertions": [
         {
@@ -4596,14 +4656,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 4632,
+          "ms": 5098,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1025, "update()-resolue"],
-            [1025, "updatefound"],
-            [4615, "installing:installed"],
-            [4615, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
+            [1047, "update()-resolue"],
+            [1047, "updatefound"],
+            [5081, "installing:installed"],
+            [5082, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
           ],
           "maj": "ok"
         }
@@ -4615,7 +4675,7 @@
       "titre": "Origine qui PEND (script du SW sans réponse) : le portail rend la main au délai, « non vérifiable », jamais un blocage",
       "moteur": "firefox",
       "ok": true,
-      "ms": 6109,
+      "ms": 5106,
       "erreur": null,
       "assertions": [
         {
@@ -4624,7 +4684,7 @@
         },
         {
           "ok": true,
-          "message": "borné par DELAI_VERIFICATION_MS (1516 ms pour 1500)"
+          "message": "borné par DELAI_VERIFICATION_MS (1517 ms pour 1500)"
         }
       ],
       "mesures": {
@@ -4634,11 +4694,11 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 1516,
+          "ms": 1517,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1499, "etat:delai"]
+            [1500, "etat:delai"]
           ],
           "maj": "delai"
         }
@@ -4650,7 +4710,7 @@
       "titre": "Réseau coupé (serveur arrêté) : update() rejetée, « non vérifiable », le portail autorise sans attendre le délai",
       "moteur": "firefox",
       "ok": true,
-      "ms": 5712,
+      "ms": 4560,
       "erreur": null,
       "assertions": [
         {
@@ -4659,7 +4719,7 @@
         },
         {
           "ok": true,
-          "message": "l'échec réseau est immédiat, pas le délai (1017 ms)"
+          "message": "l'échec réseau est immédiat, pas le délai (1019 ms)"
         }
       ],
       "mesures": {
@@ -4669,12 +4729,12 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 1017,
+          "ms": 1019,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1004, "update()-rejetee:TypeError"],
-            [1004, "etat:echec"]
+            [1003, "update()-rejetee:TypeError"],
+            [1003, "etat:echec"]
           ],
           "maj": "echec"
         }
@@ -4686,7 +4746,7 @@
       "titre": "Révocation CONNUE : plancher > version courante → REFUS ; plancher ≤ courante → autorise ; script de retrait en attente → REFUS",
       "moteur": "firefox",
       "ok": true,
-      "ms": 19096,
+      "ms": 16694,
       "erreur": null,
       "assertions": [
         {
@@ -4709,14 +4769,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 3736,
+          "ms": 2838,
           "crees": 0,
           "chronologie": [
-            [1, "update()"],
-            [1021, "update()-resolue"],
-            [1021, "updatefound"],
-            [3734, "installing:installed"],
-            [3735, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
+            [0, "update()"],
+            [1020, "update()-resolue"],
+            [1020, "updatefound"],
+            [2837, "installing:installed"],
+            [2837, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -4726,14 +4786,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 3715,
+          "ms": 2992,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1032, "update()-resolue"],
-            [1032, "updatefound"],
-            [3699, "installing:installed"],
-            [3699, "etat:ok attente={\"sequence\":2,\"plancher\":1,\"retrait\":false}"]
+            [1020, "update()-resolue"],
+            [1020, "updatefound"],
+            [2975, "installing:installed"],
+            [2975, "etat:ok attente={\"sequence\":2,\"plancher\":1,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -4743,14 +4803,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 1026,
+          "ms": 1024,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1023, "update()-resolue"],
-            [1023, "updatefound"],
-            [1024, "installing:installed"],
-            [1024, "etat:ok attente={\"sequence\":3,\"plancher\":0,\"retrait\":true}"]
+            [1021, "update()-resolue"],
+            [1021, "updatefound"],
+            [1021, "installing:installed"],
+            [1022, "etat:ok attente={\"sequence\":3,\"plancher\":0,\"retrait\":true}"]
           ],
           "maj": "ok"
         }
@@ -4762,7 +4822,7 @@
       "titre": "Révocation connue APRÈS le déverrouillage : la session n'est pas tuée (écrit), l'état passe en « révocation connue »",
       "moteur": "firefox",
       "ok": true,
-      "ms": 9716,
+      "ms": 8167,
       "erreur": null,
       "assertions": [
         {
@@ -4787,7 +4847,7 @@
       "titre": "LIMITES du plancher non signé : une origine hostile peut REFUSER (plancher 99 = déni de service) et PUBLIER UN RETOUR ARRIÈRE (non reconnu)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 13631,
+      "ms": 13664,
       "erreur": null,
       "assertions": [
         {
@@ -4806,14 +4866,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 3344,
+          "ms": 3480,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1091, "update()-resolue"],
-            [1091, "updatefound"],
-            [3340, "installing:installed"],
-            [3341, "etat:ok attente={\"sequence\":2,\"plancher\":99,\"retrait\":false}"]
+            [1022, "update()-resolue"],
+            [1023, "updatefound"],
+            [3477, "installing:installed"],
+            [3478, "etat:ok attente={\"sequence\":2,\"plancher\":99,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -4823,14 +4883,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 3229,
+          "ms": 3014,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [1021, "update()-resolue"],
             [1021, "updatefound"],
-            [3212, "installing:installed"],
-            [3213, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
+            [2997, "installing:installed"],
+            [2997, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
           ],
           "maj": "ok"
         }
@@ -4842,7 +4902,7 @@
       "titre": "AUCUN CONTRÔLEUR : première visite — le bootstrap vient de l'origine (écrit), le portail refuse et ne crée aucun Worker",
       "moteur": "firefox",
       "ok": true,
-      "ms": 1199,
+      "ms": 1028,
       "erreur": null,
       "assertions": [
         {
@@ -4883,7 +4943,7 @@
       "titre": "PREMIER CONTRÔLE : la page qui enregistre reste non contrôlée ; après navigation, TOUT le code de la vraie coquille vient du SW (aucune requête réseau hors /artifacts, VM et script du SW)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 5015,
+      "ms": 4256,
       "erreur": null,
       "assertions": [
         {
@@ -4915,7 +4975,7 @@
       "titre": "URL INATTENDUE : fetch, import(), Worker, wasm, <script>, importScripts d'un fichier que l'origine sert mais que la liste n'épingle pas → refusés, jamais exécutés ; MUTANT « hors liste → réseau » exécute l'origine",
       "moteur": "firefox",
       "ok": true,
-      "ms": 10866,
+      "ms": 8933,
       "erreur": null,
       "assertions": [
         {
@@ -4993,7 +5053,7 @@
       "titre": "VARIANTES DE REQUÊTE : query, fragment, casse, `//`, barre finale, %-encodages, antislash, `..`, `%2f` sous /artifacts/ — jamais d'octets de l'origine hostile",
       "moteur": "firefox",
       "ok": true,
-      "ms": 3788,
+      "ms": 3752,
       "erreur": null,
       "assertions": [
         {
@@ -5174,7 +5234,7 @@
       "titre": "REDIRECTIONS : sous /artifacts/ une redirection n'est jamais suivie ; à l'installation une redirection fait échouer l'installation ; MUTANT redirection suivie",
       "moteur": "firefox",
       "ok": true,
-      "ms": 25791,
+      "ms": 22773,
       "erreur": null,
       "assertions": [
         {
@@ -5220,7 +5280,7 @@
       "titre": "TYPES MIME et destinations : sous /artifacts/ aucun type exécutable en passage, aucune destination script/worker ; v86.wasm nommé passe en fetch ; fichiers listés rendus avec le bon type",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4023,
+      "ms": 3573,
       "erreur": null,
       "assertions": [
         {
@@ -5292,7 +5352,7 @@
       "titre": "SANS SW (mode qui l'interdit : `serviceWorkers: block`) : la page vient du réseau, le portail refuse (aucun-controleur) et ne crée aucun Worker — Q1, refus par défaut",
       "moteur": "firefox",
       "ok": true,
-      "ms": 1012,
+      "ms": 1031,
       "erreur": null,
       "assertions": [
         {
@@ -5310,7 +5370,7 @@
             "cause": "aucun-controleur",
             "detail": null,
             "fraicheur": "version-courante-non-verifiable",
-            "ms": 2,
+            "ms": 1,
             "crees": 0,
             "chronologie": null,
             "maj": null
@@ -5347,7 +5407,7 @@
       "titre": "Argon2 : fetch + WebAssembly.instantiate(octets) servis par le SW, serveur ARRÊTÉ et origine hostile ; mêmes octets de sortie que sous Node ; (instantiateStreaming non invoqué)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 3698,
+      "ms": 3689,
       "erreur": null,
       "assertions": [
         {
@@ -5382,7 +5442,7 @@
       "titre": "Argon2 : double barrière — entrée altérée (le SW refuse) ; SW sans contrôle de hachage + octets altérés (le produit refuse par son empreinte épinglée)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 7826,
+      "ms": 6000,
       "erreur": null,
       "assertions": [
         {
@@ -5421,7 +5481,7 @@
       "titre": "Worker de dérivation RÉEL (/derivation-worker.mjs, octets du produit) : dérive une KEK non extractible, serveur arrêté, origine hostile",
       "moteur": "firefox",
       "ok": true,
-      "ms": 9061,
+      "ms": 7872,
       "erreur": null,
       "assertions": [
         {
@@ -5436,7 +5496,7 @@
           "message": "",
           "extractible": false,
           "algo": "AES-GCM",
-          "ms": 4116
+          "ms": 4123
         }
       },
       "notes": []
@@ -5446,7 +5506,7 @@
       "titre": "RETRAIT avec onglets actifs : installé puis EN ATTENTE ; l'onglet de session continue en v1 ; un nouvel onglet voit la révocation connue et REFUSE ; tous fermés → désinscription + caches du produit supprimés, autre cache conservé",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8485,
+      "ms": 6937,
       "erreur": null,
       "assertions": [
         {
@@ -5510,7 +5570,7 @@
       "titre": "RETRAIT et réseau coupé : le script de retrait n'est jamais vu ; l'ancienne version reste servie et le dit (« non vérifiable ») — aucun retrait immédiat n'est promis",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4573,
+      "ms": 4848,
       "erreur": null,
       "assertions": [
         {
@@ -5525,12 +5585,12 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 1019,
+          "ms": 1042,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1003, "update()-rejetee:TypeError"],
-            [1003, "etat:echec"]
+            [1026, "update()-rejetee:TypeError"],
+            [1026, "etat:echec"]
           ],
           "maj": "echec"
         }
@@ -5542,7 +5602,7 @@
       "titre": "INTERRUPTION ordre nominal (caches d'abord, désinscription ensuite) coupée au milieu : le SW de retrait reste actif, la page le reconnaît (PERIMEE, retrait) et le geste termine",
       "moteur": "firefox",
       "ok": true,
-      "ms": 5050,
+      "ms": 4974,
       "erreur": null,
       "assertions": [
         {
@@ -5570,7 +5630,7 @@
           "cause": "retrait",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 1,
+          "ms": 3,
           "crees": 0,
           "chronologie": null,
           "maj": null
@@ -5594,7 +5654,7 @@
       "titre": "INTERRUPTION ordre inverse (désinscription d'abord) : caches orphelins SANS inscription ; jamais servis ; nettoyés à la prochaine activation (version suivante)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8152,
+      "ms": 6915,
       "erreur": null,
       "assertions": [
         {
@@ -5621,7 +5681,7 @@
       "titre": "GESTE « Retirer la copie » : unregister ET caches du produit ; la page courante reste contrôlée jusqu'à sa navigation ; MUTANTS (sans caches / tous les caches) tués",
       "moteur": "firefox",
       "ok": true,
-      "ms": 8908,
+      "ms": 8445,
       "erreur": null,
       "assertions": [
         {
@@ -5687,7 +5747,7 @@
       "titre": "404/410 ne retirent rien (S8) ; le retrait se publie à la MÊME URL ; la règle écrite : attendre la fermeture de tous les clients",
       "moteur": "firefox",
       "ok": true,
-      "ms": 5619,
+      "ms": 5638,
       "erreur": null,
       "assertions": [
         {
@@ -5703,7 +5763,7 @@
       "titre": "DÉCISION du portail (fonction pure) : chaque refus a son code et sa cause ; l'ordre des vérifications est celui de la DoR",
       "moteur": "firefox",
       "ok": true,
-      "ms": 1,
+      "ms": 0,
       "erreur": null,
       "assertions": [
         {
@@ -5835,7 +5895,7 @@
       "titre": "SW MUET : le portail rend la main au délai avec VAULT_COQUILLE_RESERVE_ABSENTE (silence-du-sw), jamais un blocage, jamais de Worker",
       "moteur": "firefox",
       "ok": true,
-      "ms": 4253,
+      "ms": 4497,
       "erreur": null,
       "assertions": [
         {
@@ -5844,7 +5904,7 @@
         },
         {
           "ok": true,
-          "message": "borné dans le temps (1005 ms)"
+          "message": "borné dans le temps (1004 ms)"
         }
       ],
       "mesures": {
@@ -5854,12 +5914,12 @@
           "cause": "silence-du-sw",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 1005,
+          "ms": 1004,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1004, "update()-resolue"],
-            [1004, "etat:ok"]
+            [1003, "update()-resolue"],
+            [1003, "etat:ok"]
           ],
           "maj": "ok"
         }
@@ -5871,7 +5931,7 @@
       "titre": "MESSAGES mal formés ou d'un autre client : aucune réponse, compteur de refus ; un Worker (client « worker ») ne peut pas interroger le SW ; MUTANT messagesDeTousLesClients répond au Worker",
       "moteur": "firefox",
       "ok": true,
-      "ms": 15000,
+      "ms": 15568,
       "erreur": null,
       "assertions": [
         {
@@ -5961,7 +6021,7 @@
       "titre": "CONTRÔLEUR CHANGÉ entre la vérification et la création du Worker : refus DIVERGENTE sans Worker ; MUTANTS (sans re-contrôle / sans poignée de main / les deux) tués",
       "moteur": "firefox",
       "ok": true,
-      "ms": 30084,
+      "ms": 26433,
       "erreur": null,
       "assertions": [
         {
@@ -5988,15 +6048,15 @@
           "cause": "controleur-change",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 4387,
+          "ms": 4074,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1003, "update()-resolue"],
-            [1003, "etat:ok"],
-            [2080, "updatefound"],
-            [4386, "installing:installed"],
-            [4386, "installing:activating"]
+            [1004, "update()-resolue"],
+            [1004, "etat:ok"],
+            [2077, "updatefound"],
+            [4070, "installing:installed"],
+            [4071, "installing:activating"]
           ],
           "maj": "ok"
         },
@@ -6006,15 +6066,15 @@
           "cause": "controleur-change",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 5039,
+          "ms": 3831,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1004, "update()-resolue"],
-            [1004, "etat:ok"],
-            [2066, "updatefound"],
-            [5037, "installing:installed"],
-            [5038, "installing:activating"]
+            [1006, "update()-resolue"],
+            [1006, "etat:ok"],
+            [2041, "updatefound"],
+            [3830, "installing:installed"],
+            [3830, "installing:activating"]
           ],
           "maj": "ok"
         },
@@ -6024,7 +6084,7 @@
           "cause": "worker-d-une-autre-version",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 4036,
+          "ms": 3905,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -6035,16 +6095,16 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 4128,
+          "ms": 4000,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1057, "update()-resolue"],
-            [1057, "etat:ok"],
-            [2090, "updatefound"],
-            [4104, "installing:installed"],
-            [4105, "installing:activating"],
-            [4105, "installing:activated"]
+            [1022, "update()-resolue"],
+            [1022, "etat:ok"],
+            [2055, "updatefound"],
+            [3975, "installing:installed"],
+            [3975, "installing:activating"],
+            [3976, "installing:activated"]
           ],
           "maj": "ok"
         }
@@ -6056,7 +6116,7 @@
       "titre": "ENTRÉE ALTÉRÉE APRÈS LE PORTAIL (Worker, import statique, entrée supprimée) : refus typé, jamais de clé ; MUTANTS (SW sans hachage ; + portail sans poignée de main) tués",
       "moteur": "firefox",
       "ok": true,
-      "ms": 19409,
+      "ms": 18496,
       "erreur": null,
       "assertions": [
         {
@@ -6087,7 +6147,7 @@
           "cause": "entree-alteree-apres-le-portail",
           "detail": ["/spike/travailleur.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 1133,
+          "ms": 1134,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -6098,7 +6158,7 @@
           "cause": "entree-alteree-apres-le-portail",
           "detail": ["/spike/lib.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 1138,
+          "ms": 1182,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -6109,7 +6169,7 @@
           "cause": "entree-absente-apres-le-portail",
           "detail": ["/spike/travailleur.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 1121,
+          "ms": 1122,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -6120,7 +6180,7 @@
           "cause": "worker-d-une-autre-version",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 1033,
+          "ms": 1097,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -6131,12 +6191,12 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 1056,
+          "ms": 1029,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1035, "update()-resolue"],
-            [1035, "etat:ok"]
+            [1008, "update()-resolue"],
+            [1008, "etat:ok"]
           ],
           "maj": "ok"
         }
@@ -6148,7 +6208,7 @@
       "titre": "QUOTA insuffisant à l'installation : installation rejetée, aucun cache, aucun contrôleur → ABSENTE (aucun-controleur) ; simulé (trois moteurs) et RÉEL par CDP (Chromium)",
       "moteur": "firefox",
       "ok": true,
-      "ms": 1964,
+      "ms": 1971,
       "erreur": null,
       "assertions": [
         {
@@ -6176,7 +6236,7 @@
       "titre": "COUPURE pendant l'installation (réseau coupé à la 40e requête) : rejetée, Cache partiel supprimé ; reprise une fois le réseau rendu ; puis navigateur FERMÉ en pleine installation et profil rouvert",
       "moteur": "firefox",
       "ok": true,
-      "ms": 12310,
+      "ms": 10501,
       "erreur": null,
       "assertions": [
         {
@@ -6214,7 +6274,7 @@
       "titre": "REQUÊTE INTER-ORIGINE du propre client du SW (page de la réserve SANS CSP) : le SW la REFUSE (HORS_ORIGINE), l'autre origine ne reçoit rien ; MUTANT « hors origine → réseau » la laisse partir",
       "moteur": "firefox",
       "ok": true,
-      "ms": 7561,
+      "ms": 6643,
       "erreur": null,
       "assertions": [
         {
@@ -6271,7 +6331,7 @@
       "titre": "MÉTHODES : POST sur un chemin listé ou sous /artifacts/ → refus explicite ; la liste ne répond qu'à GET",
       "moteur": "firefox",
       "ok": true,
-      "ms": 3844,
+      "ms": 3302,
       "erreur": null,
       "assertions": [
         {
@@ -6322,7 +6382,7 @@
       "titre": "serviceSansHachage : une entrée altérée (même taille) n'est plus refusée",
       "moteur": "firefox",
       "ok": true,
-      "ms": 6440,
+      "ms": 5658,
       "erreur": null,
       "assertions": [
         {
@@ -6349,7 +6409,7 @@
       "titre": "taille non comparée (service ET installation) : MUTANT SURVIVANT ÉQUIVALENT — le hachage couvre la taille ; le contrôle de taille reste un garde-fou bon marché avant de hacher",
       "moteur": "firefox",
       "ok": true,
-      "ms": 3658,
+      "ms": 3282,
       "erreur": null,
       "assertions": [
         {
@@ -6367,7 +6427,7 @@
       "titre": "installAccepteUnEcart : une installation avec un fichier trafiqué n'est plus rejetée",
       "moteur": "firefox",
       "ok": true,
-      "ms": 3740,
+      "ms": 3509,
       "erreur": null,
       "assertions": [
         {
@@ -6394,7 +6454,7 @@
       "titre": "installAvecCacheHttp : v2 s'installe sur octets frais en nominal, échoue sur octets périmés sous le mutant",
       "moteur": "firefox",
       "ok": true,
-      "ms": 6324,
+      "ms": 5795,
       "erreur": null,
       "assertions": [
         {
@@ -6424,7 +6484,7 @@
       "titre": "garde de passage /artifacts/** : sans contrôle de destination, de chemin, de type ; ou artefacts servis par le SW",
       "moteur": "firefox",
       "ok": true,
-      "ms": 24084,
+      "ms": 19880,
       "erreur": null,
       "assertions": [
         {
@@ -6493,7 +6553,7 @@
       "titre": "supprimeTout (activation) : la mise à jour supprime AUSSI les caches qui ne sont pas au produit",
       "moteur": "firefox",
       "ok": true,
-      "ms": 13950,
+      "ms": 11692,
       "erreur": null,
       "assertions": [
         {
@@ -6520,7 +6580,7 @@
       "titre": "portail : ignoreLaRevocation, sansVerification, contourneSansSW",
       "moteur": "firefox",
       "ok": true,
-      "ms": 22854,
+      "ms": 18334,
       "erreur": null,
       "assertions": [
         {
@@ -6571,11 +6631,63 @@
       "notes": []
     },
     {
+      "id": "B1",
+      "titre": "E2E : la vraie coquille publiée derrière le SW (origine hostile après l'installation) déverrouille par la phrase et démarre la vraie application Rails ; tout le code vient du SW",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 430318,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "la coquille réelle est prête, contrôlée par le SW, l'origine répondant MAUVAIS à tout code"
+        },
+        {
+          "ok": true,
+          "message": "la page produit est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "le Worker de confiance est démarré (octets du SW)"
+        },
+        {
+          "ok": true,
+          "message": "DÉVERROUILLAGE COMPLET : Argon2id (Worker de dérivation réel) puis ouverture du volume, derrière le SW"
+        },
+        {
+          "ok": true,
+          "message": "Firefox : cycle relevé « cycle:demarrage-en-cours » (boot Rails NON PROUVÉ, comme sans SW : B3)"
+        },
+        {
+          "ok": true,
+          "message": "AUCUNE requête de code n'a atteint l'origine : chaque octet exécuté vient du SW"
+        }
+      ],
+      "mesures": {
+        "etatApresDeverrouillage": "ouvert",
+        "cycle": "cycle:demarrage-en-cours",
+        "attendu": "firefox : boot Rails non prouvé (baseline du dépôt), voir B3",
+        "etapes": [
+          ["coquille-prete", 1794996014],
+          ["coffre-ouvert", 1794996019],
+          ["cycle:cycle:demarrage-en-cours", 1794996440]
+        ],
+        "refusDuSW": {
+          "refus": [],
+          "messagesRefuses": 0,
+          "horsOrigine": 0
+        },
+        "journalDePage": [],
+        "requetesDeCodeAuReseau": []
+      },
+      "notes": []
+    },
+    {
       "id": "B2",
       "titre": "REFUS SANS BOOT sur la vraie coquille : Worker de confiance altéré dans le cache ; argon2.wasm retiré du cache — aucun déverrouillage, aucune requête de boot",
       "moteur": "firefox",
       "ok": true,
-      "ms": 35408,
+      "ms": 34989,
       "erreur": null,
       "assertions": [
         {
@@ -6610,11 +6722,36 @@
       "notes": []
     },
     {
+      "id": "B3",
+      "titre": "TÉMOIN sans SW (Firefox) : la même coquille, servie par le réseau, déverrouille puis démarre-t-elle ? — sépare ce qui tient au SW de ce qui tient au moteur",
+      "moteur": "firefox",
+      "ok": true,
+      "ms": 427898,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "coquille prête (sans SW)"
+        },
+        {
+          "ok": true,
+          "message": "déverrouillage sans SW (référence pour B1)"
+        }
+      ],
+      "mesures": {
+        "ouvertSansSW": true,
+        "cycleSansSW": "cycle:demarrage-en-cours"
+      },
+      "notes": [
+        "Épreuve-témoin : son verdict est une MESURE (cycleSansSW), pas une exigence. Si le cycle reste « demarrage-en-cours » sans SW sur ce moteur, le blocage de B1 n'est pas imputable au SW."
+      ]
+    },
+    {
       "id": "S1",
       "titre": "SW à la racine sous la CSP de production (classique ET module)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1798,
+      "ms": 1805,
       "erreur": null,
       "assertions": [
         {
@@ -6643,7 +6780,7 @@
       "titre": "Page rendue par le SW avec ses en-têtes embarqués ; CSP effective ; 0 requête réseau",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2573,
+      "ms": 2593,
       "erreur": null,
       "assertions": [
         {
@@ -6686,7 +6823,7 @@
       "titre": "Worker module : script, import statique, import() dynamique rendus par le SW ; l'origine hostile n'est jamais exécutée",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1590,
+      "ms": 1597,
       "erreur": null,
       "assertions": [
         {
@@ -6733,7 +6870,7 @@
       "titre": "Serveur arrêté : page, Worker, import() servis ; un fetch hors réserve lève TypeError",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2283,
+      "ms": 2295,
       "erreur": null,
       "assertions": [
         {
@@ -6777,7 +6914,7 @@
       "titre": "Entrée du Cache altérée par un écrivain de même origine : refus 503 ; entrée supprimée : refus ; `verifier` les nomme",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1637,
+      "ms": 1645,
       "erreur": null,
       "assertions": [
         {
@@ -6834,7 +6971,7 @@
       "titre": "Mise à jour : v2 installée EN ATTENTE ; page et Worker neuf restent v1 ; un rechargement n'active pas l'attente",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1826,
+      "ms": 1835,
       "erreur": null,
       "assertions": [
         {
@@ -6861,7 +6998,7 @@
       "mesures": {
         "maj": {
           "ok": true,
-          "ms": 6,
+          "ms": 5,
           "installing": "installing",
           "waiting": null
         },
@@ -6888,7 +7025,7 @@
       "titre": "MUTANT skipWaiting en cours de session → mélange de versions (la page v1, le Worker v2)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1809,
+      "ms": 1815,
       "erreur": null,
       "assertions": [
         {
@@ -6924,7 +7061,7 @@
       "titre": "Installation qui échoue (empreinte fausse) : ancien SW gardé, update() résolue sans erreur ; le Cache partiel est supprimé (le mutant le laisse)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 6238,
+      "ms": 6256,
       "erreur": null,
       "assertions": [
         {
@@ -6983,7 +7120,7 @@
       "titre": "Script du SW en 404, 410, 500 ou réseau coupé : update() rejetée, l'inscription survit",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1587,
+      "ms": 1595,
       "erreur": null,
       "assertions": [
         {
@@ -7025,17 +7162,17 @@
           "410": {
             "ok": false,
             "erreur": "TypeError",
-            "ms": 0
+            "ms": 1
           },
           "500": {
             "ok": false,
             "erreur": "TypeError",
-            "ms": 1
+            "ms": 0
           },
           "reseau": {
             "ok": false,
             "erreur": "TypeError",
-            "ms": 0
+            "ms": 1
           }
         }
       },
@@ -7046,7 +7183,7 @@
       "titre": "Script du SW servi max-age=1 an : update() voit quand même la v2 (updateViaCache none)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1820,
+      "ms": 1824,
       "erreur": null,
       "assertions": [
         {
@@ -7070,7 +7207,7 @@
       "titre": "Navigations successives : le script du SW est redemandé SANS passer par le SW — mais pas à chaque navigation (on ne s'y fie pas)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 19138,
+      "ms": 19146,
       "erreur": null,
       "assertions": [
         {
@@ -7098,7 +7235,7 @@
       "titre": "SW de retrait : inscriptions 0, caches du produit vidés ; la page contrôlée le reste jusqu'à sa navigation",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2195,
+      "ms": 2205,
       "erreur": null,
       "assertions": [
         {
@@ -7136,7 +7273,7 @@
       "titre": "unregister() côté page : renvoie true, le Cache N'est PAS vidé",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1587,
+      "ms": 1588,
       "erreur": null,
       "assertions": [
         {
@@ -7165,7 +7302,7 @@
       "titre": "Deux origines : le SW de la coquille ne voit rien de l'origine applicative ; le cadre ne peut pas enregistrer sur la coquille",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1606,
+      "ms": 1599,
       "erreur": null,
       "assertions": [
         {
@@ -7213,7 +7350,7 @@
       "titre": "COOP posé sur la réponse fabriquée par le SW : window.opener null ; témoin sans COOP : opener présent ; cadrage tiers",
       "moteur": "webkit",
       "ok": true,
-      "ms": 7338,
+      "ms": 7322,
       "erreur": null,
       "assertions": [
         {
@@ -7251,18 +7388,18 @@
       "titre": "Réserve réelle : temps d'installation",
       "moteur": "webkit",
       "ok": true,
-      "ms": 898,
+      "ms": 904,
       "erreur": null,
       "assertions": [
         {
           "ok": true,
-          "message": "installation de 216 fichiers (2895217 octets) en 197 ms"
+          "message": "installation de 216 fichiers (2896920 octets) en 197 ms"
         }
       ],
       "mesures": {
         "installationMs": 197,
         "entrees": 216,
-        "octets": 2895217
+        "octets": 2896920
       },
       "notes": []
     },
@@ -7271,7 +7408,7 @@
       "titre": "Vérification complète de la réserve (3 passes) et service de libv86 (hachage compris)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1719,
+      "ms": 1727,
       "erreur": null,
       "assertions": [
         {
@@ -7298,11 +7435,11 @@
             "ok": true
           },
           {
-            "ms": 40,
+            "ms": 38,
             "ok": true
           },
           {
-            "ms": 41,
+            "ms": 39,
             "ok": true
           }
         ],
@@ -7310,7 +7447,7 @@
           "chemin": "/vendor/v86/artefacts/libv86-408b0969f943dfd4.mjs",
           "servis": [
             {
-              "ms": 4,
+              "ms": 3,
               "octets": 356131
             },
             {
@@ -7318,7 +7455,7 @@
               "octets": 356131
             },
             {
-              "ms": 2,
+              "ms": 3,
               "octets": 356131
             }
           ]
@@ -7331,7 +7468,7 @@
       "titre": "La vraie coquille publiée, serveur arrêté : prête, canal de confiance établi, argon2.wasm servi, import() de libv86",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1179,
+      "ms": 1162,
       "erreur": null,
       "assertions": [
         {
@@ -7364,7 +7501,7 @@
       "titre": "context.setOffline(true) avec un SW installé : ce que chaque moteur coupe (mesure, pas d'exigence)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1586,
+      "ms": 1594,
       "erreur": null,
       "assertions": [
         {
@@ -7395,7 +7532,7 @@
       "titre": "Profil persistant, navigateur fermé puis rouvert, origine morte : page et Worker servis par le SW",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3266,
+      "ms": 3174,
       "erreur": null,
       "assertions": [
         {
@@ -7409,7 +7546,7 @@
       ],
       "mesures": {
         "reouverture": {
-          "ms": 702,
+          "ms": 705,
           "b": {
             "type": "bonjour",
             "sequence": 1,
@@ -7431,7 +7568,7 @@
       "titre": "PROTOCOLE : deux onglets, mise à jour publiée, import tardif → aucun mélange ; la v2 ne s'applique qu'après la fermeture de TOUS les clients",
       "moteur": "webkit",
       "ok": true,
-      "ms": 4448,
+      "ms": 4466,
       "erreur": null,
       "assertions": [
         {
@@ -7517,7 +7654,7 @@
       "titre": "MUTANT skipWaiting : le même scénario MÉLANGE les versions dans l'onglet 1 (l'épreuve A1 le tue)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3047,
+      "ms": 3066,
       "erreur": null,
       "assertions": [
         {
@@ -7555,7 +7692,7 @@
       "titre": "Pas de claim : la page qui enregistre le SW n'est PAS contrôlée ; MUTANT claim : elle l'est, en cours de vie",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2999,
+      "ms": 3002,
       "erreur": null,
       "assertions": [
         {
@@ -7578,7 +7715,7 @@
       "titre": "Un seul onglet : navigation vers autre chose puis retour — le contrôleur et la page restent d'accord",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1925,
+      "ms": 1932,
       "erreur": null,
       "assertions": [
         {
@@ -7613,7 +7750,7 @@
       "titre": "TABLE des états (fonction pure) : état de fraîcheur et décision du portail pour chaque combinaison d'observations",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1,
+      "ms": 0,
       "erreur": null,
       "assertions": [
         {
@@ -7744,7 +7881,7 @@
       "titre": "Nominal : rien de nouveau → « version vérifiée », le portail autorise",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1632,
+      "ms": 1636,
       "erreur": null,
       "assertions": [
         {
@@ -7759,7 +7896,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 49,
+          "ms": 47,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -7776,7 +7913,7 @@
       "titre": "COURSE : révocation publiée, script lent. Le portail qui ATTEND refuse ; celui qui ne bloque pas (mutant) autorise avant de savoir",
       "moteur": "webkit",
       "ok": true,
-      "ms": 4595,
+      "ms": 4605,
       "erreur": null,
       "assertions": [
         {
@@ -7785,7 +7922,7 @@
         },
         {
           "ok": true,
-          "message": "le refus a effectivement attendu la vérification (1346 ms)"
+          "message": "le refus a effectivement attendu la vérification (1343 ms)"
         },
         {
           "ok": true,
@@ -7799,14 +7936,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 1346,
+          "ms": 1343,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1207, "update()-resolue"],
+            [1206, "update()-resolue"],
             [1207, "updatefound"],
-            [1343, "installing:installed"],
-            [1343, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
+            [1340, "installing:installed"],
+            [1340, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -7816,11 +7953,11 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 50,
+          "ms": 49,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [0, "etat:delai"]
+            [1, "etat:delai"]
           ],
           "maj": "delai"
         }
@@ -7832,7 +7969,7 @@
       "titre": "Installation rejetée : update() résolue SANS nouveau Worker ; état « vérification échouée » ; le portail n'annonce jamais « à jour »",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1644,
+      "ms": 1649,
       "erreur": null,
       "assertions": [
         {
@@ -7857,8 +7994,8 @@
             [0, "update()"],
             [5, "update()-resolue"],
             [5, "updatefound"],
-            [26, "etat:rejetee"],
-            [26, "installing:redundant"]
+            [24, "etat:rejetee"],
+            [25, "installing:redundant"]
           ],
           "maj": "rejetee"
         }
@@ -7870,7 +8007,7 @@
       "titre": "Installation LENTE : update() résout avant ou après la fin de l'installation ? (chronologie brute), puis état « mise à jour prête »",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3246,
+      "ms": 3251,
       "erreur": null,
       "assertions": [
         {
@@ -7885,14 +8022,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 1649,
+          "ms": 1653,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [6, "update()-resolue"],
-            [6, "updatefound"],
-            [1642, "installing:installed"],
-            [1643, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
+            [5, "update()-resolue"],
+            [5, "updatefound"],
+            [1646, "installing:installed"],
+            [1647, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
           ],
           "maj": "ok"
         }
@@ -7904,7 +8041,7 @@
       "titre": "Origine qui PEND (script du SW sans réponse) : le portail rend la main au délai, « non vérifiable », jamais un blocage",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3096,
+      "ms": 3100,
       "erreur": null,
       "assertions": [
         {
@@ -7913,7 +8050,7 @@
         },
         {
           "ok": true,
-          "message": "borné par DELAI_VERIFICATION_MS (1508 ms pour 1500)"
+          "message": "borné par DELAI_VERIFICATION_MS (1510 ms pour 1500)"
         }
       ],
       "mesures": {
@@ -7923,11 +8060,11 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 1508,
+          "ms": 1510,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
-            [1501, "etat:delai"]
+            [1500, "etat:delai"]
           ],
           "maj": "delai"
         }
@@ -7939,7 +8076,7 @@
       "titre": "Réseau coupé (serveur arrêté) : update() rejetée, « non vérifiable », le portail autorise sans attendre le délai",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1637,
+      "ms": 1639,
       "erreur": null,
       "assertions": [
         {
@@ -7948,7 +8085,7 @@
         },
         {
           "ok": true,
-          "message": "l'échec réseau est immédiat, pas le délai (50 ms)"
+          "message": "l'échec réseau est immédiat, pas le délai (49 ms)"
         }
       ],
       "mesures": {
@@ -7958,7 +8095,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-courante-non-verifiable",
-          "ms": 50,
+          "ms": 49,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -7975,7 +8112,7 @@
       "titre": "Révocation CONNUE : plancher > version courante → REFUS ; plancher ≤ courante → autorise ; script de retrait en attente → REFUS",
       "moteur": "webkit",
       "ok": true,
-      "ms": 5270,
+      "ms": 5120,
       "erreur": null,
       "assertions": [
         {
@@ -8003,7 +8140,7 @@
           "chronologie": [
             [0, "update()"],
             [5, "update()-resolue"],
-            [6, "updatefound"],
+            [5, "updatefound"],
             [150, "installing:installed"],
             [150, "etat:ok attente={\"sequence\":2,\"plancher\":2,\"retrait\":false}"]
           ],
@@ -8015,14 +8152,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 165,
+          "ms": 141,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [5, "update()-resolue"],
             [5, "updatefound"],
-            [157, "installing:installed"],
-            [158, "etat:ok attente={\"sequence\":2,\"plancher\":1,\"retrait\":false}"]
+            [133, "installing:installed"],
+            [134, "etat:ok attente={\"sequence\":2,\"plancher\":1,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -8032,14 +8169,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 47,
+          "ms": 45,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
             [4, "update()-resolue"],
-            [4, "updatefound"],
+            [5, "updatefound"],
             [5, "installing:installed"],
-            [5, "etat:ok attente={\"sequence\":3,\"plancher\":0,\"retrait\":true}"]
+            [6, "etat:ok attente={\"sequence\":3,\"plancher\":0,\"retrait\":true}"]
           ],
           "maj": "ok"
         }
@@ -8051,7 +8188,7 @@
       "titre": "Révocation connue APRÈS le déverrouillage : la session n'est pas tuée (écrit), l'état passe en « révocation connue »",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3433,
+      "ms": 3432,
       "erreur": null,
       "assertions": [
         {
@@ -8076,7 +8213,7 @@
       "titre": "LIMITES du plancher non signé : une origine hostile peut REFUSER (plancher 99 = déni de service) et PUBLIER UN RETOUR ARRIÈRE (non reconnu)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3593,
+      "ms": 3482,
       "erreur": null,
       "assertions": [
         {
@@ -8095,14 +8232,14 @@
           "cause": "plancher",
           "detail": null,
           "fraicheur": "revocation-connue",
-          "ms": 139,
+          "ms": 141,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
             [5, "update()-resolue"],
-            [6, "updatefound"],
-            [137, "installing:installed"],
-            [137, "etat:ok attente={\"sequence\":2,\"plancher\":99,\"retrait\":false}"]
+            [5, "updatefound"],
+            [139, "installing:installed"],
+            [140, "etat:ok attente={\"sequence\":2,\"plancher\":99,\"retrait\":false}"]
           ],
           "maj": "ok"
         },
@@ -8112,14 +8249,14 @@
           "cause": null,
           "detail": null,
           "fraicheur": "mise-a-jour-prete",
-          "ms": 150,
+          "ms": 154,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [5, "update()-resolue"],
             [5, "updatefound"],
-            [144, "installing:installed"],
-            [144, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
+            [148, "installing:installed"],
+            [148, "etat:ok attente={\"sequence\":2,\"plancher\":0,\"retrait\":false}"]
           ],
           "maj": "ok"
         }
@@ -8131,7 +8268,7 @@
       "titre": "AUCUN CONTRÔLEUR : première visite — le bootstrap vient de l'origine (écrit), le portail refuse et ne crée aucun Worker",
       "moteur": "webkit",
       "ok": true,
-      "ms": 700,
+      "ms": 703,
       "erreur": null,
       "assertions": [
         {
@@ -8172,7 +8309,7 @@
       "titre": "PREMIER CONTRÔLE : la page qui enregistre reste non contrôlée ; après navigation, TOUT le code de la vraie coquille vient du SW (aucune requête réseau hors /artifacts, VM et script du SW)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1637,
+      "ms": 1631,
       "erreur": null,
       "assertions": [
         {
@@ -8204,7 +8341,7 @@
       "titre": "URL INATTENDUE : fetch, import(), Worker, wasm, <script>, importScripts d'un fichier que l'origine sert mais que la liste n'épingle pas → refusés, jamais exécutés ; MUTANT « hors liste → réseau » exécute l'origine",
       "moteur": "webkit",
       "ok": true,
-      "ms": 6205,
+      "ms": 6189,
       "erreur": null,
       "assertions": [
         {
@@ -8282,7 +8419,7 @@
       "titre": "VARIANTES DE REQUÊTE : query, fragment, casse, `//`, barre finale, %-encodages, antislash, `..`, `%2f` sous /artifacts/ — jamais d'octets de l'origine hostile",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1615,
+      "ms": 1614,
       "erreur": null,
       "assertions": [
         {
@@ -8463,7 +8600,7 @@
       "titre": "REDIRECTIONS : sous /artifacts/ une redirection n'est jamais suivie ; à l'installation une redirection fait échouer l'installation ; MUTANT redirection suivie",
       "moteur": "webkit",
       "ok": true,
-      "ms": 11377,
+      "ms": 11385,
       "erreur": null,
       "assertions": [
         {
@@ -8512,7 +8649,7 @@
       "titre": "TYPES MIME et destinations : sous /artifacts/ aucun type exécutable en passage, aucune destination script/worker ; v86.wasm nommé passe en fetch ; fichiers listés rendus avec le bon type",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1616,
+      "ms": 1614,
       "erreur": null,
       "assertions": [
         {
@@ -8584,7 +8721,7 @@
       "titre": "SANS SW (mode qui l'interdit : `serviceWorkers: block`) : la page vient du réseau, le portail refuse (aucun-controleur) et ne crée aucun Worker — Q1, refus par défaut",
       "moteur": "webkit",
       "ok": true,
-      "ms": 707,
+      "ms": 705,
       "erreur": null,
       "assertions": [
         {
@@ -8639,7 +8776,7 @@
       "titre": "Argon2 : fetch + WebAssembly.instantiate(octets) servis par le SW, serveur ARRÊTÉ et origine hostile ; mêmes octets de sortie que sous Node ; (instantiateStreaming non invoqué)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2441,
+      "ms": 2297,
       "erreur": null,
       "assertions": [
         {
@@ -8674,7 +8811,7 @@
       "titre": "Argon2 : double barrière — entrée altérée (le SW refuse) ; SW sans contrôle de hachage + octets altérés (le produit refuse par son empreinte épinglée)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3192,
+      "ms": 3187,
       "erreur": null,
       "assertions": [
         {
@@ -8713,7 +8850,7 @@
       "titre": "Worker de dérivation RÉEL (/derivation-worker.mjs, octets du produit) : dérive une KEK non extractible, serveur arrêté, origine hostile",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2709,
+      "ms": 2701,
       "erreur": null,
       "assertions": [
         {
@@ -8728,7 +8865,7 @@
           "message": "",
           "extractible": false,
           "algo": "AES-GCM",
-          "ms": 430
+          "ms": 425
         }
       },
       "notes": []
@@ -8738,7 +8875,7 @@
       "titre": "RETRAIT avec onglets actifs : installé puis EN ATTENTE ; l'onglet de session continue en v1 ; un nouvel onglet voit la révocation connue et REFUSE ; tous fermés → désinscription + caches du produit supprimés, autre cache conservé",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2987,
+      "ms": 2984,
       "erreur": null,
       "assertions": [
         {
@@ -8781,7 +8918,7 @@
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1, "update()-resolue"],
+            [2, "update()-resolue"],
             [2, "etat:ok attente={\"sequence\":3,\"plancher\":0,\"retrait\":true}"]
           ],
           "maj": "ok"
@@ -8802,7 +8939,7 @@
       "titre": "RETRAIT et réseau coupé : le script de retrait n'est jamais vu ; l'ancienne version reste servie et le dit (« non vérifiable ») — aucun retrait immédiat n'est promis",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1647,
+      "ms": 1656,
       "erreur": null,
       "assertions": [
         {
@@ -8834,7 +8971,7 @@
       "titre": "INTERRUPTION ordre nominal (caches d'abord, désinscription ensuite) coupée au milieu : le SW de retrait reste actif, la page le reconnaît (PERIMEE, retrait) et le geste termine",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2408,
+      "ms": 2311,
       "erreur": null,
       "assertions": [
         {
@@ -8890,7 +9027,7 @@
       "titre": "INTERRUPTION ordre inverse (désinscription d'abord) : caches orphelins SANS inscription ; jamais servis ; nettoyés à la prochaine activation (version suivante)",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3093,
+      "ms": 3107,
       "erreur": null,
       "assertions": [
         {
@@ -8917,7 +9054,7 @@
       "titre": "GESTE « Retirer la copie » : unregister ET caches du produit ; la page courante reste contrôlée jusqu'à sa navigation ; MUTANTS (sans caches / tous les caches) tués",
       "moteur": "webkit",
       "ok": true,
-      "ms": 4781,
+      "ms": 4778,
       "erreur": null,
       "assertions": [
         {
@@ -8983,7 +9120,7 @@
       "titre": "404/410 ne retirent rien (S8) ; le retrait se publie à la MÊME URL ; la règle écrite : attendre la fermeture de tous les clients",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1594,
+      "ms": 1593,
       "erreur": null,
       "assertions": [
         {
@@ -9131,7 +9268,7 @@
       "titre": "SW MUET : le portail rend la main au délai avec VAULT_COQUILLE_RESERVE_ABSENTE (silence-du-sw), jamais un blocage, jamais de Worker",
       "moteur": "webkit",
       "ok": true,
-      "ms": 2193,
+      "ms": 2183,
       "erreur": null,
       "assertions": [
         {
@@ -9167,7 +9304,7 @@
       "titre": "MESSAGES mal formés ou d'un autre client : aucune réponse, compteur de refus ; un Worker (client « worker ») ne peut pas interroger le SW ; MUTANT messagesDeTousLesClients répond au Worker",
       "moteur": "webkit",
       "ok": true,
-      "ms": 11894,
+      "ms": 11897,
       "erreur": null,
       "assertions": [
         {
@@ -9257,7 +9394,7 @@
       "titre": "CONTRÔLEUR CHANGÉ entre la vérification et la création du Worker : refus DIVERGENTE sans Worker ; MUTANTS (sans re-contrôle / sans poignée de main / les deux) tués",
       "moteur": "webkit",
       "ok": true,
-      "ms": 7128,
+      "ms": 7170,
       "erreur": null,
       "assertions": [
         {
@@ -9302,15 +9439,15 @@
           "cause": "controleur-change",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 185,
+          "ms": 194,
           "crees": 0,
           "chronologie": [
             [0, "update()"],
-            [1, "update()-resolue"],
-            [1, "etat:ok"],
-            [55, "updatefound"],
-            [183, "installing:installed"],
-            [183, "installing:activating"]
+            [2, "update()-resolue"],
+            [2, "etat:ok"],
+            [58, "updatefound"],
+            [193, "installing:installed"],
+            [193, "installing:activating"]
           ],
           "maj": "ok"
         },
@@ -9320,7 +9457,7 @@
           "cause": "worker-d-une-autre-version",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 201,
+          "ms": 200,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -9331,16 +9468,16 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 197,
+          "ms": 202,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
             [2, "update()-resolue"],
             [2, "etat:ok"],
-            [59, "updatefound"],
-            [190, "installing:installed"],
-            [190, "installing:activating"],
-            [191, "installing:activated"]
+            [61, "updatefound"],
+            [195, "installing:installed"],
+            [195, "installing:activating"],
+            [196, "installing:activated"]
           ],
           "maj": "ok"
         }
@@ -9352,7 +9489,7 @@
       "titre": "ENTRÉE ALTÉRÉE APRÈS LE PORTAIL (Worker, import statique, entrée supprimée) : refus typé, jamais de clé ; MUTANTS (SW sans hachage ; + portail sans poignée de main) tués",
       "moteur": "webkit",
       "ok": true,
-      "ms": 8296,
+      "ms": 8303,
       "erreur": null,
       "assertions": [
         {
@@ -9383,7 +9520,7 @@
           "cause": "entree-alteree-apres-le-portail",
           "detail": ["/spike/travailleur.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 82,
+          "ms": 88,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -9394,7 +9531,7 @@
           "cause": "entree-alteree-apres-le-portail",
           "detail": ["/spike/lib.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 87,
+          "ms": 91,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -9405,7 +9542,7 @@
           "cause": "entree-absente-apres-le-portail",
           "detail": ["/spike/travailleur.mjs"],
           "fraicheur": "version-verifiee",
-          "ms": 88,
+          "ms": 84,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -9416,7 +9553,7 @@
           "cause": "worker-d-une-autre-version",
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 46,
+          "ms": 49,
           "crees": 1,
           "chronologie": null,
           "maj": null
@@ -9427,7 +9564,7 @@
           "cause": null,
           "detail": null,
           "fraicheur": "version-verifiee",
-          "ms": 48,
+          "ms": 51,
           "crees": 1,
           "chronologie": [
             [0, "update()"],
@@ -9472,7 +9609,7 @@
       "titre": "COUPURE pendant l'installation (réseau coupé à la 40e requête) : rejetée, Cache partiel supprimé ; reprise une fois le réseau rendu ; puis navigateur FERMÉ en pleine installation et profil rouvert",
       "moteur": "webkit",
       "ok": true,
-      "ms": 6058,
+      "ms": 6038,
       "erreur": null,
       "assertions": [
         {
@@ -9510,7 +9647,7 @@
       "titre": "REQUÊTE INTER-ORIGINE du propre client du SW (page de la réserve SANS CSP) : le SW la REFUSE (HORS_ORIGINE), l'autre origine ne reçoit rien ; MUTANT « hors origine → réseau » la laisse partir",
       "moteur": "webkit",
       "ok": true,
-      "ms": 4194,
+      "ms": 4193,
       "erreur": null,
       "assertions": [
         {
@@ -9567,7 +9704,7 @@
       "titre": "MÉTHODES : POST sur un chemin listé ou sous /artifacts/ → refus explicite ; la liste ne répond qu'à GET",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1592,
+      "ms": 1599,
       "erreur": null,
       "assertions": [
         {
@@ -9618,7 +9755,7 @@
       "titre": "serviceSansHachage : une entrée altérée (même taille) n'est plus refusée",
       "moteur": "webkit",
       "ok": true,
-      "ms": 3181,
+      "ms": 3172,
       "erreur": null,
       "assertions": [
         {
@@ -9645,7 +9782,7 @@
       "titre": "taille non comparée (service ET installation) : MUTANT SURVIVANT ÉQUIVALENT — le hachage couvre la taille ; le contrôle de taille reste un garde-fou bon marché avant de hacher",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1587,
+      "ms": 1581,
       "erreur": null,
       "assertions": [
         {
@@ -9663,7 +9800,7 @@
       "titre": "installAccepteUnEcart : une installation avec un fichier trafiqué n'est plus rejetée",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1698,
+      "ms": 1692,
       "erreur": null,
       "assertions": [
         {
@@ -9690,7 +9827,7 @@
       "titre": "installAvecCacheHttp : v2 s'installe sur octets frais en nominal, échoue sur octets périmés sous le mutant",
       "moteur": "webkit",
       "ok": true,
-      "ms": 1819,
+      "ms": 1812,
       "erreur": null,
       "assertions": [
         {
@@ -9720,7 +9857,7 @@
       "titre": "garde de passage /artifacts/** : sans contrôle de destination, de chemin, de type ; ou artefacts servis par le SW",
       "moteur": "webkit",
       "ok": true,
-      "ms": 12722,
+      "ms": 12692,
       "erreur": null,
       "assertions": [
         {
@@ -9789,7 +9926,7 @@
       "titre": "supprimeTout (activation) : la mise à jour supprime AUSSI les caches qui ne sont pas au produit",
       "moteur": "webkit",
       "ok": true,
-      "ms": 6192,
+      "ms": 6021,
       "erreur": null,
       "assertions": [
         {
@@ -9816,7 +9953,7 @@
       "titre": "portail : ignoreLaRevocation, sansVerification, contourneSansSW",
       "moteur": "webkit",
       "ok": true,
-      "ms": 8131,
+      "ms": 8173,
       "erreur": null,
       "assertions": [
         {
@@ -9867,11 +10004,60 @@
       "notes": []
     },
     {
+      "id": "B1",
+      "titre": "E2E : la vraie coquille publiée derrière le SW (origine hostile après l'installation) déverrouille par la phrase et démarre la vraie application Rails ; tout le code vient du SW",
+      "moteur": "webkit",
+      "ok": true,
+      "ms": 181548,
+      "erreur": null,
+      "assertions": [
+        {
+          "ok": true,
+          "message": "la coquille réelle est prête, contrôlée par le SW, l'origine répondant MAUVAIS à tout code"
+        },
+        {
+          "ok": true,
+          "message": "la page produit est contrôlée par le SW"
+        },
+        {
+          "ok": true,
+          "message": "le Worker de confiance est démarré (octets du SW)"
+        },
+        {
+          "ok": true,
+          "message": "WebKit : déverrouillage NON PROUVABLE (OPFS absent, refus du produit « indisponible ») — conforme à la matrice de compatibilité"
+        },
+        {
+          "ok": true,
+          "message": "AUCUNE requête de code n'a atteint l'origine : chaque octet exécuté vient du SW"
+        }
+      ],
+      "mesures": {
+        "etatApresDeverrouillage": "indisponible",
+        "attendu": "webkit : indisponible (OPFS absent)",
+        "etapes": [
+          ["coquille-prete", 1794997142],
+          ["coffre-non-ouvert", 1794997322]
+        ],
+        "refusDuSW": {
+          "refus": [],
+          "messagesRefuses": 0,
+          "horsOrigine": 0
+        },
+        "journalDePage": [
+          "console.error Failed to load resource: the server responded with a status of 503 ()",
+          "console.error Failed to load resource: the server responded with a status of 503 ()"
+        ],
+        "requetesDeCodeAuReseau": []
+      },
+      "notes": []
+    },
+    {
       "id": "B2",
       "titre": "REFUS SANS BOOT sur la vraie coquille : Worker de confiance altéré dans le cache ; argon2.wasm retiré du cache — aucun déverrouillage, aucune requête de boot",
       "moteur": "webkit",
       "ok": true,
-      "ms": 30539,
+      "ms": 30574,
       "erreur": null,
       "assertions": [
         {
