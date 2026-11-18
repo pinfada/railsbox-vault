@@ -113,7 +113,7 @@ job requis « Campagnes de mutation » :
 classification « injoignable », l'anti-retour par la vraie décision de déphasage et le rangement ;
 **intégration navigateur sur les trois moteurs** (`npm run test:browser`, projets
 `frontiere-descripteur-*`) pour WebCrypto et l'OPFS réels ; **bout en bout**
-(`tests/e2e/hors-ligne.spec.mjs`, lot 3 de `reprise.yml`) pour le démarrage réellement hors ligne et
+(`tests/e2e/hors-ligne.spec.mjs`, lot 5 de `reprise.yml`) pour le démarrage réellement hors ligne et
 les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les contre-épreuves « fabriqué »
 et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en bout en bout
 ; le retour arrière, en unitaire.
