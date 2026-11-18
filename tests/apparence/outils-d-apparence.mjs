@@ -21,11 +21,34 @@ export const ORIGINE_A = "http://127.0.0.1:4205";
 export const ORIGINES_SERVIES = Object.freeze([ORIGINE_A, "http://localhost:4206"]);
 
 /**
- * Règles dont un résultat `incomplete` vaut échec. Axe 4.14 y range une région défilante dont le
- * contenu n'est focalisable que par programme (`tabindex="-1"`) : dequelabs/axe-core#5364. Ces règles
- * ne sont pas laissées à `violations` seul, faute de quoi l'exigence s'affaiblirait sans bruit.
+ * Résultats `incomplete` d'axe 4.14 qui valent échec, par règle (journal des changements de 4.14.0, #290) :
+ * - `scrollable-region-focusable` : une région défilante dont le contenu n'est focalisable que par
+ *   programme (`tabindex="-1"`), dequelabs/axe-core#5364 ; toute son `incomplete` est ce cas ;
+ * - `color-contrast`, `messageKey` `emptyValue` seulement : un champ de saisie VIDE dont le contraste
+ *   échouerait une fois une valeur saisie, dequelabs/axe-core#5359. La `messageKey` `bgImage` (texte sur
+ *   fond image) reste un `incomplete` sans échec : la rendre bloquante ferait tomber les vraies pages.
  */
-export const REGLES_INCOMPLETES_BLOQUANTES = Object.freeze(["scrollable-region-focusable"]);
+export const INCOMPLETS_BLOQUANTS = Object.freeze([
+  Object.freeze({ regle: "scrollable-region-focusable" }),
+  Object.freeze({ regle: "color-contrast", messageKey: "emptyValue" }),
+]);
+
+/** Les noeuds `incomplete` qui valent échec, groupés par règle. Un nœud vaut échec si une de ses vérifications porte la `messageKey` visée. */
+export function incompletesBloquants(incomplete) {
+  return incomplete.flatMap((regle) => {
+    const specs = INCOMPLETS_BLOQUANTS.filter((spec) => spec.regle === regle.id);
+    const noeuds = regle.nodes.filter((noeud) =>
+      specs.some(
+        (spec) =>
+          !spec.messageKey ||
+          [...noeud.any, ...noeud.all, ...noeud.none].some(
+            (verification) => verification.data?.messageKey === spec.messageKey,
+          ),
+      ),
+    );
+    return noeuds.length > 0 ? [{ ...regle, nodes: noeuds }] : [];
+  });
+}
 
 export const titre = (page, nom) => page.getByRole("heading", { level: 2, name: nom, exact: true });
 export const bouton = (page, nom) => page.getByRole("button", { name: nom, exact: true });
@@ -57,10 +80,10 @@ export async function verifier(page, testInfo, nom) {
     `${RACINE}/${prefixe}-axe.json`,
     JSON.stringify({ violations: resultats.violations, incomplete: resultats.incomplete }, null, 2),
   );
-  const incompletesBloquants = resultats.incomplete.filter((regle) =>
-    REGLES_INCOMPLETES_BLOQUANTES.includes(regle.id),
-  );
-  expect([...resultats.violations, ...incompletesBloquants], `accessibilité : ${nom}`).toEqual([]);
+  expect(
+    [...resultats.violations, ...incompletesBloquants(resultats.incomplete)],
+    `accessibilité : ${nom}`,
+  ).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => innerWidth),
   );
