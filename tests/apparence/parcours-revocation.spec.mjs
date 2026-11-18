@@ -111,7 +111,7 @@ test("une demande de révocation ne survit pas à l'étape qui l'a faite : à l'
   expect(await revocations()).toBe(0);
 });
 
-// --- Révocation EN VOL (relecture de #308) : la sortie est fermée, rien n'est affirmé ------------------
+// --- Révocation EN VOL (relecture de #308) : un état unique, un avertissement qui reste ---------------
 
 async function revoquerSansReponse(page) {
   const retenue = await retenirLaRevocation(page);
@@ -123,30 +123,90 @@ async function revoquerSansReponse(page) {
   return retenue;
 }
 
-/** Tout ce qu'une personne ou un lecteur d'écran lirait : alertes, état, noms et descriptions. */
-async function toutLeTexteDit(page) {
-  const alertes = await page.getByRole("alert").allTextContents();
-  const etat = await page.locator("#revocation-etat").textContent();
-  const refus = await page.locator("#portabilite-refus").textContent();
-  return { alertes, etat, refus };
-}
+const SORTIES = ["parcours-sans-revoquer", "parcours-retour-application", "parcours-continuer"];
+
+/** Un `click` SYNTHÉTIQUE : ni `disabled` ni le pointeur n'y changent rien, seul le gestionnaire décide. */
+const clicSynthetique = (page, ids) =>
+  page.evaluate((cibles) => {
+    for (const id of cibles) {
+      document.getElementById(id)?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
+  }, ids);
 
 test("en vol : « Terminer sans révoquer » et « Revenir à mon application » sont fermés, rien n'est affirmé", async ({
   page,
 }) => {
   const retenue = await revoquerSansReponse(page);
-  const sans = bouton(page, "Terminer sans révoquer");
-  const retour = bouton(page, "Revenir à mon application");
-  await expect(sans).toBeDisabled();
-  await expect(retour).toBeDisabled();
-  await expect(page.locator("#revocation-etat")).toContainText("ne peut plus être annulée");
-  // Un clic forcé ou la touche Entrée ne quittent pas l'étape ni ne disent « rien n'a été révoqué ».
-  await sans.click({ force: true }).catch(() => {});
+  await expect(page.locator("#parcours-sans-revoquer")).toBeDisabled();
+  await expect(page.locator("#parcours-retour-application")).toBeDisabled();
+  await expect(page.locator("#parcours-incertitude")).toContainText("ne peut plus être annulée");
+  await clicSynthetique(page, SORTIES);
   await expect(titre(page, "Révoquer en urgence")).toBeVisible();
   await expect(page.getByText("rien n'a été révoqué", { exact: false })).toHaveCount(0);
   await retenue.relacher();
   await expect(titre(page, "Parcours terminé")).toBeVisible({ timeout: 180_000 });
-  await expect(retour).toBeEnabled();
+  await expect(page.locator("#parcours-retour-application")).toBeEnabled();
+  await expect(page.locator("#parcours-incertitude")).toHaveText("");
+});
+
+test("en vol : une sortie PRESSÉE pendant le départ de la demande (rendu différé) n'affirme rien", async ({
+  page,
+}) => {
+  const retenue = await retenirLaRevocation(page);
+  await jusquALEtape9(page);
+  await retenue.retenir(true);
+  await bouton(page, REVOQUER).click();
+  const oui = bouton(page, "Oui, révoquer les autres moyens");
+  // Un appui est maintenu sur « Terminer sans révoquer » : `pression-du-bouton.mjs` RETIENT le rendu
+  // — donc `disabled` — jusqu'au relâchement. Pendant ce temps, « Oui » part, au clavier.
+  const cible = await page.locator("#parcours-sans-revoquer").boundingBox();
+  await page.mouse.move(cible.x + 8, cible.y + 8);
+  await page.mouse.down();
+  await oui.focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(retenue.retenues).toBe(1);
+  // La demande est partie ; aucun rendu n'a posé `disabled` : le gestionnaire seul garde la sortie.
+  await expect(page.locator("#parcours-sans-revoquer")).toBeEnabled();
+  await page.mouse.up(); // le `click` retenu est livré maintenant
+  await expect(titre(page, "Révoquer en urgence")).toBeVisible();
+  await expect(page.getByText("rien n'a été révoqué", { exact: false })).toHaveCount(0);
+  await expect(page.locator("#parcours-sans-revoquer")).toBeDisabled();
+  await retenue.relacher();
+  await expect(titre(page, "Parcours terminé")).toBeVisible({ timeout: 180_000 });
+});
+
+test("issue incertaine : l'avertissement vit hors du bloc, survit à « Revenir à mon application » et à un autre clic, puis se lève par une révocation qui aboutit", async ({
+  page,
+}) => {
+  const retenue = await revoquerSansReponse(page);
+  await retenue.refuser("VAULT_X");
+  const avertissement = page.getByRole("alert").filter({ hasText: "peut-être eu lieu" });
+  await expect(avertissement).toBeVisible({ timeout: 60_000 });
+  await expect(avertissement).toContainText("Rouvrez votre coffre");
+  for (const texte of await page.getByRole("alert").allTextContents()) {
+    expect(texte, "aucune alerte ne dit « refusée »").not.toMatch(/refus/i);
+  }
+  await expect(page.locator("#parcours-sans-revoquer")).toBeDisabled();
+  await clicSynthetique(page, ["parcours-sans-revoquer"]);
+  await expect(titre(page, "Révoquer en urgence")).toBeVisible();
+
+  // La navigation permise : « Revenir à mon application ». L'avertissement RESTE, visible et dans
+  // l'arbre d'accessibilité, hors du bloc de la révocation (qui n'est plus à l'écran).
+  await bouton(page, "Revenir à mon application").click();
+  await expect(titre(page, "Votre application")).toBeVisible();
+  await expect(avertissement).toBeVisible();
+  await expect(page.locator("#parcours")).toContainText("Rouvrez votre coffre");
+  expect(await page.locator("#parcours").ariaSnapshot()).toContain("peut-être eu lieu");
+  // Un autre geste ne l'efface pas non plus.
+  await bouton(page, "Sauvegarder mon coffre").click();
+  await expect(avertissement).toBeVisible();
+
+  // Levée : une révocation qui aboutit.
+  await retenue.retenir(false);
+  await bouton(page, REVOQUER).click();
+  await bouton(page, "Oui, révoquer les autres moyens").click();
+  await expect(page.locator("#parcours-incertitude")).toHaveText("", { timeout: 180_000 });
+  await expect(avertissement).toHaveCount(0);
 });
 
 test("issue incertaine (le Worker ne décode pas le message et meurt : aucune réponse) : « a peut-être eu lieu » partout, « refusée » nulle part, « Terminer sans révoquer » fermé", async ({
@@ -154,15 +214,16 @@ test("issue incertaine (le Worker ne décode pas le message et meurt : aucune r�
 }) => {
   const retenue = await revoquerSansReponse(page);
   await retenue.relacher(true);
-  await expect(page.getByRole("alert")).toContainText("peut-être eu lieu", { timeout: 60_000 });
-  const dit = await toutLeTexteDit(page);
-  for (const texte of [...dit.alertes, dit.etat, dit.refus]) {
+  await expect(page.locator("#parcours-incertitude")).toContainText("peut-être eu lieu", {
+    timeout: 60_000,
+  });
+  const alertes = await page.getByRole("alert").allTextContents();
+  const etat = await page.locator("#revocation-etat").textContent();
+  const refus = await page.locator("#portabilite-refus").textContent();
+  for (const texte of [...alertes, etat, refus]) {
     expect(texte, "aucune alerte ni annonce ne dit « refusée »").not.toMatch(/refus/i);
   }
-  await expect(page.locator("#revocation-etat")).toContainText("peut-être eu lieu");
-  // Le Worker mort remonte l'écran de réouverture : les gestes de l'étape 9 sont cachés, et le
-  // restent fermés (l'incertitude est retenue, la sortie qui dirait « rien n'a été révoqué » aussi).
+  // Le Worker mort remonte l'écran de réouverture : l'étape 9 est cachée, ses gestes restent fermés.
   await expect(page.locator("#parcours-sans-revoquer")).toBeDisabled();
-  await expect(page.locator("#parcours-retour-application")).toBeEnabled();
   await expect(page.getByText("tous vos moyens", { exact: false })).toHaveCount(0);
 });

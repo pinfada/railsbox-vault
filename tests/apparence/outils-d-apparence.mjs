@@ -9,6 +9,11 @@
 import AxeBuilder from "@axe-core/playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 
+import {
+  TYPES_PRIVILEGIES,
+  enveloppePrivilegiee,
+} from "../../src/coquille/contrat-de-messages.mjs";
+
 import { expect, test as base } from "../support/test.mjs";
 
 export { expect };
@@ -312,6 +317,26 @@ export async function retenirLaRevocation(page) {
     };
   });
   return {
+    /**
+     * Répond à la demande retenue par un REFUS TYPÉ du Worker (jamais livré à ce dernier) : la page voit
+     * un échec reçu APRÈS l'envoi, sans que le Worker meure — l'étape 9 reste à l'écran.
+     */
+    refuser: (code) =>
+      page.evaluate(
+        ([gabarit]) => {
+          const { port, message } = globalThis.__retenues.shift();
+          port.dispatchEvent(
+            new MessageEvent("message", { data: { ...gabarit, correlation: message.correlation } }),
+          );
+        },
+        [
+          enveloppePrivilegiee(TYPES_PRIVILEGIES.refus, {
+            code,
+            message: "refus de l'épreuve",
+            correlation: "x",
+          }),
+        ],
+      ),
     retenir: (armee) => page.evaluate((v) => (globalThis.__retenir = v), armee),
     retenues: () => page.evaluate(() => globalThis.__retenues.length),
     relacher: (alterer = false) => page.evaluate((a) => globalThis.__relacher(a), alterer),

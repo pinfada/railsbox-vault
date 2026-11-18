@@ -9,6 +9,7 @@ import { test } from "node:test";
 import { brancherLesGestesDePortabilite } from "../../src/coquille/gestes-de-portabilite.mjs";
 import { suivreLaConfirmationDeRevocation } from "../../src/coquille/confirmation-de-la-revocation.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
+import { creerEtatDeRevocation } from "../../src/coquille/etat-de-la-revocation.mjs";
 import { MESSAGES } from "../../src/coquille/textes-du-parcours.mjs";
 import { pageFactice } from "./support-page-factice.mjs";
 
@@ -93,6 +94,7 @@ function monterEnVol() {
   const envoyes = [];
   let finir = null;
   brancherLesGestesDePortabilite({
+    revocation: creerEtatDeRevocation(),
     racine: page.racine,
     demander: (type) => {
       envoyes.push(type);
@@ -109,7 +111,9 @@ function monterEnVol() {
     page,
     envois: () => envoyes.filter((type) => type === "revoquerEnUrgence").length,
     finir: () => finir,
-    etat: () => page.noeud("revocation-etat").textContent,
+    // La région PERSISTANTE (hors du bloc de la révocation) dit « en cours » puis l'issue.
+    etat: () => page.noeud("parcours-incertitude").textContent,
+    annonceDuBloc: () => page.noeud("revocation-etat").textContent,
   };
 }
 const apres = () => new Promise((rendre) => setTimeout(rendre, 0));
@@ -142,6 +146,7 @@ test("en vol : aucun second message, quoi qu'on clique, et jamais « Rien n'a é
   await apres();
   assert.equal(m.envois(), 1, "aucun second message");
   assert.doesNotMatch(m.etat(), /Rien n'a été révoqué/);
+  assert.doesNotMatch(m.annonceDuBloc(), /Rien n'a été révoqué/);
 });
 
 test("issue : le SUCCÈS rend le geste, efface « en cours » et n'annonce rien d'autre", async () => {

@@ -8,11 +8,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { creerEtatDeRevocation } from "../../src/coquille/etat-de-la-revocation.mjs";
 import { brancherLesGestesDePortabilite } from "../../src/coquille/gestes-de-portabilite.mjs";
 import { poserLaSortie } from "../../src/coquille/sortie-de-la-revocation.mjs";
 import { montrerLesBlocs } from "../../src/coquille/blocs-montres.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
-import { MESSAGES } from "../../src/coquille/textes-du-parcours.mjs";
 import { pageFactice } from "./support-page-factice.mjs";
 import { importerLaPage } from "./support-page-reelle.mjs";
 
@@ -26,6 +26,7 @@ function monterEnVol() {
   const rapport = {};
   let finir = null;
   brancherLesGestesDePortabilite({
+    revocation: creerEtatDeRevocation(),
     racine: page.racine,
     demander: (type) =>
       type === "revoquerEnUrgence"
@@ -66,7 +67,8 @@ for (const [nom, erreur, code] of [
     assert.equal(m.dit("portabilite-etat"), `portabilite:revocation-incertaine:${code}`);
     assert.doesNotMatch(m.dit("portabilite-etat"), /refus/);
     assert.equal(m.dit("portabilite-refus"), "", "aucune conduite « refusé » n'est écrite");
-    assert.match(m.dit("revocation-etat"), /peut-être eu lieu/);
+    assert.match(m.dit("parcours-incertitude"), /peut-être eu lieu/);
+    assert.doesNotMatch(m.dit("parcours-incertitude"), /refus/i);
     assert.doesNotMatch(m.dit("revocation-etat"), /refus/i);
     assert.equal(m.rapport.portabilite.revocation.code, code, "le code reste au relevé");
     assert.equal(m.rapport.portabilite.revocation.incertaine, true);
@@ -75,55 +77,34 @@ for (const [nom, erreur, code] of [
 
 // --- La sortie de l'étape 9 -----------------------------------------------------------------------
 
-function sortie(etat) {
+function sortie(revocation) {
   const sans = { disabled: false };
   const retour = { disabled: false };
   poserLaSortie({
     noeud: (id) =>
       ({ "parcours-sans-revoquer": sans, "parcours-retour-application": retour })[id] ?? null,
-    ...etat,
+    revocation,
   });
   return { sans: sans.disabled, retour: retour.disabled };
 }
 
-test("en vol : « Terminer sans révoquer » ET « Revenir à mon application » sont fermés", () => {
-  assert.deepEqual(sortie({ ligneDePortabilite: EN_COURS, revocationIncertaine: false }), {
-    sans: true,
-    retour: true,
-  });
+function etatEn(phase) {
+  const r = creerEtatDeRevocation();
+  if (phase !== "repos") r.commencer();
+  if (phase === "incertaine") r.douter();
+  return r;
+}
+
+test("en vol : « Terminer sans révoquer » ET « Revenir à mon application » sont fermés (disabled, en plus de la garde)", () => {
+  assert.deepEqual(sortie(etatEn("en-vol")), { sans: true, retour: true });
 });
 
 test("après une issue incertaine : « Terminer sans révoquer » reste fermé, la sortie qui ne dit rien est rouverte", () => {
-  const ligne = `portabilite:revocation-incertaine:${CODES_REFUS_COQUILLE.workerMort}`;
-  assert.deepEqual(sortie({ ligneDePortabilite: ligne, revocationIncertaine: true }), {
-    sans: true,
-    retour: false,
-  });
-  // Une autre ligne de portabilité ne rend pas la parole : l'incertitude est retenue par la page.
-  assert.deepEqual(
-    sortie({ ligneDePortabilite: "portabilite:au-repos", revocationIncertaine: true }),
-    {
-      sans: true,
-      retour: false,
-    },
-  );
+  assert.deepEqual(sortie(etatEn("incertaine")), { sans: true, retour: false });
 });
 
-test("hors révocation, les deux sorties sont ouvertes ; un succès les rouvre", () => {
-  assert.deepEqual(
-    sortie({ ligneDePortabilite: "portabilite:au-repos", revocationIncertaine: false }),
-    {
-      sans: false,
-      retour: false,
-    },
-  );
-  assert.deepEqual(
-    sortie({
-      ligneDePortabilite: "portabilite:revoque:1-retires:1-restant",
-      revocationIncertaine: false,
-    }),
-    { sans: false, retour: false },
-  );
+test("hors révocation, les deux sorties sont ouvertes", () => {
+  assert.deepEqual(sortie(etatEn("repos")), { sans: false, retour: false });
 });
 
 test("la page ferme la sortie à chaque rendu des blocs (montrerLesBlocs)", () => {
@@ -143,7 +124,7 @@ test("la page ferme la sortie à chaque rendu des blocs (montrerLesBlocs)", () =
     vueComplete: false,
     dire: () => {},
     releve: { moyenDOuverture: "phrase", moyensProposes: ["phrase"], nombreDeCodes: 0 },
-    revocation: { ligneDePortabilite: EN_COURS, revocationIncertaine: false },
+    revocation: etatEn("en-vol"),
   });
   assert.equal(sans.disabled, true);
   assert.equal(retour.disabled, true);
@@ -204,28 +185,11 @@ test("observateur : « en cours » d'une révocation ne dit pas « restauration 
   }
 });
 
-test("observateur : une révocation qui aboutit ensuite lève l'incertitude retenue", async () => {
+test("observateur : une issue incertaine ne dit PAS « refusée » en alerte : le code va en console, la région persistante dit le reste", async () => {
   const o = await monterLesObservateurs();
   try {
     o.ligne(`portabilite:revocation-incertaine:${CODES_REFUS_COQUILLE.workerMort}`);
-    assert.equal(o.etat.revocationIncertaine, true);
-    o.ligne("portabilite:revoque:1-retires:1-restant");
-    assert.equal(o.etat.revocationIncertaine, false);
-    assert.equal(o.etat.revocationFaite, true);
-  } finally {
-    o.fin();
-  }
-});
-
-test("observateur : une issue incertaine dit « a peut-être eu lieu » en alerte, jamais « refusée », code en console", async () => {
-  const o = await monterLesObservateurs();
-  try {
-    o.ligne(`portabilite:revocation-incertaine:${CODES_REFUS_COQUILLE.workerMort}`);
-    const alerte = String(o.dits.get("parcours-refus") ?? "");
-    assert.equal(alerte, MESSAGES.revocationIncertaine);
-    assert.match(alerte, /peut-être eu lieu/);
-    assert.doesNotMatch(alerte, /refus/i);
-    assert.equal(o.etat.revocationIncertaine, true);
+    assert.equal(o.dits.get("parcours-refus"), undefined, "aucune alerte de refus n'est écrite");
     assert.ok(o.avertissements.some((t) => t.includes(CODES_REFUS_COQUILLE.workerMort)));
   } finally {
     o.fin();
