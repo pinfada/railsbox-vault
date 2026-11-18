@@ -7,6 +7,12 @@ import { expect } from "../support/test.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { CANAL_DU_HARNAIS } from "../../tools/harnais-point-d-arret.mjs";
 
+/**
+ * L'AUTRE nom du même serveur — `--alias localhost` de la configuration — donc un OPFS que les pages de
+ * `127.0.0.1` n'ont pas touché. Le port est celui de `playwright.course-onglets.config.mjs`.
+ */
+export const ORIGINE_ALIAS = "http://localhost:4188";
+
 export const DELAI = 120_000;
 export const PHRASE = "une phrase de course entre onglets assez longue pour la calibration";
 
