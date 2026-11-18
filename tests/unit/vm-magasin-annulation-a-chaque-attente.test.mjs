@@ -86,9 +86,15 @@ function banc({ jeton, pause = null, preparer = () => {} }) {
  * modificateur après l'annulation est permis (le nettoyage de SON partiel) ; `apres(contexte)`
  * contrôle d'autres invariants.
  */
-async function balayer({ preparer, lancer, autorise = () => false, apres = () => {} }) {
+async function balayer({
+  preparer,
+  lancer,
+  autorise = () => false,
+  interdits = [],
+  apres = () => {},
+}) {
   const aVide = banc({ jeton: { annule: false }, preparer });
-  await lancer(aVide.magasin, { annule: false }, aVide);
+  await lancer(aVide.magasin, { annule: false }, aVide).catch(() => {}); // un refus typé est une issue
   const attentes = aVide.appels.length;
   assert.ok(attentes > 0, "l'opération attend au moins une fois");
 
@@ -103,6 +109,11 @@ async function balayer({ preparer, lancer, autorise = () => false, apres = () =>
     b.liberer();
     await operation.catch(() => {});
     for (const appel of b.appels) {
+      if (appel.apresAnnulation && interdits.includes(appel.nom)) {
+        fautes.push(
+          `annulé pendant l'attente n° ${pause} : ${appel.nom} part APRÈS (travail inutile)`,
+        );
+      }
       if (appel.apresAnnulation && MODIFIE.has(appel.nom) && !autorise(appel)) {
         fautes.push(
           `annulé pendant l'attente n° ${pause} : ${appel.nom}(${appel.cible}) part APRÈS`,
@@ -123,6 +134,7 @@ test("admettre : annulée pendant N'IMPORTE quelle attente, plus aucun geste mod
   await balayer({
     lancer: (magasin, jeton) => magasin.admettre({ sha256, octets }, jeton),
     autorise: partielDe(`${sha256}.partiel`),
+    interdits: ["hacher"], // une admission abandonnée ne hache plus une tranche de plus
   });
 });
 
@@ -131,6 +143,7 @@ test("admettre, racine fausse : annulée pendant N'IMPORTE quelle attente, rien 
   await balayer({
     lancer: (magasin, jeton) => magasin.admettre({ sha256, octets, racine: "0".repeat(64) }, jeton),
     autorise: partielDe(`${sha256}.partiel`),
+    interdits: ["hacher"], // une admission abandonnée ne hache plus une tranche de plus
   });
 });
 
@@ -143,6 +156,7 @@ test("admettre, l'ancienne entrée est oubliée AVANT l'écriture : annulée pen
     },
     lancer: (magasin, jeton) => magasin.admettre({ sha256, octets }, jeton),
     autorise: partielDe(`${sha256}.partiel`),
+    interdits: ["hacher"], // une admission abandonnée ne hache plus une tranche de plus
   });
 });
 
@@ -276,6 +290,7 @@ test("servir : une taille rangée fausse, annulée pendant N'IMPORTE quelle atte
 // --- purger et oublier -----------------------------------------------------------------------------
 
 test("purger : annulée pendant N'IMPORTE quelle attente, plus aucune suppression ne part", async () => {
+  const resultats = [];
   const [un, deux] = ["1", "2"].map((c) => c.repeat(64));
   await balayer({
     preparer: (memoire) => {
@@ -285,7 +300,24 @@ test("purger : annulée pendant N'IMPORTE quelle attente, plus aucune suppressio
         memoire.fichiers.set(`${sha}.partiel`, new Uint8Array(3));
       }
     },
-    lancer: (magasin, jeton) => magasin.purger([], jeton),
+    lancer: async (magasin, jeton) => {
+      resultats.push(await magasin.purger([], jeton));
+    },
+    apres: {
+      verifier: (b, _instantane, fautes, pause) => {
+        // Le résultat ne nomme que des entrées dont l'oubli a COMMENCÉ : une purge abandonnée ne
+        // prétend pas avoir oublié ce qu'elle n'a pas touché.
+        const touchees = new Set(
+          b.appels.filter((a) => a.nom === "supprimer").map((a) => a.cible.slice(0, 64)),
+        );
+        for (const sha of resultats.at(-1) ?? []) {
+          if (!touchees.has(sha))
+            fautes.push(
+              `annulé pendant l'attente n° ${pause} : ${sha} rendu oublié sans l'avoir été`,
+            );
+        }
+      },
+    },
   });
 });
 
@@ -297,6 +329,34 @@ test("oublierLeDescripteurScelle : annulée pendant N'IMPORTE quelle attente, pl
     },
     lancer: (magasin, jeton) => magasin.oublierLeDescripteurScelle(jeton),
   });
+});
+
+// --- Annulée D'EMBLÉE : rien ne part du tout -------------------------------------------------------
+
+test("un jeton déjà annulé : aucune opération ne modifie le magasin, pas même une suppression", async () => {
+  const { octets, sha256 } = artefact();
+  const [un] = ["1"].map((c) => c.repeat(64));
+  const operations = {
+    admettre: (m, jeton) => m.admettre({ sha256, octets }, jeton),
+    ecrireLeDescripteurScelle: (m, jeton) => m.ecrireLeDescripteurScelle(new Uint8Array(10), jeton),
+    purger: (m, jeton) => m.purger([], jeton),
+    oublierLeDescripteurScelle: (m, jeton) => m.oublierLeDescripteurScelle(jeton),
+    servir: (m, jeton) => m.servir({ sha256, octets: 12 }, new Uint8Array(12), jeton),
+  };
+  for (const [nom, lancer] of Object.entries(operations)) {
+    const jeton = { annule: true };
+    const b = banc({
+      jeton,
+      preparer: (memoire) => {
+        memoire.fichiers.set(un, new Uint8Array(3));
+        memoire.fichiers.set("descripteur.scelle", new Uint8Array(3));
+        memoire.fichiers.set(sha256, new Uint8Array(3));
+      },
+    });
+    await lancer(b.magasin, jeton).catch(() => {});
+    const modifs = b.appels.filter((a) => MODIFIE.has(a.nom));
+    assert.deepEqual(modifs, [], `${nom} : un jeton déjà annulé ne modifie rien`);
+  }
 });
 
 // Garde-fou du balayage lui-même : sans annulation, tout va à son terme.

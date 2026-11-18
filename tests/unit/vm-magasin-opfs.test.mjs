@@ -351,7 +351,7 @@ test("le descripteur rangé est borné dans le temps comme le reste : un magasin
       servir: () => jamais,
       lireLeDescripteurScelle: () => jamais,
       ecrireLeDescripteurScelle: (_octets, jeton) => (jetons.push(jeton), jamais),
-      oublierLeDescripteurScelle: () => jamais,
+      oublierLeDescripteurScelle: (jeton) => (jetons.push(jeton), jamais),
     },
     5,
   );
@@ -359,6 +359,7 @@ test("le descripteur rangé est borné dans le temps comme le reste : un magasin
   await assert.rejects(lent.ecrireLeDescripteurScelle(new Uint8Array(1)), { code: "MAGASIN_LENT" });
   assert.equal(jetons[0].annule, true, "l'échéance annule le jeton du rangement");
   await assert.rejects(lent.oublierLeDescripteurScelle(), { code: "MAGASIN_LENT" });
+  assert.equal(jetons[1]?.annule, true, "l'échéance annule le jeton de l'oubli (revue de #298, 4)");
 });
 
 test("la rétention garde le descripteur rangé, et les artefacts nommés en plus", async () => {

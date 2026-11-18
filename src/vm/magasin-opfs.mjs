@@ -165,7 +165,7 @@ export function borneDansLeTemps(magasin, delaiMs = DELAI_DU_MAGASIN_MS) {
       );
     borne.oublierLeDescripteurScelle = () =>
       avantLEcheance(
-        () => magasin.oublierLeDescripteurScelle(),
+        (jeton) => magasin.oublierLeDescripteurScelle(jeton),
         delaiMs,
         magasinLent("oubli du descripteur"),
       );
