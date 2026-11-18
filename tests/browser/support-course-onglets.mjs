@@ -7,20 +7,14 @@ import { expect } from "../support/test.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { CANAL_DU_HARNAIS } from "../../tools/harnais-point-d-arret.mjs";
 
-/**
- * L'AUTRE nom du même serveur — `--alias localhost` de la configuration — donc un OPFS que les pages de
- * `127.0.0.1` n'ont pas touché. Le port est celui de `playwright.course-onglets.config.mjs`.
- */
-export const ORIGINE_ALIAS = "http://localhost:4188";
-
 export const DELAI = 120_000;
 export const PHRASE = "une phrase de course entre onglets assez longue pour la calibration";
 
 export const releve = async (page) =>
   JSON.parse(await page.locator("#coquille-rapport").textContent());
 
-export async function ouvrirLaCoquille(page, origine = "") {
-  await page.goto(`${origine}/index.html?vue=complete`, { waitUntil: "commit" });
+export async function ouvrirLaCoquille(page) {
+  await page.goto("/index.html?vue=complete", { waitUntil: "commit" });
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", /prete|sans-cadre/, {
     timeout: DELAI,

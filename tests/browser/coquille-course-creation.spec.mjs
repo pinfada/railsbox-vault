@@ -20,7 +20,6 @@ import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.m
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import {
   DELAI,
-  ORIGINE_ALIAS,
   PHRASE,
   armer,
   attendreLEtat,
@@ -40,9 +39,9 @@ import {
 /** B crée son coffre ; il est retenu à sa première prise de handle, après avoir constaté le vide. */
 async function creationRetenue(context) {
   const a = await context.newPage();
-  await ouvrirLaCoquille(a, ORIGINE_ALIAS);
+  await ouvrirLaCoquille(a);
   const b = await context.newPage();
-  await ouvrirLaCoquille(b, ORIGINE_ALIAS);
+  await ouvrirLaCoquille(b);
   await ecouterLePointDArret(b);
   await armer(b, "*");
   await ouvrirParLaPhrase(b);
@@ -53,7 +52,7 @@ async function creationRetenue(context) {
 
 test("WebKit : sans OPFS synchrone, la limite est exigée", async ({ page, browserName }) => {
   test.skip(browserName !== "webkit", "mesure propre aux moteurs sans OPFS synchrone");
-  await ouvrirLaCoquille(page, ORIGINE_ALIAS);
+  await ouvrirLaCoquille(page);
   expect(await sansOpfsSynchrone(page)).toBe(true);
 });
 

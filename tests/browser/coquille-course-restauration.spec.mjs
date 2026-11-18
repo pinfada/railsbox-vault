@@ -18,8 +18,8 @@
 // Deux variantes, parce que le verrou et la revalidation sont deux gardes : A a FERMÉ (le verrou est
 // libre : c'est la revalidation qui refuse), ou A tient encore son volume (c'est le verrou qui refuse).
 //
-// L'archive vient d'un AUTRE contexte (un autre OPFS) ; la course se joue sur `localhost`, deux onglets
-// d'une même origine. WebKit : pas d'OPFS synchrone, la limite est exigée.
+// L'archive vient d'un AUTRE contexte (un autre OPFS, même serveur) ; la course se joue dans le contexte
+// de l'épreuve, deux onglets d'une même origine. WebKit : pas d'OPFS synchrone, la limite est exigée.
 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,7 +32,6 @@ import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { fabriquerUneArchive } from "./support-archive-de-banc.mjs";
 import {
   DELAI,
-  ORIGINE_ALIAS,
   PHRASE,
   armer,
   attendreLEtat,
@@ -50,19 +49,19 @@ import {
 
 let archive = null;
 
-test.beforeAll(async ({ browser, browserName }) => {
+test.beforeAll(async ({ browser, browserName }, testInfo) => {
   test.setTimeout(300_000);
   if (browserName === "webkit") return;
   archive = join(tmpdir(), `archive-course-${browserName}-${process.pid}.vault`);
-  await fabriquerUneArchive(browser, archive);
+  await fabriquerUneArchive(browser, archive, testInfo.project.use.baseURL);
 });
 
 /** B restaure ; il est retenu à sa première prise de handle, après son constat. */
 async function restaurationRetenue(context) {
   const a = await context.newPage();
-  await ouvrirLaCoquille(a, ORIGINE_ALIAS);
+  await ouvrirLaCoquille(a);
   const b = await context.newPage();
-  await ouvrirLaCoquille(b, ORIGINE_ALIAS);
+  await ouvrirLaCoquille(b);
   await ecouterLePointDArret(b);
   await armer(b, "*");
   await b.setInputFiles("#archive-a-restaurer", archive);
@@ -74,7 +73,7 @@ async function restaurationRetenue(context) {
 
 test("WebKit : sans OPFS synchrone, la limite est exigée", async ({ page, browserName }) => {
   test.skip(browserName !== "webkit", "mesure propre aux moteurs sans OPFS synchrone");
-  await ouvrirLaCoquille(page, ORIGINE_ALIAS);
+  await ouvrirLaCoquille(page);
   expect(await sansOpfsSynchrone(page)).toBe(true);
 });
 

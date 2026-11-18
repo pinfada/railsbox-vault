@@ -63,9 +63,10 @@ export async function servirLApplication(contexte) {
  *
  * @param {import("@playwright/test").Browser} navigateur
  * @param {string} chemin
+ * @param {string} baseURL
  */
-export async function fabriquerUneArchive(navigateur, chemin) {
-  const contexte = await navigateur.newContext();
+export async function fabriquerUneArchive(navigateur, chemin, baseURL) {
+  const contexte = await navigateur.newContext({ baseURL });
   try {
     await servirLApplication(contexte);
     const page = await contexte.newPage();

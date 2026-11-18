@@ -65,7 +65,7 @@ export default defineConfig({
     navigationTimeout: 60_000,
   },
   webServer: [
-    serveur("shell", COURSE_HOTE, COURSE_PORT, " --alias localhost --harnais-point-d-arret"),
+    serveur("shell", COURSE_HOTE, COURSE_PORT, " --harnais-point-d-arret"),
     serveur("app", COURSE_HOTE_APPLICATIF, COURSE_PORT_APPLICATIF),
   ],
   projects: moteurs.map((nom) => ({ name: nom, use: { browserName: nom } })),
