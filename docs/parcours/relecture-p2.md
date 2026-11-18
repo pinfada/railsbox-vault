@@ -752,10 +752,9 @@ Messages qui peuvent s'afficher sur cet écran :
 - Rien n'a été révoqué : tout ce qui ouvrait ce coffre l'ouvre toujours.
 - Révocation en cours : la demande est partie et ne peut plus être annulée. Attendez la réponse du
   coffre.
-- La révocation a été refusée (la raison est écrite plus haut) : le coffre ne l'a pas annoncée comme
-  faite. Vous pouvez la redemander.
-- La révocation est partie, mais le coffre n'a pas confirmé : elle a peut-être eu lieu. Rouvrez
-  votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites la révocation.
+- La révocation est partie, mais le coffre ne l'a pas confirmée (la raison, s'il en a donné une, est
+  écrite plus haut) : elle a peut-être eu lieu. Rouvrez votre coffre : si l'un des moyens que vous
+  vouliez retirer l'ouvre encore, refaites la révocation.
 - N moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V. — ou, pour un seul
   moyen — 1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V.
 - Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.

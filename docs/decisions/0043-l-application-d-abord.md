@@ -111,12 +111,14 @@ de l'enveloppe, de `src/vm/` ni des codes de refus.**
   _Une révocation en vol pouvait être « annulée » ou renvoyée._ Après « Oui », la demande est EN VOL
   jusqu'à la réponse du Worker : le geste est `aria-disabled`, la confirmation ne se rouvre pas («
   Annuler » n'existe plus : la demande est partie), aucun second message ne part, et l'état dit « en
-  cours… ne peut plus être annulée ». Les issues se disent sans ambiguïté : succès (le parcours dit
-  « N moyen(s) retiré(s) »), **refusée** (refus typé), **peut-être eu lieu** (le Worker est mort —
-  aucune réponse —, a jeté sans refus à nommer, ou erreur sans code : l'effacement n'étant pas
-  atomique avec la publication, ADR 0026, la révocation a pu être publiée avant l'erreur ; la page
-  dit de rouvrir le coffre pour le vérifier). La page ne dit jamais « rien n'a été révoqué » d'une
-  demande partie. _Limite écrite_ : un refus typé survenu après la publication ne se distingue pas
-  d'un refus avant ; la page dit « refusée », pas « rien n'a changé ».
+  cours… ne peut plus être annulée ». Les issues : succès (le parcours dit « N moyen(s) retiré(s) »)
+  ; **tout échec reçu après l'envoi** — refus typé, Worker mort (aucune réponse), Worker rompu,
+  erreur sans code — se dit de la MÊME façon : « la révocation a peut-être eu lieu, rouvrez le
+  coffre pour vérifier ». Un refus typé peut en effet survenir APRÈS `revoquerToutSauf`
+  (l'effacement et la copie résiduelle ne sont pas atomiques avec la publication, ADR 0026) et le
+  Worker n'atteste pas la phase : « refusée » ou « rien n'a changé » seraient des affirmations que
+  la page ne peut pas tenir (relecture de #308, REFUSÉ `5feee19`). Une attestation du Worker (« rien
+  n'a été publié ») permettrait de dire « refusée » : c'est un changement du Worker, hors de ce lot
+  « page seule », non fait. La page ne dit jamais « rien n'a été révoqué » d'une demande partie.
 - **Non prouvé.** L'annonce par un vrai lecteur d'écran (seules la description et le nom accessibles
   sont éprouvés, sous Chromium) ; le parcours clavier E2E sur Rails réel (il tourne en CI).

@@ -14,17 +14,17 @@ export const TEXTES_DE_LA_REVOCATION = Object.freeze({
     "pas : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez " +
     "pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler » ne change rien.",
   revocationAnnulee: "Rien n'a été révoqué : tout ce qui ouvrait ce coffre l'ouvre toujours.",
-  // La révocation EN VOL : elle est partie, elle ne s'annule plus, et ses issues se disent sans
-  // ambiguïté (relecture de #308). Après la publication de la page neuve, une erreur peut survenir
-  // alors que la révocation a eu lieu (ADR 0026) : seuls « refusée » et « peut-être eu lieu » se disent.
+  // La révocation EN VOL : elle est partie, elle ne s'annule plus (relecture de #308). Tout échec reçu
+  // ensuite — refus typé, Worker mort, Worker rompu, erreur sans code — se dit de la MÊME façon : « a
+  // peut-être eu lieu ». Une erreur peut survenir après la publication de la page neuve (ADR 0026) et
+  // le Worker n'atteste pas la phase : « refusée » ou « rien n'a changé » seraient des affirmations
+  // que la page ne peut pas tenir.
   revocationEnCours:
     "Révocation en cours : la demande est partie et ne peut plus être annulée. Attendez la réponse " +
     "du coffre.",
-  revocationRefusee:
-    "La révocation a été refusée (la raison est écrite plus haut) : le coffre ne l'a pas annoncée " +
-    "comme faite. Vous pouvez la redemander.",
   revocationIncertaine:
-    "La révocation est partie, mais le coffre n'a pas confirmé : elle a peut-être eu lieu. " +
+    "La révocation est partie, mais le coffre ne l'a pas confirmée (la raison, s'il en a donné une, " +
+    "est écrite plus haut) : elle a peut-être eu lieu. " +
     "Rouvrez votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites " +
     "la révocation.",
   avertissementDeRevocation: (moyen, moyens = null, options = {}) =>

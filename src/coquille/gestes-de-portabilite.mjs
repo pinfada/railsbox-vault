@@ -217,27 +217,13 @@ async function revoquerEnUrgence(contexte) {
     await contexte.apresRevocation?.();
     return rapport.portabilite.revocation;
   } catch (erreur) {
-    dire("revocation-etat", direLIssueDeLaRevocation(erreur));
+    // Tout échec reçu APRÈS l'envoi se dit « a peut-être eu lieu » : un refus typé peut survenir
+    // après la publication de la page neuve (ADR 0026), et le Worker n'atteste pas la phase.
+    dire("revocation-etat", MESSAGES.revocationIncertaine);
     return refuser(contexte, "revocation", erreur);
   } finally {
     publier();
   }
-}
-
-/**
- * Ce que la page dit d'une révocation qui n'a pas abouti. Deux issues, jamais « rien n'a été révoqué » :
- * la demande est partie. Un refus TYPÉ est « refusée » ; l'absence de réponse (le Worker est mort),
- * un Worker qui a jeté sans refus à nommer, ou une erreur sans code laissent la révocation
- * INCERTAINE — elle a pu être publiée avant l'erreur (ADR 0026, l'effacement n'est pas atomique avec
- * la publication) —, et la page le dit tel quel.
- */
-function direLIssueDeLaRevocation(erreur) {
-  const code = erreur?.code;
-  const incertaine =
-    code === undefined ||
-    code === CODES_REFUS_COQUILLE.workerMort ||
-    code === CODES_REFUS_COQUILLE.gesteRompu;
-  return incertaine ? MESSAGES.revocationIncertaine : MESSAGES.revocationRefusee;
 }
 
 /**

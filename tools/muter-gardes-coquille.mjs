@@ -74,7 +74,8 @@ const EPREUVE_EN_VOL = "tests/unit/coquille-revocation-en-vol.test.mjs";
 const GESTES_PORTABILITE = "src/coquille/gestes-de-portabilite.mjs";
 const MOYENS_NOMMES = "src/coquille/moyens-nommes.mjs";
 const CONFIRMEE = "src/coquille/confirmation-de-la-revocation.mjs";
-const PAGE_DU_PARCOURS = "public/coquille/parcours-de-la-page.mjs";
+const BLOCS_MONTRES = "src/coquille/blocs-montres.mjs";
+const EPREUVE_BLOCS = "tests/unit/coquille-blocs-montres.test.mjs";
 const PREUVE = "src/coquille/preuve-de-la-feuille.mjs";
 const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
 const DEVERROUILLAGE = "public/runtime-worker-deverrouillage.mjs";
@@ -1428,30 +1429,6 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_EN_VOL],
   },
   {
-    nom: "un Worker mort laisse la révocation INCERTAINE, jamais « refusée » (#308)",
-    garde: "direLIssueDeLaRevocation — le code `workerMort`",
-    fichier: GESTES_PORTABILITE,
-    avant: "    code === CODES_REFUS_COQUILLE.workerMort ||\n",
-    apres: "",
-    epreuves: [EPREUVE_EN_VOL],
-  },
-  {
-    nom: "un Worker qui jette sans refus à nommer laisse la révocation INCERTAINE (#308)",
-    garde: "direLIssueDeLaRevocation — le code `gesteRompu`",
-    fichier: GESTES_PORTABILITE,
-    avant: "    code === CODES_REFUS_COQUILLE.gesteRompu;\n",
-    apres: "    false;\n",
-    epreuves: [EPREUVE_EN_VOL],
-  },
-  {
-    nom: "une erreur sans code laisse la révocation INCERTAINE (#308)",
-    garde: "direLIssueDeLaRevocation — l'absence de code",
-    fichier: GESTES_PORTABILITE,
-    avant: "    code === undefined ||\n",
-    apres: "",
-    epreuves: [EPREUVE_EN_VOL],
-  },
-  {
     nom: "la confirmation compte les feuilles : l'autre feuille part avec le reste (#308)",
     garde: "lesAutresRetires — les autres feuilles ajoutées à la liste",
     fichier: MOYENS_NOMMES,
@@ -1501,13 +1478,38 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_EN_VOL],
   },
   {
-    nom: "la page APPELLE la confirmation à chaque rendu, après les blocs (#308)",
-    garde: "rendre — l'appel de `suivreLaConfirmationDeRevocation`",
-    fichier: PAGE_DU_PARCOURS,
-    avant:
-      "    suivreLaConfirmationDeRevocation({ noeud, dire, releve }); // APRÈS les blocs (#265)\n",
-    apres: "",
+    nom: "tout échec reçu après l'envoi dit « a peut-être eu lieu », refus typé compris (#308)",
+    garde: "revoquerEnUrgence — l'issue d'un échec",
+    fichier: GESTES_PORTABILITE,
+    avant: '    dire("revocation-etat", MESSAGES.revocationIncertaine);\n',
+    apres: '    dire("revocation-etat", "");\n',
     epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "montrer les blocs oublie la demande dont le bloc a disparu — l'APPEL de `suivreLaConfirmationDeRevocation` (#308)",
+    garde: "montrerLesBlocs — l'oubli d'une demande périmée",
+    fichier: BLOCS_MONTRES,
+    avant: "  suivreLaConfirmationDeRevocation({ noeud, dire, releve });\n",
+    apres: "",
+    epreuves: [EPREUVE_BLOCS],
+  },
+  {
+    nom: "l'oubli lit l'état des blocs APRÈS les avoir posés, pas avant (#308)",
+    garde: "montrerLesBlocs — l'ordre de l'appel",
+    fichier: BLOCS_MONTRES,
+    avant:
+      'export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve }) {\n  for (const element of doc.querySelectorAll("[data-bloc]")) {\n    element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);\n  }\n  for (const id of SECTIONS) {\n    const section = noeud(id);\n    if (section === null) continue;\n    section.hidden =\n      !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);\n  }\n  suivreLaConfirmationDeRevocation({ noeud, dire, releve });\n}\n',
+    apres:
+      'export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve }) {\n  suivreLaConfirmationDeRevocation({ noeud, dire, releve });\n  for (const element of doc.querySelectorAll("[data-bloc]")) {\n    element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);\n  }\n  for (const id of SECTIONS) {\n    const section = noeud(id);\n    if (section === null) continue;\n    section.hidden =\n      !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);\n  }\n}\n',
+    epreuves: [EPREUVE_BLOCS],
+  },
+  {
+    nom: "un bloc non listé est caché hors vue complète, montré en vue complète (#308)",
+    garde: "montrerLesBlocs — la vue complète du harnais",
+    fichier: BLOCS_MONTRES,
+    avant: "    element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);\n",
+    apres: "    element.hidden = !visibles.includes(element.dataset.bloc);\n",
+    epreuves: [EPREUVE_BLOCS],
   },
   {
     nom: "un code du chemin rend SA conduite, jamais la phrase générique",
