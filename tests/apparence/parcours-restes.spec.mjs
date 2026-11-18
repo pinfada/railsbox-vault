@@ -9,10 +9,12 @@ import {
   eprouverLaFeuille,
   expect,
   jusquAuTravail,
+  simulerLigneDuCycle,
   test,
   titre,
   verrouillerEtRecharger,
 } from "./outils-d-apparence.mjs";
+import { exigerAucuneAlerteAvecTexte } from "../support/alertes.mjs";
 
 test("m7 : avant tout démarrage, la carte de l'étape 4 reste à la largeur des autres écrans", async ({
   page,
@@ -118,4 +120,104 @@ test("la description accessible du champ de la phrase, à la réouverture, est c
     "Saisissez la phrase utilisée lors de la création du coffre.",
   );
   await expect(page.locator("#phrase-aide")).toBeEmpty();
+});
+
+// --- #302 : ce que l'ADR 0043 garantit à une personne au clavier, application démarrée (simulée) ---
+//
+// « Reprise MVP — lot 3 » est rouge depuis `857d210` sur deux épreuves E2E (`parcours-clavier`,
+// `parcours-utilisateur`). Ces deux épreuves-ci jouent, SANS machine virtuelle, la même exigence que
+// les E2E, au niveau où elle se prouve : la ligne d'état du cycle est posée comme le cycle la publie.
+
+/** Tab jusqu'à la cible, sans focus forcé ni clic ; faux si elle n'est pas atteinte. */
+async function atteintAuClavier(page, cible, essais = 80) {
+  for (let i = 0; i < essais; i += 1) {
+    if (await cible.evaluate((n) => n === n.ownerDocument.activeElement)) return true;
+    await page.keyboard.press("Tab");
+  }
+  return false;
+}
+
+test("#302 : application démarrée, « Aide pour cette étape » s'atteint et se bascule au clavier par le menu « Coffre »", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await jusquAuTravail(page);
+  await simulerLigneDuCycle(page, "cycle:application-demarree");
+  await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
+  const aide = page.locator("#parcours-aide > summary");
+  const menu = page.locator("#menu-du-coffre > summary");
+  // ADR 0043, Conséquences : menu fermé, le panneau est hors de l'ordre de tabulation.
+  expect(await atteintAuClavier(page, aide, 40), "menu fermé : l'aide est hors de portée").toBe(
+    false,
+  );
+  // Le menu « Coffre » est, lui, dans la barre : il s'atteint au clavier et ouvre le panneau.
+  expect(await atteintAuClavier(page, menu), "le menu « Coffre » s'atteint au clavier").toBe(true);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#menu-du-coffre")).toHaveAttribute("open", "");
+  expect(await atteintAuClavier(page, aide), "menu ouvert : l'aide s'atteint au clavier").toBe(
+    true,
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#parcours-aide")).toHaveAttribute("open", "");
+  await expect(page.locator("#parcours-attente-annoncee")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#parcours-aide")).not.toHaveAttribute("open", "");
+});
+
+test("#302 : application démarrée, une région d'alerte vide est hors de l'écran, un refus s'y montre", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await jusquAuTravail(page);
+  await simulerLigneDuCycle(page, "cycle:application-demarree");
+  await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
+  // Vide : aucune alerte n'est annoncée ni montrée (le panneau est `visibility: hidden`, ADR 0043).
+  await expect(page.locator('[role="alert"]:not(:empty)')).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  // Un refus s'écrit dans la même région et paraît en bandeau, menu fermé : il n'est jamais perdu.
+  await page.locator("#portabilite-etat").evaluate((noeud) => {
+    noeud.textContent = "portabilite:sauvegarde-refusee:VAULT_COQUILLE_APPLICATION_NON_INSTALLEE";
+  });
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("alert")).not.toBeEmpty();
+});
+
+test("#302 : application démarrée, « Où suis-je ? » se lit par le menu « Coffre », et résume les neuf étapes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await jusquAuTravail(page);
+  await simulerLigneDuCycle(page, "cycle:application-demarree");
+  await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
+  const ouSuisJe = page.getByText("Où suis-je ?", { exact: true });
+  await expect(ouSuisJe, "menu fermé : le panneau est caché").toBeHidden();
+  await page.locator("#menu-du-coffre > summary").click();
+  await ouSuisJe.click();
+  await expect(page.getByRole("listitem")).toHaveCount(9);
+});
+
+test("#302 : le contrôle « aucune alerte » exige la région #parcours-refus, vide et en role=alert", async ({
+  page,
+}) => {
+  expect.configure({ timeout: 1_500 });
+  await jusquAuTravail(page);
+  await simulerLigneDuCycle(page, "cycle:demarrage-en-cours");
+  await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
+  // La région est cachée (panneau `visibility: hidden`) : le rôle ne la trouve pas, le contrôle la lit.
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await exigerAucuneAlerteAvecTexte(page);
+  // Mutants : la région retirée, son rôle retiré, son contenu écrit — chacun doit faire échouer le contrôle.
+  const mutants = {
+    "région retirée": () => document.getElementById("parcours-refus").remove(),
+    "role retiré": () => document.getElementById("parcours-refus").removeAttribute("role"),
+    "texte écrit": () => {
+      document.getElementById("parcours-refus").textContent = "Un refus";
+    },
+  };
+  for (const [nom, mutant] of Object.entries(mutants)) {
+    await page.reload();
+    await expect(page.locator("#parcours-refus")).toHaveCount(1);
+    await page.evaluate(mutant);
+    await expect(exigerAucuneAlerteAvecTexte(page), nom).rejects.toThrow();
+  }
 });

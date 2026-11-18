@@ -49,6 +49,7 @@ import { fileURLToPath } from "node:url";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { E2E_ORIGIN_COQUILLE, E2E_ORIGIN_COQUILLE_B } from "../../playwright.e2e.config.mjs";
 import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { exigerAucuneAlerteAvecTexte } from "../support/alertes.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
@@ -239,7 +240,12 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(a.locator("#demarrer-application")).toBeHidden();
     await expect(a.locator("#demarrer-application")).toBeDisabled();
     await expect(a.locator("#parcours-progression")).toBeVisible();
-    await expect(alerte(a), "aucune alerte pendant le boot").toBeEmpty();
+    // ADR 0043 (Conséquences) : dès le début du démarrage, le panneau du coffre est `visibility: hidden`,
+    // et une région d'alerte VIDE n'est plus dans l'arbre d'accessibilité — `getByRole('alert')` ne la
+    // trouve plus (#302). L'exigence est la même : AUCUNE alerte n'a de texte. On la lit sur toutes les
+    // régions `role="alert"` du document, cachées ou non, ET on exige que `#parcours-refus` existe, soit
+    // en `role="alert"` et vide (`tests/support/alertes.mjs`) ; un refus, lui, paraîtrait en bandeau.
+    await exigerAucuneAlerteAvecTexte(a, "aucune alerte pendant le boot");
     // Le message vit dans le panneau du coffre (ADR 0043) : on attend l'état publié par le cycle.
     await expect(a.locator("#cycle-etat")).toContainText("application-demarree", {
       timeout: BUDGET_DEMARRAGE_MS,
@@ -280,7 +286,11 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     const telechargement = a.waitForEvent("download", { timeout: BUDGET_PORTABILITE_MS });
     await bouton(a, "Sauvegarder mon coffre").click();
     await (await telechargement).saveAs(archive);
-    await expect(a.getByText(/^Sauvegarde prête\./)).toBeVisible({
+    // #269 (c2c2bc5, `MESSAGES.sauvegardeEnregistree`) : la sauvegarde dit sa TAILLE une fois faite ; « Sauvegarde
+    // prête. » n'est plus dite que si la taille est inconnue. Même exigence : le message de fin se voit.
+    await expect(
+      a.getByText(/^Sauvegarde de \d+ Mo enregistrée dans votre dossier de téléchargements/),
+    ).toBeVisible({
       timeout: BUDGET_PORTABILITE_MS,
     });
     await bouton(a, "Continuer : Restaurer sur un autre appareil").click();
@@ -310,7 +320,8 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
       ),
     ).toBeVisible();
     await bouton(a, "Terminer sans révoquer").click();
-    await attendreLEcran(a, "Parcours terminé");
+    // #246 : l'écran où RIEN n'a été révoqué a son propre titre, distinct de « Parcours terminé ».
+    await attendreLEcran(a, "Parcours terminé, rien n'a été révoqué");
     await expect(a.getByText(/l'ouvre toujours/)).toBeVisible();
     // La phrase ouvre TOUJOURS : la visite n'a rien détruit.
     await bouton(a, "Revenir à mon application").click();
@@ -384,7 +395,9 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await relireLaNote(b);
   });
 
-  // « Où suis-je ? » résume les neuf étapes.
+  // « Où suis-je ? » résume les neuf étapes. L'application de B tourne : le panneau du coffre, où il vit,
+  // est `visibility: hidden` menu fermé (ADR 0043, Conséquences) — on ouvre le menu « Coffre » d'abord (#302).
+  await b.locator("#menu-du-coffre > summary").click();
   await b.getByText("Où suis-je ?").click();
   await expect(b.getByRole("listitem")).toHaveCount(9);
   expect(erreurs, "aucune erreur de page").toEqual([]);
