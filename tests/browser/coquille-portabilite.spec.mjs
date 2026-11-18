@@ -263,6 +263,10 @@ test("après une RÉVOCATION d'urgence, la phrase est refusée et le code ouvre"
   await ouvrirParLeCode(page, feuille);
   await attendreLEtat(page, ETATS_DU_VOLUME.ouvert);
   await page.click("#revoquer-en-urgence");
+  // Deux temps (#265) : le premier clic ne révoque rien.
+  await expect(page.locator("#revocation-confirmation")).toBeVisible();
+  await expect(page.locator("#portabilite-etat")).toHaveText("portabilite:au-repos");
+  await page.click("#revoquer-confirmer");
   await expect(page.locator("#portabilite-etat")).toContainText("portabilite:revoque:1-retires", {
     timeout: DELAI,
   });

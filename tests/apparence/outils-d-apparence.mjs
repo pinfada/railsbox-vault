@@ -245,3 +245,42 @@ export async function jusquAuTravail(page) {
   await eprouverLaFeuille(page, feuille.code);
   return feuille;
 }
+
+/**
+ * Compte, dans le document de la coquille, les messages de révocation d'urgence envoyés au Worker de
+ * confiance (#265). À poser AVANT la première navigation : le script revit à chaque chargement. Le
+ * compte est celui de l'APPEL — ce que la personne a déclenché —, pas celui de ses effets.
+ */
+export async function compterLesRevocations(page) {
+  await page.addInitScript(() => {
+    globalThis.__revocationsEnvoyees = 0;
+    const envoyer = MessagePort.prototype.postMessage;
+    MessagePort.prototype.postMessage = function (message, ...reste) {
+      if (typeof message?.type === "string" && message.type.endsWith("revoquer-en-urgence")) {
+        globalThis.__revocationsEnvoyees += 1;
+      }
+      return envoyer.call(this, message, ...reste);
+    };
+  });
+  return () => page.evaluate(() => globalThis.__revocationsEnvoyees ?? 0);
+}
+
+/** Des étapes 1 à 8, par le CODE, jusqu'à l'étape 9 « Révoquer en urgence » (coquille réelle, sans VM). */
+export async function jusquALEtape9(page) {
+  const { code, version } = await jusquAuTravail(page);
+  await bouton(page, "Continuer : Verrouiller et rouvrir").click();
+  await verrouillerEtRecharger(page);
+  await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
+  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+  await bouton(page, "Ouvrir mon coffre").click();
+  await expect(titre(page, "Sauvegarder votre coffre")).toBeVisible(LONG);
+  await bouton(page, "Continuer : Restaurer sur un autre appareil").click();
+  await bouton(page, "Continuer : Récupérer votre coffre avec le code").click();
+  await verrouillerEtRecharger(page);
+  await page
+    .getByLabel("Numéro de feuille noté sur votre feuille (facultatif)", { exact: true })
+    .fill(version);
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(titre(page, "Révoquer en urgence")).toBeVisible(LONG);
+}

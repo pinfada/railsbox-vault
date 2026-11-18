@@ -176,7 +176,23 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   await activer(b, bouton(b, "Ouvrir mon coffre avec le code"));
   await attendre(b, "Révoquer en urgence");
   chronologie.etape("9-revocation-clavier");
-  await activer(b, bouton(b, "Révoquer tous les autres moyens d'ouvrir ce coffre"));
+  // #265 : « Terminer sans révoquer » précède « Révoquer » à la tabulation (l'ordre du DOM), et le
+  // geste irréversible passe par sa confirmation, au clavier : Entrée demande, « Annuler » a le focus
+  // et ne révoque rien, puis Tab mène à « Oui, révoquer » — le second geste, nommé.
+  const sansRevoquer = bouton(b, "Terminer sans révoquer");
+  const revoquer = bouton(b, "Révoquer tous les autres moyens d'ouvrir ce coffre");
+  await tabuler(b, sansRevoquer);
+  await b.keyboard.press("Tab");
+  await expect(revoquer).toBeFocused();
+  await b.keyboard.press("Enter");
+  const annuler = bouton(b, "Annuler");
+  await expect(annuler).toBeFocused();
+  await expect(titre(b, "Révoquer en urgence")).toBeVisible();
+  await b.keyboard.press("Enter");
+  await expect(revoquer).toBeFocused();
+  await expect(titre(b, "Révoquer en urgence")).toBeVisible();
+  await activer(b, revoquer);
+  await activer(b, bouton(b, "Oui, révoquer les autres moyens"));
   await attendre(b, "Parcours terminé");
   // « Revenir à mon application » est atteint au clavier, et mène à l'accueil (#239).
   await activer(b, bouton(b, "Revenir à mon application"));

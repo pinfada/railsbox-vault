@@ -126,7 +126,10 @@ for (const theme of ["light", "dark"]) {
     await expect(titre(page, "Révoquer en urgence")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-9-revoquer", DEUX_LARGEURS);
 
+    // Deux temps (#265) : le premier clic ne fait que demander ; « Oui » révoque.
     await bouton(page, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
+    await expect(titre(page, "Révoquer en urgence")).toBeVisible();
+    await bouton(page, "Oui, révoquer les autres moyens").click();
     await expect(titre(page, "Parcours terminé")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "termine", DEUX_LARGEURS);
 

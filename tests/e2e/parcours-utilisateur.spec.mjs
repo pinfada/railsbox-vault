@@ -375,6 +375,9 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
   await chrono("9-revoquer", async () => {
     await expect(b.getByText(/sauvegardes déjà faites restent ouvrables/)).toBeVisible();
     await bouton(b, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
+    // Deux temps (#265) : le premier clic ne révoque rien ; le second, nommé, révoque.
+    await attendreLEcran(b, "Révoquer en urgence");
+    await bouton(b, "Oui, révoquer les autres moyens").click();
     await attendreLEcran(b, "Parcours terminé", BUDGET_DEVERROUILLAGE_MS);
     // Le coffre restauré ne s'ouvre que par le code qui vient de servir : il n'y a rien d'autre à
     // retirer, et la page ne fait pas noter un numéro pour rien (revue #213, constat 15).
