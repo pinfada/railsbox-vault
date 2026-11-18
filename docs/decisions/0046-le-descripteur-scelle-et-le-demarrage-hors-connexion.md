@@ -350,7 +350,7 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
   `vm-acquisition-des-petits-artefacts` et `vm-acquisition-disque-systeme` (hors connexion : fetch
   jamais appelé), `coquille-empreintes-du-boot`.
 - **Mutation** (rejouée le 18/11/2026) : la campagne `hors-ligne`
-  (`tools/muter-gardes-hors-ligne.mjs`) tient 69 gardes, 69 tuées ; la campagne `magasin` en tient
+  (`tools/muter-gardes-hors-ligne.mjs`) tient 72 gardes, 72 tuées ; la campagne `magasin` en tient
   32, 32 tuées (dont les restes de la revue de #292 et le jeton testé après chaque attente, § 8).
   Les deux sont dans le job requis « Campagnes de mutation ».
 - **Intégration navigateur, trois moteurs** (Chromium, Firefox et WebKit exécutés le 18/11/2026) :
