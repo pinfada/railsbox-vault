@@ -161,7 +161,7 @@ export async function observerLaFraicheur(registration, { delaiMs, delaiReponseM
  * Rend `{ autorise, code, cause, fraicheur, travailleur }`. Aucun secret ne circule ici.
  * `crochets.avantCreation` / `crochets.apresVerification` laissent l'épreuve interposer une faute.
  */
-export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000, delaiReponseMs = 3000, creerLeTravailleur, crochets = {} }) {
+export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000, delaiReponseMs = 3000, creerLeTravailleur, crochets = {}, mutants = {} }) {
   const conteneur = navigator.serviceWorker;
   const controleur = conteneur.controller;
   let controleurChange = false;
@@ -170,7 +170,10 @@ export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000
   };
   conteneur.addEventListener("controllerchange", surChangement);
   try {
-    if (!controleur) return { ...decider({ controleur: null }), fraicheur: ETATS.NON_VERIFIABLE };
+    if (!controleur) {
+      if (mutants.contourneSansSW) return { autorise: true, code: null, cause: "contourne", fraicheur: ETATS.NON_VERIFIABLE, travailleur: creerLeTravailleur() };
+      return { ...decider({ controleur: null }), fraicheur: ETATS.NON_VERIFIABLE };
+    }
     const registration = await conteneur.getRegistration("/");
     const [identite, verification, observation] = await Promise.all([
       interroger(controleur, "version", delaiReponseMs),
@@ -181,11 +184,11 @@ export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000
     ]);
     const fraicheur = etatDeFraicheur({ maj: observation.maj, attente: observation.attente, sequenceCourante: identite?.sequence ?? sequencePage });
     await crochets.apresVerification?.();
-    const decision = decider({ controleur: true, sequencePage, identite, verification, fraicheur, controleurChange });
+    const decision = decider({ controleur: true, sequencePage, identite, verification: mutants.sansVerification ? { manquants: [], alteres: [] } : verification, fraicheur: mutants.ignoreLaRevocation ? ETATS.PRETE : fraicheur, controleurChange });
     if (!decision.autorise) return { ...decision, fraicheur, observation };
     await crochets.avantCreation?.();
     // Le contrôleur a-t-il changé entre la vérification et la création ? (identité d'objet + événement)
-    if (conteneur.controller !== controleur || controleurChange) {
+    if (!mutants.sansRecontrole && (conteneur.controller !== controleur || controleurChange)) {
       return { autorise: false, code: CODES.DIVERGENTE, cause: "controleur-change", fraicheur, observation };
     }
     const travailleur = creerLeTravailleur();
@@ -202,6 +205,7 @@ export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000
       });
       travailleur.postMessage({ type: "bonjour" });
     });
+    if (mutants.sansPoigneeDeMain) return { autorise: true, code: null, cause: null, fraicheur, travailleur, accueil, observation };
     if (accueil.erreur) {
       travailleur.terminate();
       // Un Worker qui ne se charge pas ne dit pas pourquoi (`error` générique) : le code typé vient

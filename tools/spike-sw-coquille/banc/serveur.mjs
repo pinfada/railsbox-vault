@@ -27,6 +27,11 @@ export class Origine {
     this.sockets = new Set();
     this.serveur = null;
     this.enTetes = reglesHeadersPubliees();
+    this.coupure = null; // { apres: n, vues: 0 } : la connexion est détruite à partir de la n+1-ième requête
+  }
+  /** Coupe le réseau à partir de la `n+1`-ième requête suivante (coupure PENDANT une installation). */
+  coupureApres(n) {
+    this.coupure = n === null ? null : { apres: n, vues: 0 };
   }
   publier(generation) {
     this.generation = generation;
@@ -74,6 +79,13 @@ export class Origine {
       range: requete.headers.range ?? null,
       t: Date.now(),
     });
+    if (this.coupure) {
+      this.coupure.vues += 1;
+      if (this.coupure.vues > this.coupure.apres) {
+        requete.socket.destroy();
+        return;
+      }
+    }
     const reglage = this.regles.get(brut) ?? this.regles.get(chemin);
     if (reglage?.pendre) return; // l'origine accepte la connexion et ne répond jamais
     if (reglage?.delaiMs) await new Promise((r) => setTimeout(r, reglage.delaiMs));

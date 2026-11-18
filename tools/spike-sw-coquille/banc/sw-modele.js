@@ -245,6 +245,7 @@ const IDENTITE = {
   entrees: Object.keys(CONFIG.liste).length,
 };
 self.addEventListener("message", (evenement) => {
+  if (CONFIG.faute?.muet) return; // faute injectée : un SW qui ne répond plus
   const source = evenement.source;
   const donnees = evenement.data;
   const port = evenement.ports?.[0];

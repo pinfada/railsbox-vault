@@ -58,6 +58,41 @@ window.banc = {
     navigator.serviceWorker.addEventListener("controllerchange", () => this.journalDesChangements.push(Date.now()));
   },
   attendre,
+  /** Le portail, avec compteur de créations de Worker, mutants et crochets nommés (pour les épreuves). */
+  async ouvrirLePortail({ delaiVerificationMs = 5000, delaiReponseMs = 3000, crochet = null, mutants = {}, garder = true } = {}) {
+    window.__crees = 0;
+    const crochets = {};
+    if (crochet === "alterer-le-worker") {
+      crochets.avantCreation = async () => (await caches.open(`reserve-${VERSION}`)).put("/spike/travailleur.mjs", new Response("self.postMessage({altere:true});"));
+    } else if (crochet === "alterer-une-lib") {
+      crochets.avantCreation = async () => (await caches.open(`reserve-${VERSION}`)).put("/spike/lib.mjs", new Response('export const LIB = "alteree";'));
+    } else if (crochet === "supprimer-le-worker") {
+      crochets.avantCreation = async () => (await caches.open(`reserve-${VERSION}`)).delete("/spike/travailleur.mjs");
+    } else if (crochet === "changer-de-controleur") {
+      crochets.apresVerification = async () => {
+        await window.publierV2();
+        const reg = await navigator.serviceWorker.getRegistration("/");
+        const change = new Promise((ok) => navigator.serviceWorker.addEventListener("controllerchange", ok, { once: true }));
+        await reg.update();
+        await Promise.race([change, attendre(8000)]);
+      };
+    }
+    const debut = performance.now();
+    const r = await portail.ouvrirLePortail({
+      sequencePage: SEQUENCE,
+      delaiVerificationMs,
+      delaiReponseMs,
+      mutants,
+      crochets,
+      creerLeTravailleur: () => {
+        window.__crees += 1;
+        return this.creerTravailleur();
+      },
+    });
+    const sortie = { autorise: r.autorise, code: r.code, cause: r.cause, detail: r.detail ?? null, fraicheur: r.fraicheur?.id ?? null, ms: Math.round(performance.now() - debut), crees: window.__crees, chronologie: r.observation?.chronologie ?? null, maj: r.observation?.maj ?? null };
+    if (r.travailleur && garder) window.__w = r.travailleur;
+    return sortie;
+  },
 };
 document.getElementById("etat").textContent = `banc ${VERSION}`;
 document.documentElement.dataset.banc = "pret";
