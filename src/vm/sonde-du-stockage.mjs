@@ -99,3 +99,8 @@ export async function sonderLeStockageEnDetail({
 export async function sonderLeStockage(options = {}) {
   return (await sonderLeStockageEnDetail(options)).verdict;
 }
+
+/** ROUGE : stub — aucun échec de lecture n'est classé. */
+export function classerLaLectureEnEchec() {
+  return null;
+}

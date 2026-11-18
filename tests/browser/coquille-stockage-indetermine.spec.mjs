@@ -7,12 +7,18 @@
 // propose NI la création NI un moyen d'ouverture, et offre « Réessayer » : la reprise relance la sonde
 // puis l'inventaire, SANS rechargement, et rend l'écran du coffre EXISTANT.
 //
-// Le rejet est posé par l'ÉPREUVE, dans le Worker de confiance lui-même — `addInitScript` n'atteint pas
-// les Workers : la route du script du Worker lui ajoute un préambule qui rejette les N premiers appels
-// de `getDirectory()`, N étant fixé par l'épreuve. Sous WebKit éphémère le rejet est NATUREL et constant :
-// aucun coffre ne s'y crée, la reprise ne peut pas aboutir, et l'épreuve dit exactement cela.
+// Le rejet est posé par l'ÉPREUVE, dans le Worker de confiance lui-même (`tests/support/rejet-opfs-worker.mjs`).
+//
+// AUCUNE sortie silencieuse : sous Chromium et Firefox les scénarios sont COMPLETS, et si l'écran devient
+// « inaccessible » là où il ne doit pas l'être, l'épreuve ÉCHOUE. Le contexte WebKit éphémère, où le rejet
+// est NATUREL et constant et où aucun coffre ne se crée, est déclaré par la FIXTURE — `test.skip(browserName
+// === "webkit", …)`, visible au rapport — et a son épreuve séparée, qui VÉRIFIE l'écran inaccessible.
+// Ce que ce fichier prouve, par moteur : Chromium et Firefox, un coffre existant et sa reprise ; WebKit, la
+// seule conduite de l'écran (ni création ni moyen, « Réessayer » qui ne peut pas aboutir) — PAS la reprise
+// d'un coffre existant, qu'un contexte WebKit persistant permettrait et que ce dépôt ne mesure pas.
 
 import { expect, test } from "../support/test.mjs";
+import { poserLeRejetDansLeWorker } from "../support/rejet-opfs-worker.mjs";
 
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 
@@ -21,32 +27,12 @@ const DELAI = 60_000;
 const FORME_DU_CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){6}$/;
 const TITRE_INACCESSIBLE = "Le stockage du navigateur ne répond pas pour l'instant";
 
+const RAISON_WEBKIT_EPHEMERE =
+  "WebKit éphémère : getDirectory() rejette UnknownError (mesuré, docs/compatibility.md), aucun coffre ne s'y crée ; l'écran inaccessible a son épreuve";
+
 const ecran = (page, titre) => page.getByRole("heading", { level: 2, name: titre, exact: true });
 const bouton = (page, nom) => page.getByRole("button", { name: nom, exact: true });
 const releve = async (page) => JSON.parse(await page.locator("#coquille-rapport").textContent());
-
-/**
- * Pose, dans le Worker de confiance, un `getDirectory()` qui REJETTE `UnknownError` tant que l'épreuve
- * le demande. L'interrupteur est TENU PAR L'ÉPREUVE : le Worker l'interroge à chaque appel par un
- * `fetch` de même origine que la route de l'épreuve sert — un compte d'appels fixé d'avance serait
- * faux dès qu'un autre module du Worker appelle `getDirectory()` avant la sonde.
- */
-async function poserLeRejetDansLeWorker(context, etat) {
-  await context.route(/\/__rejets-d-opfs$/, (route) =>
-    route.fulfill({ status: 200, contentType: "text/plain", body: etat.rejeter ? "1" : "0" }),
-  );
-  await context.route(/\/runtime-worker\.mjs/, async (route) => {
-    const reponse = await route.fetch();
-    const prelude =
-      "const __origine = StorageManager.prototype.getDirectory;\n" +
-      "StorageManager.prototype.getDirectory = async function () {\n" +
-      '  const demande = await (await fetch("/__rejets-d-opfs", { cache: "no-store" })).text();\n' +
-      '  if (demande === "1") throw new DOMException("transitoire", "UnknownError");\n' +
-      "  return __origine.call(this);\n" +
-      "};\n";
-    await route.fulfill({ response: reponse, body: prelude + (await reponse.text()) });
-  });
-}
 
 async function ouvrirLaCoquille(page) {
   await page.goto(new URL("/index.html", SHELL_ORIGIN).toString(), { waitUntil: "commit" });
@@ -76,31 +62,17 @@ async function exigerAucuneOffre(page) {
   await expect(bouton(page, "Ouvrir mon coffre avec ma passkey")).toBeHidden();
 }
 
-test("stockage inaccessible : ni création ni moyen, « Réessayer », et la reprise rend le coffre EXISTANT sans rechargement", async ({
+test("Chromium et Firefox : stockage inaccessible — ni création ni moyen, « Réessayer », et la reprise rend le coffre EXISTANT sans rechargement", async ({
   page,
   context,
-}, info) => {
+  browserName,
+}) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   const etat = { rejeter: false };
   await poserLeRejetDansLeWorker(context, etat);
   await ouvrirLaCoquille(page);
-  await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBeTruthy();
-
-  if ((await releve(page)).etat === "indetermine") {
-    // Sous WebKit éphémère : le rejet est NATUREL et constant, aucun coffre ne s'y crée. L'écran dit le
-    // stockage inaccessible, n'offre rien, et la reprise — qui ne peut pas aboutir — le dit encore.
-    await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
-    await exigerAucuneOffre(page);
-    await bouton(page, "Réessayer").click();
-    await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
-    await exigerAucuneOffre(page);
-    await info.attach("limite-webkit-ephemere", {
-      body: "Rejet naturel et constant : aucun coffre existant, la reprise ne peut pas aboutir ici.",
-      contentType: "text/plain",
-    });
-    return;
-  }
-
-  // Chromium et Firefox : un coffre EXISTANT, puis un stockage qui ne répond pas à la rouverture.
+  // Un coffre EXISTANT, puis un stockage qui ne répond pas à la rouverture. `creerEtAfficherLeCode`
+  // exige l'écran de création : si le stockage est inaccessible dès le départ, l'épreuve ÉCHOUE.
   const code = await creerEtAfficherLeCode(page);
   etat.rejeter = true;
   await page.reload({ waitUntil: "commit" });
@@ -126,23 +98,16 @@ test("stockage inaccessible : ni création ni moyen, « Réessayer », et la rep
   await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBe("ouvert");
 });
 
-test("la même reprise rend l'écran de RÉOUVERTURE par la PHRASE d'un coffre existant, et la phrase l'ouvre", async ({
+test("Chromium et Firefox : la même reprise rend l'écran de RÉOUVERTURE par la PHRASE d'un coffre existant, et la phrase l'ouvre", async ({
   page,
   context,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
   const etat = { rejeter: false };
   await poserLeRejetDansLeWorker(context, etat);
   await ouvrirLaCoquille(page);
-  await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBeTruthy();
-  if ((await releve(page)).etat === "indetermine") {
-    // WebKit éphémère : aucun coffre n'existe, la phrase n'a rien à rouvrir. Même écran, même absence
-    // d'offre — la limite est écrite dans la première épreuve.
-    await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
-    await exigerAucuneOffre(page);
-    return;
-  }
-
-  // Un coffre existant dont le code a été éprouvé, puis verrouillé : la page rouvre par la PHRASE.
+  // Un coffre existant dont le code a été éprouvé : la page le rouvre désormais par la PHRASE.
   const code = await creerEtAfficherLeCode(page);
   await bouton(page, "J'ai recopié mon code").click();
   const recharge = page.waitForEvent("load");
@@ -154,8 +119,6 @@ test("la même reprise rend l'écran de RÉOUVERTURE par la PHRASE d'un coffre e
   await page.getByLabel("Code de récupération", { exact: true }).fill(code);
   await bouton(page, "Ouvrir mon coffre avec le code").click();
   await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
-  // La feuille est éprouvée (c'est le Worker qui le constate) : un rechargement referme le coffre, et la
-  // page le rouvre désormais par la PHRASE.
   await page.reload({ waitUntil: "commit" });
   await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible({ timeout: DELAI });
 
@@ -173,4 +136,55 @@ test("la même reprise rend l'écran de RÉOUVERTURE par la PHRASE d'un coffre e
   await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
   await bouton(page, "Ouvrir mon coffre").click();
   await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBe("ouvert");
+});
+
+test("Chromium et Firefox : une panne de LECTURE après une sonde RÉUSSIE (inventaire) mène à « Réessayer », jamais à un démarrage en erreur", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(browserName === "webkit", RAISON_WEBKIT_EPHEMERE);
+  const etat = { rejeter: false };
+  await poserLeRejetDansLeWorker(context, etat);
+  await ouvrirLaCoquille(page);
+  const code = await creerEtAfficherLeCode(page);
+
+  // La sonde du prochain Worker réussit (un appel passe), puis toute lecture rejette `UnknownError`.
+  etat.laisserPasser = 1;
+  await page.reload({ waitUntil: "commit" });
+  await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
+  await expect(page.locator("html")).not.toHaveAttribute("data-coquille", "erreur");
+  await exigerAucuneOffre(page);
+  await expect(ecran(page, "Créer votre coffre")).toHaveCount(0);
+
+  // La reprise après cette panne : le stockage répond de nouveau, « Réessayer » rend le coffre existant.
+  etat.laisserPasser = undefined;
+  etat.rejeter = false;
+  await bouton(page, "Réessayer").click();
+  await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBe("ouvert");
+});
+
+test("WebKit éphémère : l'écran « stockage inaccessible » n'offre NI création NI moyen, et « Réessayer » ne peut pas aboutir", async ({
+  page,
+  context,
+  browserName,
+}, info) => {
+  test.skip(browserName !== "webkit", "épreuve du seul contexte WebKit éphémère mesuré");
+  // Le rejet est NATUREL sous ce contexte : l'épreuve ne pose rien, elle VÉRIFIE. Si WebKit cessait de
+  // rejeter, l'écran ne s'afficherait plus et l'épreuve échouerait — c'est voulu.
+  await poserLeRejetDansLeWorker(context, { rejeter: false });
+  await ouvrirLaCoquille(page);
+  await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
+  await exigerAucuneOffre(page);
+  await expect(ecran(page, "Créer votre coffre")).toHaveCount(0);
+  await bouton(page, "Réessayer").click();
+  await expect(ecran(page, TITRE_INACCESSIBLE)).toBeVisible({ timeout: DELAI });
+  await exigerAucuneOffre(page);
+  await info.attach("limite-webkit-ephemere", {
+    body: "Rejet naturel et constant : aucun coffre existant, la reprise d'un coffre n'est pas mesurée sous WebKit.",
+    contentType: "text/plain",
+  });
 });

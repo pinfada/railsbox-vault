@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   ETATS_DE_CAPACITE as E,
   apresLaSonde,
+  apresUnEchecDeLecture,
   capaciteInitiale,
   etatPublie,
   peutOuvrir,
@@ -122,4 +123,46 @@ test("l'état publié : verrouille / indetermine (indéterminé ET panne) / indi
   assert.equal(etatPublie(apresLaSonde(depart, panne(QUOTA))), ETATS_DU_VOLUME.indetermine);
   assert.equal(etatPublie(apresLaSonde(depart, absente)), ETATS_DU_VOLUME.indisponible);
   assert.equal(etatPublie(capaciteInitiale({ apiPresente: false })), ETATS_DU_VOLUME.indisponible);
+});
+
+// --- Une panne APRÈS une sonde réussie (revue complète de la PR #305) ----------------------------------
+//
+// `disponible` n'est pas un cul-de-sac : la sonde a abouti, mais une LECTURE réelle (l'inventaire, un
+// geste) peut rejeter ensuite. La machine le traite de façon conservatrice et réessayable.
+
+test("une lecture en échec fait repasser `disponible` en `indetermine` ou en `panne:<code>`", () => {
+  const disponible = apresLaSonde(capaciteInitiale({ apiPresente: true }), atteignable);
+  assert.equal(apresUnEchecDeLecture(disponible, indetermine).etat, E.indetermine);
+  assert.deepEqual(apresUnEchecDeLecture(disponible, panne(QUOTA)), { etat: E.panne, code: QUOTA });
+  // …et reste réessayable : la sonde suivante peut tout rétablir.
+  const enIndetermine = apresUnEchecDeLecture(disponible, indetermine);
+  assert.equal(reessayable(enIndetermine), true);
+  assert.equal(peutOuvrir(enIndetermine), false);
+  assert.equal(apresLaSonde(enIndetermine, atteignable).etat, E.disponible);
+});
+
+test("une lecture en échec depuis `indetermine` ou `panne` reste réessayable, avec son dernier code", () => {
+  const enIndetermine = apresLaSonde(capaciteInitiale({ apiPresente: true }), indetermine);
+  assert.deepEqual(apresUnEchecDeLecture(enIndetermine, panne(QUOTA)), {
+    etat: E.panne,
+    code: QUOTA,
+  });
+  const enPanne = apresLaSonde(capaciteInitiale({ apiPresente: true }), panne(QUOTA));
+  assert.equal(apresUnEchecDeLecture(enPanne, indetermine).etat, E.indetermine);
+});
+
+test("une lecture en échec ne touche NI une absence établie NI une capacité encore inconnue, et ne dit rien d'autre qu'indéterminé ou panne", () => {
+  assert.throws(
+    () => apresUnEchecDeLecture(capaciteInitiale({ apiPresente: false }), indetermine),
+    /transition/i,
+  );
+  assert.throws(
+    () => apresUnEchecDeLecture(capaciteInitiale({ apiPresente: true }), indetermine),
+    /transition/i,
+  );
+  const disponible = apresLaSonde(capaciteInitiale({ apiPresente: true }), atteignable);
+  for (const evenement of [atteignable, absente]) {
+    assert.throws(() => apresUnEchecDeLecture(disponible, evenement), /verdict|transition/i);
+  }
+  assert.throws(() => apresUnEchecDeLecture(disponible, { verdict: "panne" }), /code/i);
 });

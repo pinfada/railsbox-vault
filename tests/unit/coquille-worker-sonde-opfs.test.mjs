@@ -40,7 +40,7 @@ let numero = 0;
  * `n` compte les appels depuis 1 : il rend une promesse, que l'épreuve tient en main si elle le veut.
  */
 async function monterLeWorker(comportement) {
-  const appels = { getDirectory: 0, racine: 0 };
+  const appels = { getDirectory: 0, racine: 0, lecture: null };
   const ecouteurs = new Map();
   class FichierDouble {
     createSyncAccessHandle() {}
@@ -97,18 +97,17 @@ async function monterLeWorker(comportement) {
 
 const toujoursRejete = (nom) => () => Promise.reject(rejet(nom));
 
-/** Un `getDirectory()` qui ABOUTIT : la racine est un double dont l'accès est compté. */
+/**
+ * Un `getDirectory()` qui ABOUTIT : la racine est un double dont l'accès est compté. Tant que
+ * `appels.lecture` est nul, un fichier absent rend `NotFoundError` (un coffre qui n'existe pas) ; posé
+ * à un nom d'erreur, toute LECTURE rejette ce nom — la panne qui survient APRÈS une sonde réussie.
+ */
 function racineDouble(appels) {
-  return Promise.resolve({
-    getDirectoryHandle() {
-      appels.racine += 1;
-      return Promise.reject(rejet("NotFoundError"));
-    },
-    getFileHandle() {
-      appels.racine += 1;
-      return Promise.reject(rejet("NotFoundError"));
-    },
-  });
+  const lire = () => {
+    appels.racine += 1;
+    return Promise.reject(rejet(appels.lecture ?? "NotFoundError"));
+  };
+  return Promise.resolve({ getDirectoryHandle: lire, getFileHandle: lire });
 }
 
 function geste(worker, correlation) {
@@ -318,6 +317,110 @@ test("une demande d'INVENTAIRE relance la sonde : à la reprise l'inventaire n'e
   // L'inventaire est LU pour de bon : il est allé jusqu'à l'OPFS (un inventaire servi sans y toucher
   // serait un « vide » déguisé, celui d'une capacité que le Worker croit encore absente).
   assert.ok(worker.appels.racine > 0, "l'inventaire a atteint l'OPFS");
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
+  await attendre(60);
+  assert.equal(worker.parCorrelation("e1")?.etat, "verrouille");
+});
+
+// --- Une panne APRÈS une sonde réussie (revue complète de la PR #305) ------------------------------------
+//
+// `disponible` n'est pas un cul-de-sac. La sonde a abouti, puis une LECTURE réelle rejette : l'inventaire
+// ne doit pas remonter un refus privé (la page finirait son démarrage en erreur, sans « Réessayer »), il est
+// INCONNU ; l'état n'est plus `verrouille` ; et la reprise reste possible, plusieurs fois.
+
+test("une lecture de l'inventaire qui rejette UnknownError APRÈS une sonde réussie : inventaire INCONNU, état `indetermine`", async () => {
+  const worker = await monterLeWorker((n, appels) => racineDouble(appels));
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e0");
+  await attendre(100);
+  assert.equal(worker.parCorrelation("e0")?.etat, "verrouille");
+
+  worker.appels.lecture = "UnknownError";
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
+  await attendre(200);
+  const inventaire = worker.parCorrelation("i1");
+  assert.ok(inventaire, "l'inventaire reçoit une réponse");
+  assert.equal(inventaire.type, TYPES_PRIVILEGIES.inventaireReponse, "pas un refus privé");
+  assert.equal(inventaire.inconnu, true);
+  assert.equal(inventaire.refus?.code, STORAGE_ERROR_CODES.indeterminate);
+
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
+  await attendre(60);
+  assert.equal(
+    worker.parCorrelation("e1")?.etat,
+    "indetermine",
+    "le Worker ne publie plus `verrouille`",
+  );
+});
+
+test("lectures SUCCESSIVES de l'inventaire : lu, en panne, puis relu — chaque reprise est possible", async () => {
+  const worker = await monterLeWorker((n, appels) => racineDouble(appels));
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
+  await attendre(150);
+  assert.notEqual(
+    worker.parCorrelation("i1")?.inconnu,
+    true,
+    "première lecture : un inventaire réel",
+  );
+
+  worker.appels.lecture = "UnknownError";
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i2");
+  await attendre(200);
+  assert.equal(worker.parCorrelation("i2")?.inconnu, true, "la lecture suivante est en panne");
+
+  worker.appels.lecture = null;
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i3");
+  await attendre(200);
+  assert.notEqual(worker.parCorrelation("i3")?.inconnu, true, "la reprise relit l'inventaire");
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
+  await attendre(60);
+  assert.equal(worker.parCorrelation("e1")?.etat, "verrouille");
+
+  // Une SECONDE panne, après cette reprise : la machine n'est pas un cul-de-sac.
+  worker.appels.lecture = "QuotaExceededError";
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i4");
+  await attendre(200);
+  assert.equal(worker.parCorrelation("i4")?.inconnu, true);
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e2");
+  await attendre(60);
+  assert.equal(worker.parCorrelation("e2")?.etat, "indetermine");
+});
+
+test("panne de lecture APRÈS une reprise (indéterminé → sonde réussie → lecture en échec) : inconnu, et réessayable", async () => {
+  const worker = await monterLeWorker((n, appels) =>
+    n <= 3 ? Promise.reject(rejet("UnknownError")) : racineDouble(appels),
+  );
+  worker.appels.lecture = "UnknownError";
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
+  await attendre(700);
+  // La sonde relancée par la demande a abouti (quatrième appel), puis la lecture a rejeté.
+  assert.equal(worker.parCorrelation("i1")?.inconnu, true);
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
+  await attendre(60);
+  assert.equal(worker.parCorrelation("e1")?.etat, "indetermine");
+
+  worker.appels.lecture = null;
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i2");
+  await attendre(200);
+  assert.notEqual(worker.parCorrelation("i2")?.inconnu, true);
+});
+
+test("un geste dont la lecture rejette UnknownError rend le refus ET retire `verrouille`", async () => {
+  const worker = await monterLeWorker((n, appels) => racineDouble(appels));
+  worker.appels.lecture = "UnknownError";
+  geste(worker, "d1");
+  await attendre(250);
+  assert.ok(worker.parCorrelation("d1"), "le geste reçoit un refus typé");
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
+  await attendre(60);
+  assert.equal(worker.parCorrelation("e1")?.etat, "indetermine");
+});
+
+test("une erreur qui n'est PAS une panne du stockage ne retire pas `verrouille` : elle remonte telle quelle", async () => {
+  const worker = await monterLeWorker((n, appels) => racineDouble(appels));
+  worker.appels.lecture = "TypeError";
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
+  await attendre(150);
+  assert.notEqual(worker.parCorrelation("i1")?.inconnu, true);
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
   await attendre(60);
   assert.equal(worker.parCorrelation("e1")?.etat, "verrouille");

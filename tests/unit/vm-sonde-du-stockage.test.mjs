@@ -5,6 +5,7 @@ import {
   DELAI_ENTRE_ESSAIS_MS,
   ESSAIS_DE_LA_SONDE,
   VERDICTS_DU_STOCKAGE,
+  classerLaLectureEnEchec,
   classerLeRejetDeRacine,
   sonderLeStockage,
   sonderLeStockageEnDetail,
@@ -156,4 +157,62 @@ test("le DÉTAIL de la sonde : un verdict, et le code précis d'une panne — ri
     verdict: "absente",
     code: null,
   });
+});
+
+// --- Une LECTURE réelle en échec, après une sonde réussie (revue complète de la PR #305) -------------------
+
+test("classerLaLectureEnEchec : l'UnknownError — brut ou déjà traduit — est indéterminé", () => {
+  assert.deepEqual(classerLaLectureEnEchec(rejet("UnknownError")), {
+    verdict: "indetermine",
+    code: null,
+  });
+  // `toStorageError` range un nom inconnu sous SUPPORT_FAILURE et garde le nom dans `context.cause`.
+  const traduit = Object.assign(new Error("x"), {
+    code: "VAULT_STORAGE_SUPPORT_FAILURE",
+    context: { cause: "UnknownError" },
+  });
+  assert.deepEqual(classerLaLectureEnEchec(traduit), { verdict: "indetermine", code: null });
+  const deja = Object.assign(new Error("x"), { code: "VAULT_STORAGE_INDETERMINE" });
+  assert.deepEqual(classerLaLectureEnEchec(deja), { verdict: "indetermine", code: null });
+});
+
+test("classerLaLectureEnEchec : une panne du support rend son code PRÉCIS", () => {
+  assert.deepEqual(classerLaLectureEnEchec(rejet("QuotaExceededError")), {
+    verdict: "panne",
+    code: "VAULT_STORAGE_QUOTA_EXCEEDED",
+  });
+  assert.deepEqual(classerLaLectureEnEchec(rejet("InvalidStateError")), {
+    verdict: "panne",
+    code: "VAULT_STORAGE_HANDLE_LOST",
+  });
+  const typee = Object.assign(new Error("x"), { code: "VAULT_STORAGE_QUOTA_EXCEEDED" });
+  assert.deepEqual(classerLaLectureEnEchec(typee), {
+    verdict: "panne",
+    code: "VAULT_STORAGE_QUOTA_EXCEEDED",
+  });
+  const nonClassee = Object.assign(new Error("x"), { code: "VAULT_STORAGE_SUPPORT_FAILURE" });
+  assert.deepEqual(classerLaLectureEnEchec(nonClassee), {
+    verdict: "panne",
+    code: "VAULT_STORAGE_SUPPORT_FAILURE",
+  });
+});
+
+test("classerLaLectureEnEchec : une erreur du DOMAINE n'est jamais avalée en panne de stockage", () => {
+  // Un refus d'enveloppe, un coffre refusé, un bug : la page doit le voir tel quel.
+  for (const erreur of [
+    Object.assign(new Error("x"), { code: "VAULT_ENVELOPPE_ILLISIBLE" }),
+    Object.assign(new Error("x"), { code: "VAULT_COQUILLE_COFFRE_ANTERIEUR" }),
+    Object.assign(new Error("x"), { code: "VAULT_STORAGE_BUSY" }),
+    new TypeError("bug"),
+    rejet("NotFoundError"),
+    rejet("SecurityError"),
+    undefined,
+    "une chaîne",
+  ]) {
+    assert.equal(
+      classerLaLectureEnEchec(erreur),
+      null,
+      String(erreur?.code ?? erreur?.name ?? erreur),
+    );
+  }
 });
