@@ -3,7 +3,8 @@
 - Statut : **accepté pour la conception, NON EN VIGUEUR** — aucun Service Worker n'existe tant que
   D1h-b (l'implémentation) n'est pas fusionnée. Jusque-là, la règle « aucun Service Worker sur
   l'origine de confiance » de `SECURITY.md` (ADR 0030, décision 4) reste celle qui s'applique. La
-  fusion de cette PR est subordonnée à une revue de sécurité distincte, à son SHA exact.
+  fusion de cette PR suit la délégation en vigueur (mainteneur, 18/11/2026 au soir) : revue de
+  sécurité complète **APPROUVÉE au SHA exact**, contrôles requis verts, limites écrites.
 - Date : 2026-11-18
 - Numéro : 0048 — le 0046 est porté par la PR #298 (pas encore fusionnée), le 0047 par la PR #305
 - **Révise** : `SECURITY.md` § « Aucun Service Worker sur l'origine de confiance » et la décision 4
@@ -285,12 +286,37 @@ Ordre :
 4. **Décision pure** : retrait → `PERIMEE` ; contrôleur changé ou séquence ≠ page → `DIVERGENTE` ;
    SW muet → `ABSENTE` (`silence-du-sw`) ; entrées manquantes → `INCOMPLETE` ; altérées → `ALTEREE`
    ; révocation connue → `PERIMEE`.
-5. **Re-contrôle** du contrôleur (identité d'objet **et** `controllerchange`) juste avant
-   `new Worker`.
+5. **Dernière garde, synchrone** (voir « État de révocation monotone » ci-dessous) : **dans le même
+   tour** de la boucle d'événements, immédiatement avant `new Worker`, relire l'état de révocation
+   partagé **et** le contrôleur (identité d'objet, drapeau `controllerchange`), **sans aucun `await`
+   entre cette lecture et la création du Worker**.
 6. **Poignée de main** de séquence (§ 6).
 7. Un Worker qui ne se charge pas : **re-vérification** pour nommer `ALTEREE` ou `INCOMPLETE` —
    **jamais** depuis l'événement `error`, que **Firefox n'émet pas** quand le graphe de modules d'un
    Worker est refusé.
+
+**État de révocation monotone (constat de la revue de #312).** La fraîcheur tourne en parallèle des
+autres vérifications ; un portail qui en prend une décision puis attend (vérification complète,
+re-contrôle) peut laisser passer une révocation connue **entre la décision et la création**. Règle :
+
+- **un seul état de révocation par page**, partagé par l'observateur (§ 8) et par **tous** les
+  portails (premier démarrage, réouverture après verrouillage, tout autre point de création d'un
+  Worker de confiance). Il est **monotone** : il passe de « inconnue » à « connue » (avec sa cause :
+  `plancher` ou `retrait`) et **ne revient jamais** en arrière pendant la vie de la page — ni par un
+  recalcul de fraîcheur, ni par un nouveau portail, ni par la disparition du Worker en attente. Tout
+  calcul de l'état 1 l'écrit ; rien ne l'efface ;
+- **relu dans le même tour**, juste avant `new Worker`, à l'étape 5 : si elle est « connue », aucun
+  Worker n'est créé, aucune clé n'existe, le refus est `PERIMEE`. Comme JavaScript n'exécute aucun
+  gestionnaire d'événement entre deux instructions synchrones, ce qui a été **observé** avant cette
+  lecture est **vu** ; l'absence d'`await` entre la garde et la création est donc **la** garde, pas
+  un détail de style ;
+- la décision pure de l'étape 4 reste utile (elle nomme le refus), mais **elle ne suffit pas** : une
+  décision « autorise » prise avant une attente est périmée à la reprise.
+
+**Ce que cette garde ne ferme pas** : la fraîcheur est non signée, donc bornée aux révocations
+**CONNUES** (§ 9). Une révocation que la page n'a pas encore observée (script de retrait pas encore
+récupéré, installation non terminée, réseau coupé) n'est pas dans l'état et ne peut pas être refusée
+; une révocation connue **après** la création n'interrompt pas la session (§ 8).
 
 Valeurs de départ, **à calibrer en D1h-b** sans jamais être abaissées sans mesure :
 `DELAI_REPONSE_SW_MS` 3 000, `DELAI_VERIFICATION_MS` 5 000 (serré sous Firefox, où l'installation
@@ -352,10 +378,10 @@ au Worker en attente ; l'état est recalculé par la même fonction pure et **le
 jour**. Une révocation connue **après** le délai du portail (installation lente) ou **après**
 l'ouverture de la session est donc **annoncée de façon visible** (région `role="alert"`), **sans
 interrompre la session** : le Worker de confiance n'est pas terminé, la clé reste utilisable, aucun
-`controllerchange` n'est émis. Ce qu'elle change : **plus aucun Worker n'est créé** (§ 7 : le
-portail passe avant chaque création). Le prototype calculait l'état une fois puis retirait son
-écouteur (F7 le recalculait à la main, sans bandeau) : **c'est un écart du banc à la décision**,
-listé en « Preuves ».
+`controllerchange` n'est émis. Ce qu'elle change : **plus aucun Worker n'est créé** (§ 7 :
+l'observateur écrit l'état de révocation monotone, que chaque portail relit dans le même tour avant
+`new Worker`). Le prototype calculait l'état une fois puis retirait son écouteur (F7 le recalculait
+à la main, sans bandeau) : **c'est un écart du banc à la décision**, listé en « Preuves ».
 
 **Réponse au critère du mainteneur** (« aucun SW ancien ne doit servir un code périmé ou révoqué
 sans le dire ») : le SW ancien **dit ce qu'il sait** — révocation connue, mise à jour prête, version
@@ -637,16 +663,18 @@ décisions ci-dessus (**les cinq exigences du 2e contre-examen**) :
 
 **Autres limites du banc.** (a) Les **mutants** sont des interrupteurs dans le code du banc, **pas**
 une campagne de mutation du source : la campagne `reserve` de `tools/rejouer-les-campagnes.mjs`
-n'existe pas. (b) **Survivants dits** : _taille non comparée_ (M2) est un **équivalent** — le
-hachage la couvre, le contrôle de taille ne sert qu'à borner le coût ; _installation lisant le cache
-HTTP_ (M4) n'est tué que sous Chromium (le cache HTTP n'alimente pas l'installation sous Firefox et
-WebKit) ; la garde « client `window` » (P2) n'est pas tuée sous Chromium. Une épreuve qui ne rougit
-pas sous son mutant est écrite comme telle. (c) **la réparation en ligne** (`reparer`, § 13) n'est
-**pas prototypée** : le banc nomme `INCOMPLETE` et `ALTEREE` mais ne refait rien ; (d) **S10 non
-garanti** : la redemande du script à la navigation varie d'une exécution à l'autre ; d'où `update()`
-explicite. (e) Le portail typé, l'enregistrement par la page, la liste générée à la publication et
-les codes au registre **n'existent pas** : c'est D1h-b. (f) La preuve est celle d'**un** banc, sur
-Linux arm64, headless.
+n'existe pas. (b) **Survivants du banc, dits et NON présumés équivalents** : _taille non comparée_
+(M2) a survécu au banc ; l'hypothèse « le hachage la couvre » **n'est pas une preuve d'équivalence**
+(le contrôle de taille borne le coût avant de hacher : effet observable), et D1h-b doit le tuer ou
+prouver son équivalence ; _installation lisant le cache HTTP_ (M4) n'est tué que sous Chromium ; la
+garde « client `window` » (P2) n'est pas tuée sous Chromium. **Les survivants du prototype et les
+limites de moteur ne remplacent pas la règle des mutants de l'annexe A** (zéro survivant pertinent
+sur le source). Une épreuve qui ne rougit pas sous son mutant est écrite comme telle. (c) **la
+réparation en ligne** (`reparer`, § 13) n'est **pas prototypée** : le banc nomme `INCOMPLETE` et
+`ALTEREE` mais ne refait rien ; (d) **S10 non garanti** : la redemande du script à la navigation
+varie d'une exécution à l'autre ; d'où `update()` explicite. (e) Le portail typé, l'enregistrement
+par la page, la liste générée à la publication et les codes au registre **n'existent pas** : c'est
+D1h-b. (f) La preuve est celle d'**un** banc, sur Linux arm64, headless.
 
 **Pas prouvé du tout** (à écrire dans `SECURITY.md` et à suivre par issue) :
 
@@ -675,8 +703,10 @@ Linux arm64, headless.
 
 ## Annexe A — DoR gelée de D1h-b
 
-D1h-b est la **seule** PR qui ferme #299. Elle démarre **après la fusion de #298** (Q6) et d'un
-accord écrit du mainteneur sur cet ADR.
+D1h-b est la **seule** PR qui ferme #299. Elle démarre **après la fusion de #298** (Q6). **Règle de
+fusion** : la délégation en vigueur (mainteneur, 18/11/2026 au soir) — revue de sécurité complète
+**APPROUVÉE au SHA exact**, contrôles requis verts, limites écrites ; aucun accord écrit
+supplémentaire n'est exigé. La décision d'option (b) n'est pas rouverte.
 
 **Résultat.** Sans réseau, la coquille publiée s'ouvre, déverrouille et démarre le coffre depuis la
 réserve (SW + magasin OPFS de #298), sous les en-têtes de production, **sans harnais**. **Pour tout
@@ -721,8 +751,12 @@ l'amendement de l'ADR 0046 § 6 (le texte « `libv86` n'est PAS lié » devient 
    aucun `controllerchange` ;
 5. les **sept états + nominal** et leurs effets, dont les courses `update()`/installation,
    l'installation rejetée, **l'attente muette**, **la version différente ou plus ancienne**, et **la
-   révocation arrivée après le délai** (annonce visible, session non interrompue, aucun Worker neuf)
-   ;
+   révocation arrivée après le délai** (annonce visible, session non interrompue, aucun Worker
+   neuf), et **la course à la création** : « vérification suspendue → révocation connue avant la
+   reprise → **zéro Worker, zéro clé** » (la vérification complète est suspendue, la révocation est
+   observée pendant l'attente, la vérification reprend et rend « tout est bon » : le portail refuse
+   `PERIMEE`), puis la même épreuve sur un **second portail** de la même page (verrouillage,
+   réouverture), l'état de révocation n'ayant pas reculé ;
 6. garde fermée : URL inattendue, variantes, redirections, types, destinations, hors origine,
    méthodes ;
 7. retrait par script (onglets actifs, attente, interruption entre caches et désinscription, réseau
@@ -751,13 +785,26 @@ l'amendement de l'ADR 0046 § 6 (le texte « `libv86` n'est PAS lié » devient 
 collision) + navigateur trois moteurs (`playwright.config.mjs`, projets `reserve-*` ; « réseau coupé
 » = **arrêt du serveur**, jamais `setOffline` — Firefox et WebKit, S21) + E2E ; **campagne
 `reserve`** de `tools/rejouer-les-campagnes.mjs` **sur le source** ; rouge/vert documentés ; revue
-de sécurité distincte ; accord du mainteneur avant fusion.
+de sécurité distincte, complète, APPROUVÉE au SHA exact (règle de fusion ci-dessus) ; **zéro mutant
+pertinent survivant sur le source** (règle ci-dessous).
 
-**Gardes à muter** (chaque ligne rougit une épreuve nommée ; les équivalents sont dits, les
-survivants écrits) :
+**Règle des mutants (constat de la revue de #312).** D1h-b exige **zéro mutant pertinent survivant
+sur le source**. Un mutant est **tué** s'il rougit une épreuve **nommée**, sur le source du produit
+(campagne `reserve`), dans au moins un projet où la garde est atteignable. Un mutant allégué
+**équivalent** exige une **preuve d'équivalence spécifique** à ce mutant (argument écrit et, quand
+c'est possible, épreuve qui le montre) : ni les **survivants du prototype**, ni une **limite de
+moteur** (garde inatteignable sous un moteur, comportement qui diffère), ni « le hachage couvre déjà
+» ne remplacent cette preuve. Sans elle, le mutant est un survivant et **bloque la fusion**. Un
+mutant qu'aucun projet n'atteint est lui aussi un survivant, tant qu'il n'est pas prouvé équivalent.
+
+**Gardes à muter** (chaque ligne rougit une épreuve nommée ; aucune n'est dispensée par la règle
+ci-dessus) :
 
 1. service sans recalcul du SHA-256
-2. taille non comparée (**équivalent attendu**, à écrire)
+2. taille non comparée (service **et** installation) — **non présumée équivalente** : le contrôle de
+   taille a un effet observable (refus avant tout hachage, borne du coût, cause nommée). À tuer par
+   une épreuve (une entrée de taille anormale est refusée **sans appel au hachage**), ou à prouver
+   équivalente par une preuve spécifique ; « le hachage la couvre » ne suffit pas
 3. installation qui accepte un écart
 4. installation lisant le cache HTTP (`no-store` retiré)
 5. cache partiel non supprimé après un échec **que cette installation a créé**
@@ -789,9 +836,16 @@ survivants écrits) :
     désinscrit toute inscription de l'origine**
 30. migration qui supprime un cache d'un préfixe non listé
 31. **`reparer` qui écrit une entrée sans la vérifier**, ou qui active une version
+32. **état de révocation non monotone** (recalculé, remis à « inconnue », ou propre à chaque
+    portail)
+33. **dernière garde absente**, ou **un `await` entre la lecture de l'état de révocation et
+    `new Worker`**
+34. **observateur qui n'écrit pas dans l'état partagé** (le bandeau change, pas l'état)
 
-**Gardes qui ne se muteront pas** (à écrire comme limites) : le comportement des moteurs réels face
-à l'éviction ; l'hébergeur réel ; la garde « client `window` » sous Chromium.
+**Ce qui ne se mute pas** (limites écrites, **pas** des mutants du source) : le comportement des
+moteurs réels face à l'éviction ; l'hébergeur réel. La garde « client `window` » sous Chromium est
+inatteignable depuis un Worker dédié : le mutant correspondant doit rougir son épreuve sous Firefox
+et WebKit, et cette inatteignabilité sous Chromium est écrite — elle ne dispense pas du kill.
 
 **Sécurité et compatibilité persistante qualifiées** : ce document et `SECURITY.md`. **Taille** :
 D1h-a ≈ 0,5–1 j (cette PR) ; D1h-b ≈ 3,5 j (≈ 2 200 lignes ajoutées, ≈ 450 retirées, estimation du

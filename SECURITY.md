@@ -1179,7 +1179,11 @@ plus ancien), ni contre le gel, ni contre le retour arrière, **sans promesse de
 connexion, une révocation est invisible. Les sept états de fraîcheur (vérification en cours,
 échouée, version courante non vérifiable, mise à jour prête, révocation connue, attente muette non
 vérifiable, version en attente différente ou plus ancienne) disent **ce qui a été observé**, jamais
-« à jour » ; seule une révocation **connue** refuse le déverrouillage.
+« à jour » ; seule une révocation **connue** refuse le déverrouillage. Cet état est **monotone** (il
+ne recule jamais pendant la vie de la page), partagé par l'observateur et par tous les portails, et
+relu **dans le même tour**, sans `await`, juste avant la création du Worker de confiance : une
+révocation observée pendant une vérification suspendue n'est pas contournée. Une révocation **non
+encore observée** reste hors de portée.
 
 **Le refus sans Service Worker est un coût d'accès, assumé.** Sans l'API, sans contrôleur ou sans
 réserve installable (navigation privée de certains navigateurs, modes ou politiques qui désactivent
