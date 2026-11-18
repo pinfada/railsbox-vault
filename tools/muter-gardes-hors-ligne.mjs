@@ -41,6 +41,7 @@ const T = {
   scelle: "tests/unit/coquille-descripteur-scelle.test.mjs",
   hors: "tests/unit/coquille-hors-connexion.test.mjs",
   redirections: "tests/unit/coquille-descripteur-redirections.test.mjs",
+  libv86: "tests/unit/vm-lecture-de-libv86-hors-connexion.test.mjs",
   cle: "tests/unit/vm-cle-du-descripteur-scelle.test.mjs",
   demarrage: "tests/unit/coquille-demarrage-hors-connexion.test.mjs",
   preparation: "tests/unit/coquille-preparation-du-demarrage.test.mjs",
@@ -393,6 +394,23 @@ export const MUTATIONS = Object.freeze([
     avant: "  if (octets.byteLength !== pin.octets) {\n",
     apres: "  if (false) {\n",
     epreuves: [T.petits],
+  },
+  // --- libv86 hors connexion : le cache, jamais le réseau (revue de #298, constat 3) --------------
+  {
+    nom: "hors connexion, libv86 est lu en `only-if-cached` : `force-cache` irait au réseau sur un cache vide",
+    garde: "lireDuCacheHttp — only-if-cached",
+    fichier: ARTEFACTS,
+    avant: '{ cache: "only-if-cached", mode: "same-origin" }',
+    apres: '{ cache: "force-cache" }',
+    epreuves: [T.libv86],
+  },
+  {
+    nom: "un cache vide pour libv86 est le refus typé de l'artefact absent",
+    garde: "lireDuCacheHttp — le refus typé",
+    fichier: ARTEFACTS,
+    avant: '    throw artefactAbsentHorsConnexion(\n      "libv86",',
+    apres: '    throw new Error(\n      "libv86",',
+    epreuves: [T.libv86],
   },
   // --- Aucun octet n'atteint le guest sans empreinte épinglée (revue de #298, constat 2) ----------
   {

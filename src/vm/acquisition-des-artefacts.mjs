@@ -246,13 +246,19 @@ async function loadRuntime(runtime) {
 }
 
 /**
- * Importe la classe V86, ses octets AYANT ÉTÉ confrontés au manifeste (#123).
+ * Importe la classe V86. **Ses octets ne sont PAS liés à ce qui s'exécute** (ADR 0046, constat 3 de la
+ * revue de #298) : `libv86` a la confiance de l'ORIGINE, comme tout le code de la coquille.
  *
- * `libv86` ne passe PAS par le magasin : un module ES ne s'exécute pas depuis l'OPFS sous la CSP du
- * Worker (`script-src 'self'`, ni `blob:` ni `unsafe-eval` ; ADR 0013). Il est chargé par `import()`,
- * donc par le cache HTTP du navigateur — adressé par empreinte et `immutable`, comme tout le code de
- * la coquille. Hors connexion, il est lu DU CACHE (`force-cache`), vérifié, puis importé ; absent du
- * cache, c'est le refus typé `VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT` (ADR 0045, limite écrite).
+ * La confrontation au manifeste qui précède l'import est une défense contre l'ACCIDENT — un cache
+ * qui garde une version à côté du manifeste d'une autre, un octet retourné en chemin —, pas une
+ * liaison : `import()` refait sa propre requête, et aucun mécanisme n'existe, dans un Worker sous la
+ * CSP de la coquille (`script-src 'self'`, ni `blob:` ni `unsafe-eval` ; ADR 0013), qui garantisse que
+ * les octets exécutés sont ceux qui ont été hachés. Mesuré sur Chromium, Firefox et WebKit :
+ * `tools/spike-liaison-libv86.mjs`. `libv86` ne passe pas non plus par le magasin : un module ES ne
+ * s'exécute pas depuis l'OPFS sous cette CSP.
+ *
+ * Hors connexion, il est lu DU CACHE HTTP sans toucher au réseau (`only-if-cached`), confronté, puis
+ * importé ; absent du cache, c'est le refus typé `VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT`.
  */
 async function importV86(libUrl, { horsConnexion, manifeste }) {
   const lire = horsConnexion ? lireDuCacheHttp : (url) => fetchBytes(url);
@@ -268,7 +274,9 @@ async function importV86(libUrl, { horsConnexion, manifeste }) {
  */
 export async function lireDuCacheHttp(url, recuperer = globalThis.fetch) {
   try {
-    return await fetchBytes(url, recuperer, { cache: "force-cache" });
+    // `only-if-cached` : le cache ou l'échec, jamais le réseau (`force-cache` y va quand l'entrée manque).
+    // Le navigateur exige `mode: "same-origin"`. WebKit ignore l'option — mesuré, ADR 0046.
+    return await fetchBytes(url, recuperer, { cache: "only-if-cached", mode: "same-origin" });
   } catch (erreur) {
     throw artefactAbsentHorsConnexion(
       "libv86",
