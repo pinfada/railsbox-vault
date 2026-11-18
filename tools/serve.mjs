@@ -31,28 +31,27 @@ const options = parseServerOptions(process.argv.slice(2), process.env);
  * et le démarrage hors connexion échoue AVANT de lire la réserve — c'est la moitié « code de la coquille » de #299.
  * Ce harnais modélise la condition que la décision de #299 devra garantir, pour éprouver ce que cette tranche livre.
  *
- * **Borné au banc de test** (revue de #298, second tour, constat 4) : il exige DEUX choses, la variable
- * `VAULT_E2E_CODE_MAX_AGE=<s>` ET le drapeau `--harnais-e2e-hors-ligne`, que seul `playwright.e2e.config.mjs` passe,
- * au serveur de la coquille. L'un sans l'autre, le serveur REFUSE de démarrer : un `npm start` dont l'environnement
- * porterait la variable ne change jamais d'en-têtes en silence. Cette variable n'est lue qu'ici.
+ * **Borné au banc de test** (revue de #298, second tour, constat 4) : la fraîcheur n'est lue QUE de l'argument
+ * `--harnais-e2e-hors-ligne <secondes>`, que seul `playwright.e2e.config.mjs` passe, au seul serveur de la coquille.
+ * Aucune variable d'environnement n'est lue ici : un `npm start` dont l'environnement porterait `VAULT_E2E_CODE_MAX_AGE`
+ * (variable du banc, lue par la config Playwright et le lot 5 de `reprise.yml`) ne change pas d'en-têtes. Un argument
+ * sans durée entière positive fait REFUSER le démarrage.
  */
 const FANION_DU_HARNAIS = "--harnais-e2e-hors-ligne";
-const dureeDuCodeEnCache = lireLeHarnais(process.argv.slice(2), process.env);
+const dureeDuCodeEnCache = lireLeHarnais(process.argv.slice(2));
 
 /** @returns {number | null} la fraîcheur du code en secondes, ou `null` sans harnais ; arrête le processus si mal posé. */
-function lireLeHarnais(argv, env) {
-  const valeur = env.VAULT_E2E_CODE_MAX_AGE;
-  const fanion = argv.includes(FANION_DU_HARNAIS);
-  if (valeur === undefined && !fanion) return null;
-  const secondes = /^[1-9][0-9]*$/.test(valeur ?? "") ? Number.parseInt(valeur, 10) : null;
-  if (!fanion || secondes === null) {
+function lireLeHarnais(argv) {
+  const rang = argv.indexOf(FANION_DU_HARNAIS);
+  if (rang === -1) return null;
+  const valeur = argv[rang + 1] ?? "";
+  if (!/^[1-9][0-9]*$/.test(valeur)) {
     process.stderr.write(
-      `Harnais de cache du code refusé : VAULT_E2E_CODE_MAX_AGE (secondes, entier positif) et ${FANION_DU_HARNAIS} ` +
-        "vont ENSEMBLE, et seul le banc de l'E2E hors ligne (playwright.e2e.config.mjs) les pose.\n",
+      `Harnais de cache du code refusé : ${FANION_DU_HARNAIS} attend une durée en secondes (entier positif).\n`,
     );
     process.exit(1);
   }
-  return secondes;
+  return Number.parseInt(valeur, 10);
 }
 
 function enTetesDeCacheDuHarnais(pathname) {

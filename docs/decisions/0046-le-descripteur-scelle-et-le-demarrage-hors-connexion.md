@@ -227,15 +227,17 @@ code de la coquille » de #299, plus dure que « non garantie » : **tant que le
 avec une fraîcheur, ou par un Service Worker, il n'y a pas de démarrage hors connexion en
 production.** Cette tranche livre la DÉCISION (repli sur le descripteur scellé, lecture de la
 réserve, refus typés) ; la condition qu'elle suppose — le code de la coquille disponible sans réseau
-— relève de #299. L'E2E la modélise par un harnais : `VAULT_E2E_CODE_MAX_AGE` (`tools/serve.mjs`,
-seul endroit où elle est lue) donne au code (hors `/artifacts/`, qui reste `no-cache` : c'est
-l'origine « injoignable ») une fraîcheur, et le scénario l'exige en préalable. **Le harnais est
-borné au banc** : il exige la variable ET le drapeau `--harnais-e2e-hors-ligne`, que seul
-`playwright.e2e.config.mjs` passe au serveur de la coquille ; l'un sans l'autre, le serveur refuse
-de démarrer (un `npm start` dont l'environnement porterait la variable ne change jamais d'en-têtes
-en silence ; `tests/unit/serve-harnais-hors-ligne.test.mjs`). Avec lui, le scénario passe sur
-l'image réelle : premier boot en ligne, redémarrage réseau coupé depuis la réserve sans un octet
-d'image par le réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
+— relève de #299. L'E2E la modélise par un harnais : la config Playwright
+(`playwright.e2e.config.mjs`, seul endroit où `VAULT_E2E_CODE_MAX_AGE` est lue) passe au seul
+serveur de la coquille l'argument `--harnais-e2e-hors-ligne <secondes>`, qui donne au code (hors
+`/artifacts/`, qui reste `no-cache` : c'est l'origine « injoignable ») une fraîcheur ; le scénario
+exige la variable en préalable. **Le harnais est borné au banc** : `tools/serve.mjs` ne lit AUCUNE
+variable d'environnement, seulement cet argument — un `npm start` dont l'environnement porterait
+`VAULT_E2E_CODE_MAX_AGE` ne change pas d'en-têtes, et les autres serveurs de la config (et les lots
+1 à 4) ne le reçoivent pas ; un argument sans durée entière positive fait refuser le démarrage
+(`tests/unit/serve-harnais-hors-ligne.test.mjs`). Avec lui, le scénario passe sur l'image réelle :
+premier boot en ligne, redémarrage réseau coupé depuis la réserve sans un octet d'image par le
+réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
 
 ### 7. Ce que la personne voit
 

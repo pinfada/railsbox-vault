@@ -151,7 +151,7 @@ test("un coffre déjà démarré redémarre réseau coupé, depuis la réserve ;
 }) => {
   exigerLesPrealables(raison, "hors-ligne.spec.mjs");
   // PRÉALABLE du scénario, pas du produit : le serveur d'épreuve doit donner au CODE de la coquille une
-  // fraîcheur (`tools/serve.mjs`, `VAULT_E2E_CODE_MAX_AGE`). Sous les en-têtes de production (`no-cache`),
+  // fraîcheur (`playwright.e2e.config.mjs` lit `VAULT_E2E_CODE_MAX_AGE` et passe `--harnais-e2e-hors-ligne` à `tools/serve.mjs`). Sous les en-têtes de production (`no-cache`),
   // un Worker NEUF créé réseau coupé ne peut pas importer ses modules : le démarrage échoue
   // (`VAULT_COQUILLE_GESTE_ROMPU`) AVANT de lire la réserve — mesuré le 18/11/2026, moitié « code de la
   // coquille » de #299. Sans ce préalable, l'épreuve échouerait pour une raison qui n'est pas la sienne.
