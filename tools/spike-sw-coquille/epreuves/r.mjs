@@ -78,7 +78,7 @@ ajouter("R3", "INTERRUPTION ordre nominal (caches d'abord, désinscription ensui
   await attendreBanc(p);
   const r = await portail(p, { delaiVerificationMs: 2000 });
   t.mesure("portailApres", r);
-  t.verifier(r.autorise === false && r.code === "VAULT_COQUILLE_RESERVE_PERIMEE" && r.cause === "retrait" && r.crees === 0, "le portail reconnaît le SW de retrait actif : PERIMEE (retrait), aucun Worker");
+  t.verifier(r.autorise === false && r.code === "VAULT_COQUILLE_RESERVE_PERIMEE" && r.cause === "retrait" && r.crees === 0, "le portail reconnaît le SW de retrait actif (par le contrôleur, ou par l'inscription active quand le moteur ne donne pas de contrôleur : Firefox) : PERIMEE (retrait), aucun Worker");
   const fin = await p.evaluate(() => window.banc.retirerLaCopie());
   const apres = await etatLocal(p);
   t.mesure("apresGeste", { fin, apres });
@@ -96,10 +96,13 @@ ajouter("R4", "INTERRUPTION ordre inverse (désinscription d'abord) : caches orp
   const etat = await jusqua(async () => ((await etatLocal(p)).regs === 0 ? await etatLocal(p) : null), { delaiMs: 20000 });
   t.mesure("apresInterruption", etat);
   t.verifier(Boolean(etat) && etat.caches.includes("reserve-pub-0001"), "interruption : inscription supprimée, cache orphelin RESTÉ");
+  // Firefox : une nouvelle inscription sur une portée dont l'ancienne est « en cours de désinstallation »
+  // attend la fin de ses clients (mesuré : `load` bloqué 30 s si la page reste ouverte). On ferme d'abord.
+  await p.close();
   // Reprise : l'origine republie une version normale suivante ; l'orphelin est supprimé à l'activation.
   origine.publier(v2());
   const q = await contexte.newPage();
-  await q.goto(ORIGINE_COQUILLE + "/spike/enregistrer.html");
+  q.goto(ORIGINE_COQUILLE + "/spike/enregistrer.html", { waitUntil: "commit" }).catch(() => {}); // Firefox : `goto` ne rend pas la main alors que la page a chargé (mesuré) ; on sonde l'état
   await jusqua(() => q.evaluate(() => document.documentElement.dataset.enregistrement === "actif"), { delaiMs: 30000 });
   const noms = await cachesDe(q);
   t.mesure("apresReprise", noms);

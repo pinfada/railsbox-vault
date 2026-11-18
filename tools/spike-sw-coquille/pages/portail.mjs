@@ -172,6 +172,15 @@ export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000
   try {
     if (!controleur) {
       if (mutants.contourneSansSW) return { autorise: true, code: null, cause: "contourne", fraicheur: ETATS.NON_VERIFIABLE, travailleur: creerLeTravailleur() };
+      // Pas de contrôleur : page chargée avant l'activation, rechargement forcé, OU moteur qui ne donne
+      // pas de contrôleur à un SW de retrait (Firefox, mesuré R3). On interroge l'inscription ACTIVE pour
+      // ne pas confondre « retrait » et « pas de SW » dans ce que la personne lit.
+      const inscription = await conteneur.getRegistration("/").catch(() => null);
+      if (inscription?.active) {
+        const identiteActive = await interroger(inscription.active, "version", delaiReponseMs);
+        if (identiteActive?.retrait) return { autorise: false, code: CODES.PERIMEE, cause: "retrait", fraicheur: ETATS.REVOQUEE };
+        return { autorise: false, code: CODES.ABSENTE, cause: "inscription-sans-controle", fraicheur: ETATS.NON_VERIFIABLE };
+      }
       return { ...decider({ controleur: null }), fraicheur: ETATS.NON_VERIFIABLE };
     }
     const registration = await conteneur.getRegistration("/");

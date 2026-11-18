@@ -101,6 +101,11 @@ ajouter("M4", "installAvecCacheHttp : v2 s'installe sur octets frais en nominal,
   const mutant = await execute({ installAvecCacheHttp: true });
   t.mesure("installAvecCacheHttp", { nominal, mutant });
   t.verifier(nominal.tient === true, `nominal (cache: no-store) : l'installation lit des octets frais (${nominal.detail})`);
+  if (t.moteur !== "chromium") {
+    t.mesure("mutantSurvivant", mutant.tient === true);
+    t.note(`Mutant installAvecCacheHttp SURVIVANT sur ${t.moteur} (installation réussie sur octets frais) : le cache HTTP amorcé par la page n'y alimente pas l'installation du SW. La garde \`cache: "no-store"\` reste exigée par la spécification de fetch (la valeur par défaut obéit au cache HTTP) ; son utilité n'est démontrée que sur Chromium.`);
+    return;
+  }
   t.verifier(mutant.tient === false, `mutant (cache HTTP) : l'installation lit des octets périmés et échoue (${mutant.detail}) → mutant TUÉ ; sous les en-têtes de production (no-cache) il survivrait — la garde protège contre un hébergeur qui poserait un max-age`);
 });
 

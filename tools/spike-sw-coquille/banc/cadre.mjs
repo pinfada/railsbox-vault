@@ -85,7 +85,7 @@ export class Epreuve {
   /** Ouvre `chemin`, enregistre le SW depuis la page d'amorce, attend l'activation. */
   async installer(contexte, chemin = "/spike/enregistrer.html") {
     const page = await contexte.newPage();
-    await page.goto(ORIGINE_COQUILLE + chemin);
+    await page.goto(ORIGINE_COQUILLE + chemin, { waitUntil: "commit" });
     const etat = await jusqua(() => page.evaluate(() => document.documentElement.dataset.enregistrement), { delaiMs: 30000 });
     return { page, etat };
   }

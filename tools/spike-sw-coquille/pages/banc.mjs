@@ -15,16 +15,10 @@ window.banc = {
   async enregistrer(options = {}) {
     const registration = await navigator.serviceWorker.register("/sw-coquille.mjs", { scope: "/", updateViaCache: "none", ...options });
     const ver = registration.installing ?? registration.waiting ?? registration.active;
-    if (ver && ver.state !== "activated") {
-      await new Promise((ok, ko) => {
-        const sur = () => {
-          if (ver.state === "activated") ok();
-          if (ver.state === "redundant") ko(new Error("installation rejetée"));
-        };
-        ver.addEventListener("statechange", sur);
-        sur();
-      });
-    }
+    const limite = Date.now() + 25000;
+    while (ver && ver.state !== "activated" && ver.state !== "redundant" && Date.now() < limite) await attendre(50);
+    if (!ver || ver.state === "redundant") throw new Error("installation rejetée");
+    if (ver.state !== "activated") throw new Error("délai d'activation");
     return { portee: registration.scope, actif: Boolean(registration.active) };
   },
   async etatDInscription() {
