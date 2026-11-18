@@ -16,6 +16,7 @@ import { creerEnveloppe } from "../../src/vm/enveloppe-de-cle.mjs";
 import { creerMoyenDeRecuperation } from "../../src/vm/moyen-de-recuperation.mjs";
 import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { manifestSidecarName, voisinsDunVolume } from "../../src/vm/opfs-sync-access.mjs";
+import { toStorageError } from "../../src/vm/opfs-error-mapping.mjs";
 import { createOpfsArchiveSink } from "../../src/vm/opfs-archive-sink.mjs";
 import { EN_TETE_OCTETS } from "../../src/vm/volume-chiffre-format.mjs";
 import { serializeManifest } from "../../src/vm/volume-manifest.mjs";
@@ -127,6 +128,16 @@ export function primitivesDe(banc, { ouvrirLeDisque }) {
       for (const voisin of voisinsDunVolume(nom)) await retirerUn(voisin);
     },
     ecrireVoisin: (nom, octets) => banc.ecrire(nom, octets),
+    prendreLeVolume: () =>
+      store
+        .openHandle("coquille")
+        .catch((cause) =>
+          Promise.reject(toStorageError(cause, { operation: "open", volume: "coquille" })),
+        ),
+    async viderLeVolume(handle) {
+      handle.truncate(0);
+      handle.flush();
+    },
     ouvrirLeDisque: (options) => ouvrirLeDisque({ ...options, openHandle: store.openHandle }),
     async ouvrirLePuits(nom) {
       const handle = await store.openHandle(nom);

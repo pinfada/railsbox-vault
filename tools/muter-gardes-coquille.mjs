@@ -85,6 +85,8 @@ const REVALIDATION = "src/coquille/revalidation-sous-le-handle.mjs";
 const OUVERTURE_DU_VOLUME = "src/vm/opfs-volume-ouverture.mjs";
 const EPREUVE_REVALIDATION = "tests/unit/coquille-revalidation-sous-le-handle.test.mjs";
 const EPREUVE_WORKER_DEVERROUILLAGE = "tests/unit/coquille-worker-deverrouillage.test.mjs";
+const EPREUVE_COURSE_PORTABILITE = "tests/unit/coquille-portabilite-course.test.mjs";
+const PORTABILITE_DU_WORKER = "public/portabilite-du-worker.mjs";
 const EPREUVE_SOUS_LE_HANDLE = "tests/unit/vm-ouverture-sous-le-handle.test.mjs";
 
 /**
@@ -1820,11 +1822,9 @@ export const MUTATIONS = Object.freeze([
     garde: "revaliderSousLeHandle — la comparaison de `identifiantEmplacement`",
     fichier: REVALIDATION,
     avant:
-      "    if (\n" +
-      "      sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||\n" +
-      "      !memesOctets(sous.dek, ouverte.dek)\n" +
-      "    ) {",
-    apres: "    if (!memesOctets(sous.dek, ouverte.dek)) {",
+      "    sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||\n" +
+      "    !memesOctets(sous.dek, ouverte.dek)\n",
+    apres: "    !memesOctets(sous.dek, ouverte.dek)\n",
     epreuves: [EPREUVE_REVALIDATION],
   },
   {
@@ -1832,18 +1832,16 @@ export const MUTATIONS = Object.freeze([
     garde: "revaliderSousLeHandle — la comparaison des octets de la DEK",
     fichier: REVALIDATION,
     avant:
-      "    if (\n" +
-      "      sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||\n" +
-      "      !memesOctets(sous.dek, ouverte.dek)\n" +
-      "    ) {",
-    apres: "    if (sous.identifiantEmplacement !== ouverte.identifiantEmplacement) {",
+      "    sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||\n" +
+      "    !memesOctets(sous.dek, ouverte.dek)\n",
+    apres: "    sous.identifiantEmplacement !== ouverte.identifiantEmplacement\n",
     epreuves: [EPREUVE_REVALIDATION],
   },
   {
     nom: "une divergence est REFUSÉE, jamais acceptée en silence (#311)",
     garde: "revaliderSousLeHandle — le `throw cleRefusee`",
     fichier: REVALIDATION,
-    avant: "      throw cleRefusee({ volume: identifiantVolume });\n",
+    avant: "    throw cleRefusee({ volume: identifiantVolume });\n",
     apres: "",
     epreuves: [EPREUVE_REVALIDATION],
   },
@@ -1851,15 +1849,15 @@ export const MUTATIONS = Object.freeze([
     nom: "l'ancre de version tient en passe 2 (#311)",
     garde: "revaliderSousLeHandle — `versionMinimale` passée à l'ouverture",
     fichier: REVALIDATION,
-    avant: "    versionMinimale: ouverte.versionMinimale,\n",
-    apres: "    versionMinimale: null,\n",
+    avant: "kek: ouverte.kek, versionMinimale: ouverte.versionMinimale };",
+    apres: "kek: ouverte.kek, versionMinimale: null };",
     epreuves: [EPREUVE_REVALIDATION],
   },
   {
     nom: "la clé de volume de la passe 2 est effacée (#311)",
     garde: "revaliderSousLeHandle — le `fill(0)` du `finally`",
     fichier: REVALIDATION,
-    avant: "    sous.dek.fill(0);\n",
+    avant: "    for (const dek of rendues) dek.fill(0);\n",
     apres: "",
     epreuves: [EPREUVE_REVALIDATION],
   },
@@ -1960,6 +1958,108 @@ export const MUTATIONS = Object.freeze([
       "  poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);\n" +
       "  await sousLeHandle?.();\n",
     epreuves: [EPREUVE_SOUS_LE_HANDLE],
+  },
+  {
+    nom: "la passe 2 s'ouvre d'abord en LECTURE SEULE : un refus n'écrit jamais (#311, PR #314 constat 2)",
+    garde: "revaliderSousLeHandle — `enLectureSeule(support)` de la première ouverture",
+    fichier: REVALIDATION,
+    avant: "    let sous = await ouvrir({ ...appel, support: enLectureSeule(support) });\n",
+    apres: "    let sous = await ouvrir({ ...appel, support });\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la migration se joue sous le handle, une fois l'identité confirmée (#311)",
+    garde: "revaliderSousLeHandle — la seconde ouverture quand `migration` n'est pas nul",
+    fichier: REVALIDATION,
+    avant: "    if (sous.migration !== null) {\n",
+    apres: "    if (false) {\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "l'identité est confrontée AUSSI après la migration (#311)",
+    garde: "revaliderSousLeHandle — la seconde comparaison",
+    fichier: REVALIDATION,
+    avant:
+      "      rendues.push(sous.dek);\n" +
+      "      exigerLaMemeIdentite(sous, ouverte, identifiantVolume);\n" +
+      "    }\n",
+    apres: "      rendues.push(sous.dek);\n    }\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la restauration prend le verrou du volume `coquille` avant d'écrire (#311, PR #314 constat 1)",
+    garde: "restaurerSousLeVerrou — `prim.prendreLeVolume()`",
+    fichier: PORTABILITE_DU_WORKER,
+    avant: "  const verrou = await prim.prendreLeVolume();\n",
+    apres: "  const verrou = { close() {} };\n",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "la restauration REVALIDE l'emplacement sous le verrou (#311)",
+    garde: "restaurerSousLeVerrou — le second constat et son refus",
+    fichier: PORTABILITE_DU_WORKER,
+    avant:
+      "    const decision = decisionDeRestauration(await constaterLEmplacement(prim));\n" +
+      "    if (decision.code !== null) throw refus(decision.code);\n" +
+      "    // La RÉPARATION",
+    apres: "    const decision = { code: null, reparer: false };\n    // La RÉPARATION",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "la restauration relâche le verrou APRÈS l'import, jamais avant ni jamais (#311)",
+    garde: "restaurerSousLeVerrou — le `finally` qui ferme le verrou",
+    fichier: PORTABILITE_DU_WORKER,
+    avant: "  } finally {\n    verrou.close();\n  }\n",
+    apres: "  } finally {\n  }\n",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "la réparation vide le volume `coquille` TENU par son handle (#311)",
+    garde: "restaurerSousLeVerrou — `prim.viderLeVolume(verrou)`",
+    fichier: PORTABILITE_DU_WORKER,
+    avant: "      await prim.viderLeVolume(verrou);\n",
+    apres: "",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "un fichier `coquille` de taille nulle n'est pas un volume (#311)",
+    garde: "constaterLEmplacement — `size > 0`",
+    fichier: "src/coquille/portabilite-du-coffre.mjs",
+    avant: "  const coquille = observeCoquille.present && observeCoquille.size > 0;\n",
+    apres: "  const coquille = observeCoquille.present;\n",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "la création prend le handle du volume AVANT d'écrire l'enveloppe (#311, #313)",
+    garde: "creerLeCoffre — `ouvrirLeHandle(volume)` avant `creerEnveloppe`",
+    fichier: DEVERROUILLAGE,
+    avant: "  const verrou = await ouvrirLeHandle(volume);\n",
+    apres: "  const verrou = { close() {} };\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "la création PASSE son handle à l'ouvreur, sans trou avant la naissance (#311, #313)",
+    garde: "ouvrirLeVolume — `openHandle` rend le verrou de la création",
+    fichier: DEVERROUILLAGE,
+    avant: "      ouverte.verrou = null;\n      return verrou;\n",
+    apres: "      return ouvrirLeHandle(nom);\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "un refus de la création rend le handle (#311)",
+    garde: "creerLeCoffre — `verrou.close()` du `catch`",
+    fichier: DEVERROUILLAGE,
+    avant: "    verrou.close();\n    dek.fill(0);\n    throw cause;\n",
+    apres: "    dek.fill(0);\n    throw cause;\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "un verrou de création que l'ouvreur n'a pas reçu est rendu par `deverrouiller` (#311)",
+    garde: "deverrouiller — `ouverte.verrou?.close()` du `finally`",
+    fichier: DEVERROUILLAGE,
+    avant: "    ouverte.verrou?.close();\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
 ]);
 

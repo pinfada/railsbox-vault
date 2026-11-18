@@ -254,3 +254,21 @@ test("un fichier `coquille` de taille NULLE n'est pas un volume : l'emplacement 
   });
   assert.equal(etat, ETATS_DE_L_EMPLACEMENT.vide);
 });
+
+test("RÉPARATION : un volume `coquille` résiduel est VIDÉ par son handle, puis la restauration aboutit", async () => {
+  const { archive, code } = await archiveDeB();
+  // Un résidu : le petit volume existe, sans enveloppe ni disque — ce qu'une création coupée laisse.
+  const emplacement = magasin();
+  await poserLeVolumeCoquille(emplacement, IDENTIFIANT_DU_VOLUME_COQUILLE);
+  assert.ok(emplacement.store.sizeOf(VOLUME) > 0);
+  const b = workerSur(emplacement);
+  assert.equal(await b.portabilite.constater(), ETATS_DE_L_EMPLACEMENT.restaurationInterrompue);
+
+  await b.portabilite.servir(TYPES_PRIVILEGIES.restaurer, { archive }, "r");
+
+  assert.equal(b.reponses.at(-1).corps.reparee, true);
+  assert.equal(emplacement.store.sizeOf(VOLUME), 0, "le résidu est vidé : il naîtra neuf");
+  assert.equal(emplacement.store.isOpen(VOLUME), false);
+  assert.equal(await leCodeOuvre(emplacement, code), true);
+  assert.equal(await b.portabilite.constater(), ETATS_DE_L_EMPLACEMENT.coffre);
+});

@@ -258,3 +258,20 @@ test("une enveloppe v1 REMPLACÉE entre les deux passes — même KEK, autre cl�
   );
   assert.equal(w.interne.etat, ETATS_DU_VOLUME.verrouille);
 });
+
+test("CRÉATION : un échec AVANT l'ouvreur rend le verrou pris — jamais un handle orphelin", async () => {
+  const w = await workerDeverrouillage({ emplacement: "vide" });
+  // Fermer le volume précédent échoue : `ouvrirLeVolume` lève avant que l'ouvreur ait reçu le verrou.
+  w.interne.backend = {
+    close: async () => {
+      throw Object.assign(new Error("fermeture en échec"), { code: "ECHEC_DE_FERMETURE" });
+    },
+  };
+  const erreur = await w.deverrouiller(await messageDePhrase()).then(
+    () => null,
+    (e) => e,
+  );
+  w.interne.backend = null;
+  assert.equal(erreur?.code, "ECHEC_DE_FERMETURE");
+  assert.equal(w.banc.store.isOpen(VOLUME), false, "le verrou de la création est rendu");
+});

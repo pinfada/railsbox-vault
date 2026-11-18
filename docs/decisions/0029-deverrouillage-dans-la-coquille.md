@@ -508,16 +508,29 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
     est ramenée sous le handle ; hors du handle, elle pouvait republier l'ANCIENNE liste
     d'emplacements par-dessus une révocation.
 
+    **Le même verrou pour la CRÉATION et la RESTAURATION** (revue de sécurité de la PR #314, constat
+    1 ; #313). Elles écrivent l'enveloppe avant le volume (ADR 0020), donc avant toute prise de
+    handle : une restauration admise sur un emplacement vide, suspendue, pouvait reprendre après
+    qu'un autre onglet avait créé son coffre — et remplacer son enveloppe ; deux créations
+    simultanées de même. Elles prennent désormais le handle exclusif du volume `coquille` — celui de
+    l'ouverture — AVANT d'écrire, revalident sous lui (l'enveloppe est toujours absente ;
+    l'emplacement est toujours vide), et ne le relâchent qu'après : la création le PASSE à
+    l'ouvreur, sans trou jusqu'à la naissance du volume ; la restauration le tient pendant tout
+    l'import. Un autre détenteur les fait refuser `VAULT_STORAGE_BUSY` ; un emplacement plus vide,
+    `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` (restauration) ou `VAULT_ENVELOPPE_PRESENTE` (création),
+    avant toute écriture. Prendre le handle d'un fichier inexistant le CRÉE vide :
+    `constaterLEmplacement` lit désormais un fichier `coquille` de taille nulle comme absent (un
+    volume né porte toujours son en-tête). La réparation d'une restauration coupée vide le fichier
+    TENU par son handle, après ses voisins, au lieu de le retirer.
+
     **Ce que cela ne tient pas** — et c'est écrit dans `SECURITY.md`, limite 13 : (a) un détenteur
     antérieur de la clé de volume la garde (limite 12 : révoquer ne rechiffre pas ; la rotation de
-    la clé de volume reste hors périmètre) ; (b) la CRÉATION du coffre et la RESTAURATION écrivent
-    l'enveloppe hors de tout handle de volume — l'ADR 0020 veut l'enveloppe avant le volume —,
-    gardées seulement par le refus d'un fichier déjà présent (#159) et par `decisionDeRestauration`
-    : deux premiers gestes simultanés sur un coffre neuf restent en course
-    ([#313](https://github.com/pinfada/railsbox-vault/issues/313)) ; le crochet réduit la fenêtre de
-    la création sans la fermer ; (c) `ouvrirVolumeParKek` et les bancs gardent l'ancien ordre, hors
-    du chemin servi ; (d) la suspension réelle d'un onglet d'arrière-plan, Firefox pour la course
-    elle-même et WebKit (pas d'OPFS synchrone) ne sont pas mesurés.
+    la clé de volume reste hors périmètre) ; (b) le verrou est celui de l'OPFS : il lie le code qui
+    le prend. `ouvrirVolumeParKek` et les bancs `public/vm/*` gardent l'ancien ordre, hors du chemin
+    servi ([#313](https://github.com/pinfada/railsbox-vault/issues/313)) ; (c) la restauration n'est
+    toujours pas atomique : une coupure en cours d'import laisse une restauration interrompue, que
+    le même geste répare (ADR 0039) ; (d) la suspension réelle d'un onglet d'arrière-plan et WebKit
+    (pas d'OPFS synchrone) ne sont pas mesurés ; la course est rejouée sous Chromium et Firefox.
 
 ## Alternatives rejetées
 

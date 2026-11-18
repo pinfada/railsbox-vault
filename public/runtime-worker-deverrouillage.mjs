@@ -181,6 +181,8 @@ export async function deverrouiller(message, correlation) {
     await ouvrirLeVolume(ouverte);
   } finally {
     ouverte.dek.fill(0);
+    // Le verrou d'une CRÉATION que l'ouvreur n'a pas reçu (un refus avant lui) est rendu ici.
+    ouverte.verrou?.close();
   }
   // Après l'ouverture seulement ; la barrière qui suit rend l'inscription durable (#239).
   const constat = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);
@@ -226,7 +228,13 @@ async function ouvrirLeVolume(ouverte) {
     cle: ouverte.dek,
     identifiantVolume: IDENTIFIANT_DU_VOLUME_COQUILLE,
     transactionnel: false,
-    openHandle: ouvrirLeHandle,
+    openHandle: (nom) => {
+      // Une création a déjà SON handle : l'ouvreur reçoit celui-là, une fois, et n'en rouvre pas un.
+      const verrou = ouverte.verrou;
+      if (verrou === undefined || verrou === null || nom !== volume) return ouvrirLeHandle(nom);
+      ouverte.verrou = null;
+      return verrou;
+    },
     sousLeHandle: () =>
       revaliderSousLeHandle({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME, ouverte }),
   });
@@ -300,6 +308,13 @@ async function ouvrirSousLeCode(moyen, message, versionMinimale) {
  *
  * La DEK est effacée par `deverrouiller`, dans son `finally` : elle est RENDUE à l'appelant, et
  * l'effacer ici la lui retirerait avant qu'il n'ouvre le volume.
+ *
+ * **Le handle du volume est pris AVANT d'écrire l'enveloppe, et passé à l'ouvreur** (#311, C5 ; #313).
+ * L'ADR 0020 veut l'enveloppe avant le volume, et `creerEnveloppe` refuse un fichier déjà présent —
+ * mais ce refus se jugeait avant l'écriture, sans verrou : un autre onglet qui créait, ou restaurait,
+ * entre les deux voyait son enveloppe écrasée par celle-ci. Sous le handle, plus personne ne peut
+ * naître ni s'ouvrir : le refus de `creerEnveloppe` est enfin un constat, et le volume naît sous CE
+ * handle, sans trou. Un autre détenteur fait refuser la création `VAULT_STORAGE_BUSY`.
  */
 async function creerLeCoffre(moyen, message) {
   if (moyen.derivePar !== "page") {
@@ -312,23 +327,31 @@ async function creerLeCoffre(moyen, message) {
   const kek = exigerKekDeLaPage(message.kek);
   const parametres = hexEnOctets(String(message.parametresHex ?? ""));
   const dek = tirerCleDeVolume();
-  const creee = await creerEnveloppe({
-    support: support(),
-    identifiantVolume: IDENTIFIANT_VOLUME,
-    dek,
-    kek,
-    typeKek: moyen.typeKek,
-    parametres,
-    identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
-  });
-  return {
-    dek,
-    kek,
-    version: creee.version,
-    identifiantEprouve: null,
-    identifiantEmplacement: creee.identifiantEmplacement,
-    versionMinimale: null,
-  };
+  const verrou = await ouvrirLeHandle(volume);
+  try {
+    const creee = await creerEnveloppe({
+      support: support(),
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      dek,
+      kek,
+      typeKek: moyen.typeKek,
+      parametres,
+      identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
+    });
+    return {
+      dek,
+      kek,
+      version: creee.version,
+      identifiantEprouve: null,
+      identifiantEmplacement: creee.identifiantEmplacement,
+      versionMinimale: null,
+      verrou,
+    };
+  } catch (cause) {
+    verrou.close();
+    dek.fill(0);
+    throw cause;
+  }
 }
 
 // --- Le moyen de récupération, et son code rendu UNE fois -----------------------------------------

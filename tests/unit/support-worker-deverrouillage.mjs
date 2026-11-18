@@ -54,6 +54,7 @@ const { EMPLACEMENT_FORMAT_V1, ENVELOPPE_FORMAT_V1, TYPES_KEK } =
   await import("../../src/vm/enveloppe/identite-enveloppe.mjs");
 const { envelopperSousNonce, importerCleDeDeverrouillage } =
   await import("../../src/vm/enveloppe/modele-reference.mjs");
+const { toStorageError } = await import("../../src/vm/opfs-error-mapping.mjs");
 const { composerPageAlaMain } = await import("./support-enveloppe-double.mjs");
 const { KEK, DEK, magasin, supportDe } = await import("./support-archive-recuperation.mjs");
 
@@ -114,7 +115,10 @@ export async function workerDeverrouillage({ banc = magasin(), emplacement = "co
       courante.signaler();
       await courante.promesse;
     }
-    return banc.store.openHandle(nom);
+    // Comme `openOpfsSyncAccess` : un refus du support est un refus TYPÉ (`VAULT_STORAGE_BUSY`…).
+    return banc.store
+      .openHandle(nom)
+      .catch((cause) => Promise.reject(toStorageError(cause, { operation: "open", volume: nom })));
   };
 
   brancherLeDeverrouillage({

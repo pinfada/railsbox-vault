@@ -119,7 +119,7 @@ async function compterLesDecrypt(geste) {
 }
 
 /** Une page **v1** à un emplacement, comme celles qu'aucun produit n'écrit plus. */
-async function enveloppeV1() {
+async function enveloppeV1({ dek = DEK } = {}) {
   const parametres = suiteDOctets(0xe0, 8);
   const scelle = await envelopperSousNonce({
     kek: await importerCleDeDeverrouillage(KEK_A),
@@ -130,13 +130,13 @@ async function enveloppeV1() {
       typeKek: TYPES_KEK.harnais,
       parametres,
     },
-    dek: DEK,
+    dek,
     nonce: suiteDOctets(0x10, 12),
   });
   const page = await composerPageAlaMain({
     identifiantVolume: VOLUME,
     version: 7,
-    dek: DEK,
+    dek,
     emplacements: [
       {
         identifiantEmplacement: ID_A,
@@ -295,4 +295,52 @@ test("memesOctets : longueur, égalité, et l'écart du DERNIER octet", () => {
   assert.equal(memesOctets(Uint8Array.of(1, 2, 3), Uint8Array.of(1, 2, 4)), false);
   assert.equal(memesOctets(Uint8Array.of(1, 2, 3), Uint8Array.of(1, 2)), false);
   assert.equal(memesOctets(Uint8Array.of(1, 2), Uint8Array.of(1, 2, 0)), false);
+});
+
+test("une page v1 sous la même KEK mais une AUTRE clé de volume est refusée SANS UNE écriture", async () => {
+  const ancienne = await enveloppeV1();
+  const ouverte = await passeUn(ancienne, KEK_A);
+  // La même KEK et le même emplacement ouvrent une enveloppe qui porte une autre clé de volume.
+  const autre = await enveloppeV1({ dek: AUTRE_DEK });
+  const avant = autre.contenu;
+
+  await assert.rejects(revalider(autre, ouverte), refusee);
+
+  assert.equal(autre.gestes, 0, "ni écriture, ni allocation, ni barrière avant le refus");
+  assert.deepEqual(autre.contenu, avant, "le fichier est octet pour octet celui d'avant");
+});
+
+test("la migration n'est jouée qu'UNE fois l'identité confirmée : une page v2 s'ouvre une seule fois", async () => {
+  const v2 = await enveloppe();
+  const ouverte = await passeUn(v2, KEK_A);
+  const supports = [];
+  const ouvrir = async (appel) => {
+    supports.push(appel.support);
+    return ouvrirEnveloppe(appel);
+  };
+  await revalider(v2, ouverte, { ouvrir });
+  assert.equal(supports.length, 1, "une page v2 n'a rien à migrer : une seule ouverture");
+
+  const v1 = await enveloppeV1();
+  const ouverteV1 = await passeUn(v1, KEK_A);
+  supports.length = 0;
+  await revalider(v1, ouverteV1, { ouvrir });
+  assert.equal(supports.length, 2, "une page v1 : lecture seule, puis migration sous le handle");
+  assert.notEqual(supports[0], v1, "la première ouverture ne reçoit PAS le support réel");
+  assert.equal(supports[1], v1, "la migration se joue sur le support réel");
+});
+
+test("l'identité est confrontée AUSSI après la migration : une seconde ouverture divergente est refusée", async () => {
+  const v1 = await enveloppeV1();
+  const ouverte = await passeUn(v1, KEK_A);
+  let appels = 0;
+  // La migration rend une AUTRE clé de volume que la lecture : jamais publiée « ouverte ».
+  const ouvrir = async (appel) => {
+    appels += 1;
+    const vraie = await ouvrirEnveloppe(appel);
+    if (appels === 2) vraie.dek.fill(0xee);
+    return vraie;
+  };
+  await assert.rejects(revalider(v1, ouverte, { ouvrir }), refusee);
+  assert.equal(appels, 2);
 });

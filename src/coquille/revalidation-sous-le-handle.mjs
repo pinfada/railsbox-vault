@@ -17,7 +17,8 @@
 //     Elle n'écrit rien — pas même la migration de page v1→v2, qui est une écriture d'enveloppe ;
 //  2. **passe 2, SOUS le handle** (`revaliderSousLeHandle`, appelée par l'ouvreur dès le handle pris
 //     et AVANT toute écriture ou tout accès authentifié) : l'enveloppe est rouverte sous la même KEK,
-//     et deux choses sont exigées — le MÊME emplacement, la MÊME clé de volume. Tant que ce Worker
+//     et deux choses sont exigées — le MÊME emplacement, la MÊME clé de volume — AVANT toute écriture
+//     (la migration d'une page v1 ne se joue qu'ensuite, sous le handle). Tant que ce Worker
 //     tient le handle, aucun autre onglet ne peut plus retirer une clé : tout geste qui en retire une
 //     (`revoquerToutSauf`, `ajouterEmplacement` du moyen de récupération) exige un coffre ouvert,
 //     donc un handle tenu.
@@ -58,17 +59,35 @@ export function memesOctets(a, b) {
   return ecart === 0;
 }
 
+/** Le même emplacement ET la même clé de volume, ou le refus d'une clé inconnue. */
+function exigerLaMemeIdentite(sous, ouverte, identifiantVolume) {
+  if (
+    sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||
+    !memesOctets(sous.dek, ouverte.dek)
+  ) {
+    throw cleRefusee({ volume: identifiantVolume });
+  }
+}
+
 /**
  * REVALIDE, sous le handle exclusif, ce que la passe 1 a obtenu.
  *
+ * ## En LECTURE SEULE d'abord, et la migration seulement après (revue de la PR #314, constat 2)
+ *
+ * `ouvrirEnveloppe` migre une page v1 en l'ÉCRIVANT, avant de rendre la main : une revalidation qui
+ * l'appelait telle quelle écrivait — deux écritures, deux barrières — sur une enveloppe qu'elle allait
+ * ensuite REFUSER (une page v1 sous la même KEK, mais une autre clé de volume). La passe 2 ouvre donc
+ * l'enveloppe sur un support en lecture seule, compare, et ne migre — sous le handle, sur le support
+ * réel — que si l'identité est confirmée. Un refus n'écrit jamais.
+ *
  * Le refus d'une clé révoquée est celui de l'enveloppe (`VAULT_ENVELOPPE_CLE_REFUSEE`), le même que
- * pour une clé inconnue et par le même parcours ; une divergence d'emplacement ou de clé de volume
- * est refusée sous ce code aussi. La clé de volume de CETTE passe est effacée quoi qu'il arrive ;
- * celle de la passe 1 reste à l'appelant. En cas de succès, `ouverte.version` et `ouverte.migree`
- * prennent les valeurs de cette passe, l'autoritaire.
+ * pour une clé inconnue et par le même parcours ; une divergence d'emplacement ou de clé de volume est
+ * refusée sous ce code aussi. Chaque clé de volume rendue par cette passe est effacée quoi qu'il
+ * arrive ; celle de la passe 1 reste à l'appelant. En cas de succès, `ouverte.version` et
+ * `ouverte.migree` prennent les valeurs de cette passe, l'autoritaire.
  *
  * `ouvrir` est la couture des épreuves — l'ouverture d'enveloppe réelle par défaut — : elle permet de
- * dire ce que devient la clé de la seconde passe, qu'aucun appelant ne revoit.
+ * dire ce que devient la clé de chaque ouverture, qu'aucun appelant ne revoit.
  *
  * @param {{ support: object, identifiantVolume: string, ouvrir?: typeof ouvrirEnveloppe,
  *           ouverte: { kek: unknown, dek: Uint8Array, identifiantEmplacement: string,
@@ -80,22 +99,21 @@ export async function revaliderSousLeHandle({
   ouverte,
   ouvrir = ouvrirEnveloppe,
 }) {
-  const sous = await ouvrir({
-    support,
-    identifiantVolume,
-    kek: ouverte.kek,
-    versionMinimale: ouverte.versionMinimale,
-  });
+  const appel = { identifiantVolume, kek: ouverte.kek, versionMinimale: ouverte.versionMinimale };
+  const rendues = [];
   try {
-    if (
-      sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||
-      !memesOctets(sous.dek, ouverte.dek)
-    ) {
-      throw cleRefusee({ volume: identifiantVolume });
+    let sous = await ouvrir({ ...appel, support: enLectureSeule(support) });
+    rendues.push(sous.dek);
+    exigerLaMemeIdentite(sous, ouverte, identifiantVolume);
+    // Une page v1 : l'identité est confirmée, la migration se joue SOUS le handle.
+    if (sous.migration !== null) {
+      sous = await ouvrir({ ...appel, support });
+      rendues.push(sous.dek);
+      exigerLaMemeIdentite(sous, ouverte, identifiantVolume);
     }
     ouverte.version = sous.version;
     ouverte.migree = sous.migration?.faite === true;
   } finally {
-    sous.dek.fill(0);
+    for (const dek of rendues) dek.fill(0);
   }
 }
