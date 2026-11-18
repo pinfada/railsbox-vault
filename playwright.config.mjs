@@ -47,6 +47,14 @@ const FRONTIERE_HIERARCHIE = ["**/hierarchie-de-cles-frontiere.spec.mjs"];
 const FRONTIERE_DESCRIPTEUR = ["**/descripteur-scelle.spec.mjs"];
 
 /**
+ * La RÉSERVE du Service Worker de la coquille (#299, ADR 0048) : l'ARBRE PUBLIÉ, servi par une origine
+ * contrôlable sous les en-têtes de production. Chaque épreuve lance SON navigateur et SON origine
+ * (« réseau coupé » = origine arrêtée, jamais `setOffline`) ; les trois moteurs sont TOUJOURS exécutés : un
+ * Service Worker ne se comporte pas pareil d'un moteur à l'autre (ADR 0048 § 14).
+ */
+const RESERVE = ["**/reserve-*.spec.mjs"];
+
+/**
  * Frontière entre deux applications partageant l'origine applicative (#46, ADR 0018). Exécutée sur
  * les trois moteurs pour le même motif que la frontière de CSP, et pour un motif de plus : le
  * partitionnement du stockage n'est pas identique d'un moteur à l'autre — l'OPFS et
@@ -300,6 +308,7 @@ export default defineConfig({
         ...CYCLE_DE_VIE,
         ...SERVICE_APPLICATIF,
         ...PERSISTANCE,
+        ...RESERVE,
       ],
     })),
     // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
@@ -361,6 +370,12 @@ export default defineConfig({
       name: `service-applicatif-${nom}`,
       use: { browserName: nom },
       testMatch: SERVICE_APPLICATIF,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `reserve-${nom}`,
+      use: { browserName: nom },
+      testMatch: RESERVE,
+      timeout: 120_000,
     })),
     ...MOTEURS_CONNUS.map((nom) => ({
       name: `persistance-${nom}`,

@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { PREFIXE_ADRESSES_V86 } from "../../src/v86-adresses.mjs";
 import test, { after, before } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -183,9 +184,9 @@ test("le script de RETRAIT est le même modèle, sans liste, marqué retrait, av
 test("le classement de chemins reconnaît la surprise : un chemin ni listé, ni exclu, ni en passage est INCONNU", () => {
   const classes = classerLesChemins([
     ...fichiers().keys(),
-    "/vendor/v86/artefacts/v86-0123456789abcdef.wasm",
+    `${PREFIXE_ADRESSES_V86}v86-0123456789abcdef.wasm`,
   ]);
-  assert.deepEqual(classes.passage, ["/vendor/v86/artefacts/v86-0123456789abcdef.wasm"]);
+  assert.deepEqual(classes.passage, [`${PREFIXE_ADRESSES_V86}v86-0123456789abcdef.wasm`]);
   assert.deepEqual(classes.inconnus, []);
   assert.ok(classes.exclus.includes("/_headers") && classes.exclus.includes("/inventaire.json"));
   assert.ok(classes.exclus.includes(CHEMIN_DU_SW));

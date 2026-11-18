@@ -54,7 +54,7 @@ export function creerLaReserve({ rapport, publier, terminer, creerLeCanal }) {
   });
   rapport.reserve = {
     sequence: RESERVE_PUBLIEE.sequence,
-    fraicheur: null,
+    fraicheur: undefined,
     refus: null,
     revocation: null,
   };

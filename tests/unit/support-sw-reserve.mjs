@@ -11,6 +11,8 @@ import { createHash, webcrypto } from "node:crypto";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
+import { PREFIXE_ADRESSES_V86 } from "../../src/v86-adresses.mjs";
+
 export const ORIGINE = "https://coquille.test";
 export const SCRIPT_DU_SW = new URL("../../tools/reserve/sw-coquille.js", import.meta.url);
 
@@ -38,7 +40,7 @@ export function configurer(
     retrait = false,
     identite,
     prefixesAnciens = [],
-    passage = ["^/vendor/v86/artefacts/v86-[0-9a-f]{16}\\.wasm$"],
+    passage = [`^${PREFIXE_ADRESSES_V86}v86-[0-9a-f]{16}\\.wasm$`],
   } = {},
 ) {
   const liste = {};

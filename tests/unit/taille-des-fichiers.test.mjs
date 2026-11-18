@@ -75,9 +75,9 @@ const HORS_PERIMETRE = [];
 const SOUS_SURVEILLANCE = [
   {
     fichier: "src/coquille/conduites-du-parcours.mjs",
-    lignes: 716,
+    lignes: 721,
     motif:
-      "#239 et #240 (18/09/2026) le font passer de 700 à 716 lignes : la conduite de la phrase trop " +
+      "#299 (18/11/2026) y inscrit cinq codes de la réserve (721 lignes), refusés AVANT le parcours : ils sont hors du chemin, avec leur motif. #239 et #240 (18/09/2026) le font passer de 700 à 716 lignes : la conduite de la phrase trop " +
       "courte, et celle de l'enveloppe pleine, qui dit désormais sa sortie. Le module est une TABLE " +
       "plate — un code, un classement, une phrase — que le cliquet des conduites énumère d'un bloc ; " +
       "la scinder par famille séparerait les phrases de la liste qui les exige. À scinder par geste " +

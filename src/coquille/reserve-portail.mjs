@@ -5,8 +5,7 @@
 // Ordre :
 //  1. L'API existe ? `"serviceWorker" in navigator`. Absente : RESERVE_ABSENTE (`api-absente`), SANS lire
 //     `.controller`, sans Worker, sans clé.
-//  2. Un contrôleur ? Sinon l'inscription ACTIVE : un script de retrait → PERIMEE ; sinon ABSENTE. Jamais
-//     d'inscription : première visite, ce n'est pas un refus — le SW est inscrit, la page se recharge.
+//  2. Un contrôleur ? Sinon (`reserve-installation.mjs`) : retrait, inscription sans contrôle, première visite.
 //  3. En parallèle, chacun borné : identité (`version`), vérification complète (`verifier`), fraîcheur.
 //  4. Décision pure (`reserve-decision.mjs`). Entrées manquantes ou altérées : EN LIGNE, `reparer` les
 //     refait (chaque entrée vérifiée avant d'être écrite), UNE fois, puis on réessaie.
@@ -24,11 +23,121 @@ import { CODES_REFUS_COQUILLE as C } from "./refus-de-coquille.mjs";
 import { decider } from "./reserve-decision.mjs";
 import { creerEtatPartage } from "./reserve-etat-partage.mjs";
 import { ETATS_DE_FRAICHEUR as E, causeDeLaRevocation } from "./reserve-fraicheur.mjs";
-import { URL_DU_SW } from "./reserve-identite.mjs";
+import { sansControleur } from "./reserve-installation.mjs";
 import { creerLObservateur } from "./reserve-observateur.mjs";
-import { DELAIS_PAR_DEFAUT, apresUnDelai, interroger } from "./reserve-questions.mjs";
+import { DELAIS_PAR_DEFAUT, interroger } from "./reserve-questions.mjs";
 
 const refuser = (code, cause, extra = {}) => ({ autorise: false, code, cause, ...extra });
+
+/** Observe (identité, vérification, fraîcheur en parallèle, bornées), décide, et répare UNE fois si besoin. */
+async function observerEtDecider(ctx, conteneur, controleur) {
+  const { d, etatPartage, sequencePage } = ctx;
+  const inscription = await conteneur.getRegistration("/").catch(() => undefined);
+  if (ctx.observateur === null && inscription) {
+    ctx.observateur = creerLObservateur({
+      registration: inscription,
+      etatPartage,
+      surEtat: ctx.surEtat,
+      sequenceCourante: sequencePage,
+      delaiReponseMs: d.delaiReponseMs,
+    });
+  }
+  const [identite, verification, fraiche] = await Promise.all([
+    interroger(controleur, "version", d.delaiReponseMs),
+    interroger(controleur, "verifier", d.delaiReponseMs),
+    ctx.observateur === null
+      ? Promise.resolve({ maj: "non-tentee", attente: null, etat: E.NON_VERIFIABLE })
+      : ctx.observateur.verifier(d.delaiVerificationMs),
+  ]);
+  const cause = causeDeLaRevocation(fraiche.attente, sequencePage) ?? etatPartage.cause();
+  const decideSur = (verifie) =>
+    decider({
+      sequencePage,
+      identite,
+      verification: verifie,
+      fraicheur: fraiche.etat,
+      causeDeRevocation: cause,
+      controleurChange: etatPartage.controleurChange(),
+    });
+  let decision = decideSur(verification);
+  const abimee = decision.code === C.reserveIncomplete || decision.code === C.reserveAlteree;
+  if (!decision.autorise && abimee) {
+    const reparation = await interroger(controleur, "reparer", d.delaiReparationMs);
+    if (reparation?.ok === true) {
+      decision = decideSur(await interroger(controleur, "verifier", d.delaiReponseMs));
+    }
+  }
+  return { decision, fraiche };
+}
+
+/** 7 — Un Worker qui ne se charge pas ne dit pas pourquoi : le code typé vient d'une NOUVELLE vérification. */
+async function refuserApresEchecDuChargement(ctx, conteneur, controleur, erreur, fraicheur) {
+  const apres = await interroger(
+    conteneur.controller ?? controleur,
+    "verifier",
+    ctx.d.delaiReponseMs,
+  );
+  if (apres === null) return refuser(C.reserveAbsente, "silence-du-sw", { fraicheur });
+  if (apres.alteres?.length > 0) {
+    return refuser(C.reserveAlteree, "entree-alteree-apres-le-portail", {
+      detail: apres.alteres,
+      fraicheur,
+    });
+  }
+  if (apres.manquants?.length > 0) {
+    return refuser(C.reserveIncomplete, "entree-absente-apres-le-portail", {
+      detail: apres.manquants,
+      fraicheur,
+    });
+  }
+  return refuser(C.reserveAbsente, `worker-${erreur}`, { fraicheur });
+}
+
+/** 6 — Poignée de main : rien ne se passe avant que le Worker ait dit QUELLE séquence il exécute. */
+async function apresLaCreation(ctx, conteneur, controleur, travailleur, fraicheur, branchement) {
+  const { etatPartage, sequencePage } = ctx;
+  const annonce = await branchement.annonceDuTravailleur(travailleur, ctx.d.delaiAnnonceMs);
+  if (annonce === null || annonce === undefined || annonce.erreur !== undefined) {
+    branchement.terminerLeTravailleur(travailleur);
+    const erreur = annonce?.erreur ?? "delai";
+    return refuserApresEchecDuChargement(ctx, conteneur, controleur, erreur, fraicheur);
+  }
+  if (annonce.sequence !== sequencePage) {
+    branchement.terminerLeTravailleur(travailleur);
+    return refuser(C.reserveDivergente, "worker-d-une-autre-version", { fraicheur });
+  }
+  if (conteneur.controller !== controleur || etatPartage.controleurChange()) {
+    branchement.terminerLeTravailleur(travailleur);
+    return refuser(C.reserveDivergente, "controleur-change-apres-creation", { fraicheur });
+  }
+  return { autorise: true, code: null, cause: null, fraicheur, travailleur, annonce };
+}
+
+async function ouvrirLePortail(ctx, branchement) {
+  const { etatPartage, navigateur } = ctx;
+  // 1 — L'API existe-t-elle ? Sans elle, on ne lit RIEN d'elle.
+  if (!("serviceWorker" in navigateur)) return refuser(C.reserveAbsente, "api-absente");
+  const conteneur = navigateur.serviceWorker;
+  // 2 — Un contrôleur ?
+  const controleur = conteneur.controller;
+  if (!controleur) return sansControleur({ conteneur, etatPartage, delais: ctx.d });
+  // 3 et 4 — Observer, décider, réparer.
+  const { decision, fraiche } = await observerEtDecider(ctx, conteneur, controleur);
+  if (!decision.autorise) {
+    if (decision.cause === "retrait") etatPartage.noter("retrait");
+    return { ...decision, fraicheur: fraiche.etat };
+  }
+  // 5 — DERNIÈRE GARDE. Aucun `await` entre ces lectures et `creerLeTravailleur()` : ce qui a été observé
+  // avant est vu, rien ne peut s'intercaler.
+  if (etatPartage.connue()) {
+    return refuser(C.reservePerimee, etatPartage.cause(), { fraicheur: E.REVOCATION_CONNUE });
+  }
+  if (conteneur.controller !== controleur || etatPartage.controleurChange()) {
+    return refuser(C.reserveDivergente, "controleur-change", { fraicheur: fraiche.etat });
+  }
+  const travailleur = branchement.creerLeTravailleur();
+  return apresLaCreation(ctx, conteneur, controleur, travailleur, fraiche.etat, branchement);
+}
 
 /**
  * La RÉSERVE de la page : un état de révocation, un observateur et des portails, partagés par toute la vie de
@@ -48,199 +157,23 @@ export function creerLaReserveDeLaPage({
   surEtat = () => {},
   etatPartage = creerEtatPartage(),
 }) {
-  const d = { ...DELAIS_PAR_DEFAUT, ...delais };
-  let observateur = null;
+  const ctx = {
+    navigateur,
+    sequencePage,
+    surEtat,
+    etatPartage,
+    d: { ...DELAIS_PAR_DEFAUT, ...delais },
+    observateur: null,
+  };
   if ("serviceWorker" in navigateur) {
     // Un changement de contrôleur pendant la vie de la page est une anomalie qui ne se défait pas.
     navigateur.serviceWorker.addEventListener("controllerchange", () =>
       etatPartage.noterLeChangementDeControleur(),
     );
   }
-
-  const observateurDe = (inscription) => {
-    if (observateur === null && inscription) {
-      observateur = creerLObservateur({
-        registration: inscription,
-        etatPartage,
-        surEtat,
-        sequenceCourante: sequencePage,
-        delaiReponseMs: d.delaiReponseMs,
-      });
-    }
-    return observateur;
-  };
-
-  /** Sans contrôleur : retrait lu sur l'inscription active, sinon première visite ou refus. */
-  async function sansControleur(conteneur) {
-    const inscription = await conteneur.getRegistration("/").catch(() => undefined);
-    if (inscription?.active) {
-      const identite = await interroger(inscription.active, "version", d.delaiReponseMs);
-      if (identite?.retrait === true) {
-        etatPartage.noter("retrait");
-        return refuser(C.reservePerimee, "retrait", { fraicheur: E.REVOCATION_CONNUE });
-      }
-      return refuser(C.reserveAbsente, "inscription-sans-controle", {
-        fraicheur: E.NON_VERIFIABLE,
-      });
-    }
-    return premiereInstallation(conteneur, inscription);
-  }
-
-  /** « Préparation hors connexion, une seule fois » : inscrire, attendre l'activation (bornée), recharger. */
-  async function premiereInstallation(conteneur, existante) {
-    const impossible = refuser(C.reserveAbsente, "installation-impossible", {
-      fraicheur: E.NON_VERIFIABLE,
-    });
-    let inscription;
-    try {
-      inscription =
-        existante ?? (await conteneur.register(URL_DU_SW, { scope: "/", updateViaCache: "none" }));
-    } catch {
-      return impossible;
-    }
-    const worker = inscription?.installing ?? inscription?.waiting ?? inscription?.active;
-    if (!worker) return impossible;
-    const issue = await Promise.race([
-      new Promise((resoudre) => {
-        const verifier = () => {
-          if (worker.state === "activated") resoudre("activee");
-          else if (worker.state === "redundant") resoudre("redondante");
-        };
-        worker.addEventListener("statechange", verifier);
-        verifier();
-      }),
-      apresUnDelai(d.delaiInstallationInitialeMs, "delai"),
-    ]);
-    return issue === "activee"
-      ? { autorise: false, recharger: true, cause: "premiere-installation" }
-      : impossible;
-  }
-
-  /** `verifier` puis, si la réserve est abîmée et que le réseau répond, UNE réparation et un réessai. */
-  async function decider1(controleur, observation) {
-    const [identite, verification] = observation.reponses;
-    return decider({
-      sequencePage,
-      identite,
-      verification,
-      fraicheur: observation.fraicheur,
-      causeDeRevocation: observation.cause,
-      controleurChange: etatPartage.controleurChange(),
-    });
-  }
-
-  async function ouvrirLePortail({
-    creerLeTravailleur,
-    annonceDuTravailleur,
-    terminerLeTravailleur,
-  }) {
-    // 1 — L'API existe-t-elle ? Sans elle, on ne lit RIEN d'elle.
-    if (!("serviceWorker" in navigateur)) return refuser(C.reserveAbsente, "api-absente");
-    const conteneur = navigateur.serviceWorker;
-
-    // 2 — Un contrôleur ?
-    const controleur = conteneur.controller;
-    if (!controleur) return sansControleur(conteneur);
-
-    // 3 — Identité, vérification complète et fraîcheur, EN PARALLÈLE, chacune bornée.
-    const inscription = await conteneur.getRegistration("/").catch(() => undefined);
-    const suivi = observateurDe(inscription);
-    const [identite, verification, fraiche] = await Promise.all([
-      interroger(controleur, "version", d.delaiReponseMs),
-      interroger(controleur, "verifier", d.delaiReponseMs),
-      suivi === null
-        ? Promise.resolve({ maj: "non-tentee", attente: null, etat: E.NON_VERIFIABLE })
-        : suivi.verifier(d.delaiVerificationMs),
-    ]);
-    const cause = causeDeLaRevocation(fraiche.attente, sequencePage) ?? etatPartage.cause();
-    let observation = { reponses: [identite, verification], fraicheur: fraiche.etat, cause };
-
-    // 4 — Décision pure ; réparation vérifiée, une fois, si la réserve est abîmée.
-    let decision = await decider1(controleur, observation);
-    if (
-      !decision.autorise &&
-      (decision.code === C.reserveIncomplete || decision.code === C.reserveAlteree)
-    ) {
-      const reparation = await interroger(controleur, "reparer", d.delaiReparationMs);
-      if (reparation?.ok === true) {
-        const apres = await interroger(controleur, "verifier", d.delaiReponseMs);
-        observation = { ...observation, reponses: [identite, apres] };
-        decision = await decider1(controleur, observation);
-      }
-    }
-    if (!decision.autorise) {
-      if (decision.cause === "retrait") etatPartage.noter("retrait");
-      return { ...decision, fraicheur: fraiche.etat };
-    }
-
-    // 5 — DERNIÈRE GARDE. Aucun `await` entre ces lectures et `creerLeTravailleur()` : ce qui a été observé
-    // avant est vu, rien ne peut s'intercaler.
-    if (etatPartage.connue()) {
-      return refuser(C.reservePerimee, etatPartage.cause(), { fraicheur: E.REVOCATION_CONNUE });
-    }
-    if (conteneur.controller !== controleur || etatPartage.controleurChange()) {
-      return refuser(C.reserveDivergente, "controleur-change", { fraicheur: fraiche.etat });
-    }
-    const travailleur = creerLeTravailleur();
-
-    // 6 — Poignée de main : rien ne se passe avant que le Worker ait dit QUELLE séquence il exécute.
-    const annonce = await annonceDuTravailleur(travailleur, d.delaiAnnonceMs);
-    if (annonce?.erreur !== undefined || annonce === null || annonce === undefined) {
-      terminerLeTravailleur(travailleur);
-      return refuserApresEchecDuChargement(
-        controleur,
-        conteneur,
-        annonce?.erreur ?? "delai",
-        fraiche.etat,
-      );
-    }
-    if (annonce.sequence !== sequencePage) {
-      terminerLeTravailleur(travailleur);
-      return refuser(C.reserveDivergente, "worker-d-une-autre-version", {
-        fraicheur: fraiche.etat,
-      });
-    }
-    if (conteneur.controller !== controleur || etatPartage.controleurChange()) {
-      terminerLeTravailleur(travailleur);
-      return refuser(C.reserveDivergente, "controleur-change-apres-creation", {
-        fraicheur: fraiche.etat,
-      });
-    }
-    return {
-      autorise: true,
-      code: null,
-      cause: null,
-      fraicheur: fraiche.etat,
-      travailleur,
-      annonce,
-    };
-  }
-
-  /** 7 — Un Worker qui ne se charge pas ne dit pas pourquoi : le code typé vient d'une NOUVELLE vérification. */
-  async function refuserApresEchecDuChargement(controleur, conteneur, erreur, fraicheur) {
-    const apres = await interroger(
-      conteneur.controller ?? controleur,
-      "verifier",
-      d.delaiReponseMs,
-    );
-    if (apres === null) return refuser(C.reserveAbsente, "silence-du-sw", { fraicheur });
-    if (apres.alteres?.length > 0) {
-      return refuser(C.reserveAlteree, "entree-alteree-apres-le-portail", {
-        detail: apres.alteres,
-        fraicheur,
-      });
-    }
-    if (apres.manquants?.length > 0) {
-      return refuser(C.reserveIncomplete, "entree-absente-apres-le-portail", {
-        detail: apres.manquants,
-        fraicheur,
-      });
-    }
-    return refuser(C.reserveAbsente, `worker-${erreur}`, { fraicheur });
-  }
-
   return {
-    ouvrirLePortail,
+    /** @param {{ creerLeTravailleur: () => any, annonceDuTravailleur: Function, terminerLeTravailleur: Function }} branchement */
+    ouvrirLePortail: (branchement) => ouvrirLePortail(ctx, branchement),
     /** L'état de révocation PARTAGÉ : lecture seule. */
     revocation: {
       connue: () => etatPartage.connue(),
@@ -248,6 +181,6 @@ export function creerLaReserveDeLaPage({
       controleurChange: () => etatPartage.controleurChange(),
     },
     /** L'état de fraîcheur tel que l'observateur le tient (ou `null` avant le premier portail). */
-    fraicheur: () => observateur?.etat() ?? null,
+    fraicheur: () => ctx.observateur?.etat() ?? null,
   };
 }
