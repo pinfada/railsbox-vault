@@ -161,6 +161,9 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "titreDeLaConfirmationDeRevocation",
     "confirmationDeRevocation",
     "revocationAnnulee",
+    "revocationEnCours",
+    "revocationRefusee",
+    "revocationIncertaine",
     "revoque",
     "revoqueSansRien",
   ],
@@ -300,12 +303,15 @@ function texteDuMessage(nom) {
     return `${message("A", "B", true)} — ou, sans migration — ${message("A", "B", false)}`;
   }
   if (nom === "avertissementDeRevocation" || nom === "confirmationDeRevocation") {
-    return ["phrase", "webauthn-prf", "recuperation"]
-      .map(
+    // Le cas des PLUSIEURS feuilles, ouvert par l'une : l'autre feuille part aussi (#308).
+    const plusieurs = `(ouvert par le code, avec plusieurs feuilles) ${message("recuperation", ["recuperation"], { codes: 2 })}`;
+    return [
+      ...["phrase", "webauthn-prf", "recuperation"].map(
         (moyen) =>
           `(ouvert par ${moyen === "recuperation" ? "le code" : moyen === "phrase" ? "la phrase" : "la passkey"}) ${message(moyen)}`,
-      )
-      .join(" — ou — ");
+      ),
+      plusieurs,
+    ].join(" — ou — ");
   }
   return message(N);
 }

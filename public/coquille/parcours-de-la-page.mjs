@@ -499,10 +499,6 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
     nommerLesGestes(ecranId);
     dire("sauvegarde-annonce", accueil.annonceDeSauvegarde(rapport)); // AVANT le geste (#269)
-    dire(
-      "parcours-avertissement-revocation",
-      MESSAGES.avertissementDeRevocation(releve.moyenDOuverture, releve.moyensProposes ?? null),
-    );
     // L'application démarrée reste à l'écran à TOUTES les étapes (ADR 0043) : l'écran d'une étape
     // qui ne la nomme pas ne la masque plus, il s'ajoute dans le panneau du coffre.
     const cycleLu = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;

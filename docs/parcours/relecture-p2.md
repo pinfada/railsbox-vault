@@ -720,7 +720,10 @@ Messages qui peuvent s'afficher sur cet écran :
   récupération ne servira plus à rien, créez-en une nouvelle ensuite. — ou — (ouvert par le code)
   Seul le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de
   l'ouvrir. Votre phrase et votre passkey ne fonctionneront plus sur ce coffre : seul le code de
-  votre feuille l'ouvrira.
+  votre feuille l'ouvrira. — ou — (ouvert par le code, avec plusieurs feuilles) Seul le moyen avec
+  lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de l'ouvrir. Vos
+  autres codes de récupération ne fonctionneront plus sur ce coffre : seul le code avec lequel vous
+  venez de l'ouvrir l'ouvrira.
 - Confirmer la révocation
 - (ouvert par la phrase) Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu.
   Seul le moyen avec lequel vous venez d'ouvrir ce coffre — votre phrase — continuera de l'ouvrir.
@@ -739,8 +742,20 @@ Messages qui peuvent s'afficher sur cet écran :
   votre passkey ne fonctionneront plus sur ce coffre : seul le code de votre feuille l'ouvrira. Vos
   sauvegardes déjà faites ne changent pas : elles restent ouvrables par les anciens moyens. Rien
   n'est retiré tant que vous n'avez pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler »
+  ne change rien. — ou — (ouvert par le code, avec plusieurs feuilles) Révoquer est irréversible :
+  ce qui est retiré ne pourra pas être rendu. Seul le moyen avec lequel vous venez d'ouvrir ce
+  coffre — le code de votre feuille — continuera de l'ouvrir. Vos autres codes de récupération ne
+  fonctionneront plus sur ce coffre : seul le code avec lequel vous venez de l'ouvrir l'ouvrira. Vos
+  sauvegardes déjà faites ne changent pas : elles restent ouvrables par les anciens moyens. Rien
+  n'est retiré tant que vous n'avez pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler »
   ne change rien.
 - Rien n'a été révoqué : tout ce qui ouvrait ce coffre l'ouvre toujours.
+- Révocation en cours : la demande est partie et ne peut plus être annulée. Attendez la réponse du
+  coffre.
+- La révocation a été refusée (la raison est écrite plus haut) : le coffre ne l'a pas annoncée comme
+  faite. Vous pouvez la redemander.
+- La révocation est partie, mais le coffre n'a pas confirmé : elle a peut-être eu lieu. Rouvrez
+  votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites la révocation.
 - N moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V. — ou, pour un seul
   moyen — 1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V.
 - Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.

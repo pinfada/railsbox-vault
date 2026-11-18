@@ -8,7 +8,7 @@
 //
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
-import { MOYEN_NOMME, lesAutresRetires } from "./moyens-nommes.mjs";
+import { TEXTES_DE_LA_REVOCATION } from "./textes-de-la-revocation.mjs";
 import { enMegaoctets } from "./taille-en-clair.mjs";
 import {
   ATTENTE_DE_LA_MISE_A_JOUR,
@@ -656,20 +656,7 @@ export const MESSAGES = Object.freeze({
   phasePreparation: "Étape en cours : préparation de l'application.",
   phaseDemarrage: "Étape en cours : démarrage de l'application.",
   phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",
-  // La CONFIRMATION de la révocation (#265) : l'irréversible, ce qui part, ce qui reste, la sortie.
-  titreDeLaConfirmationDeRevocation: "Confirmer la révocation",
-  confirmationDeRevocation: (moyen, moyens = null) =>
-    "Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. " +
-    `${MESSAGES.avertissementDeRevocation(moyen, moyens)} Vos sauvegardes déjà faites ne changent ` +
-    "pas : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez " +
-    "pas cliqué sur « Oui, révoquer les autres moyens » ; « Annuler » ne change rien.",
-  revocationAnnulee: "Rien n'a été révoqué : tout ce qui ouvrait ce coffre l'ouvre toujours.",
-  avertissementDeRevocation: (moyen, moyens = null) =>
-    MOYEN_NOMME[moyen] === undefined
-      ? "Seul le moyen avec lequel vous avez ouvert ce coffre continuera de l'ouvrir ; tous les " +
-        "autres ne fonctionneront plus."
-      : `Seul le moyen avec lequel vous venez d'ouvrir ce coffre — ${MOYEN_NOMME[moyen]} — ` +
-        `continuera de l'ouvrir. ${lesAutresRetires(moyen, moyens)}`,
+  ...TEXTES_DE_LA_REVOCATION,
   codesDejaRendus: (nombre) =>
     nombre <= 1
       ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas " +

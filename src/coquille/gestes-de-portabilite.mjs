@@ -93,9 +93,9 @@ export function brancherLesGestesDePortabilite(liaison) {
     panneau: "revocation-confirmation",
     annuler: "revoquer-annuler",
     confirmer: "revoquer-confirmer",
-    confirmee: () => void revoquer(),
-    demandee: () => contexte.dire("revocation-annulee", ""),
-    annulee: () => contexte.dire("revocation-annulee", MESSAGES.revocationAnnulee),
+    confirmee: revoquer,
+    demandee: () => contexte.dire("revocation-etat", ""),
+    annulee: () => contexte.dire("revocation-etat", MESSAGES.revocationAnnulee),
   });
   return Object.freeze({ sauvegarder, restaurer, revoquer });
 }
@@ -194,6 +194,8 @@ async function restaurerLeCoffre(contexte, fichier) {
 async function revoquerEnUrgence(contexte) {
   const { demander, rapport, publier, dire } = contexte;
   dire("portabilite-refus", "");
+  // La demande part pour de bon : la page le dit AVANT d'attendre, et ne dit plus « annulée » (#308).
+  dire("revocation-etat", MESSAGES.revocationEnCours);
   try {
     const rendu = await demander("revoquerEnUrgence", {});
     rapport.portabilite.revocation = {
@@ -211,13 +213,31 @@ async function revoquerEnUrgence(contexte) {
       contexte,
       `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`,
     );
+    dire("revocation-etat", ""); // la réussite se dit par le parcours : « N moyen(s) retiré(s) »
     await contexte.apresRevocation?.();
     return rapport.portabilite.revocation;
   } catch (erreur) {
+    dire("revocation-etat", direLIssueDeLaRevocation(erreur));
     return refuser(contexte, "revocation", erreur);
   } finally {
     publier();
   }
+}
+
+/**
+ * Ce que la page dit d'une révocation qui n'a pas abouti. Deux issues, jamais « rien n'a été révoqué » :
+ * la demande est partie. Un refus TYPÉ est « refusée » ; l'absence de réponse (le Worker est mort),
+ * un Worker qui a jeté sans refus à nommer, ou une erreur sans code laissent la révocation
+ * INCERTAINE — elle a pu être publiée avant l'erreur (ADR 0026, l'effacement n'est pas atomique avec
+ * la publication) —, et la page le dit tel quel.
+ */
+function direLIssueDeLaRevocation(erreur) {
+  const code = erreur?.code;
+  const incertaine =
+    code === undefined ||
+    code === CODES_REFUS_COQUILLE.workerMort ||
+    code === CODES_REFUS_COQUILLE.gesteRompu;
+  return incertaine ? MESSAGES.revocationIncertaine : MESSAGES.revocationRefusee;
 }
 
 /**

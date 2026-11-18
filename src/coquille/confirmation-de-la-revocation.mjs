@@ -14,14 +14,18 @@ import { MESSAGES } from "./textes-du-parcours.mjs";
  * caché (un changement d'étape), la demande est oubliée : une demande périmée ne survit pas.
  *
  * @param {{ noeud: (id: string) => any, dire: (id: string, texte: string) => void,
- *           releve: { moyenDOuverture?: string, moyensProposes?: string[] } }} page
+ *           releve: { moyenDOuverture?: string, moyensProposes?: string[], nombreDeCodes?: number } }} page
  */
 export function suivreLaConfirmationDeRevocation({ noeud, dire, releve }) {
-  dire("revocation-confirmation-titre", MESSAGES.titreDeLaConfirmationDeRevocation);
+  const options = { codes: releve.nombreDeCodes ?? null };
+  const { moyenDOuverture: moyen, moyensProposes: moyens = null } = releve;
+  // Le texte écrit AU-DESSUS du bouton, et celui de la confirmation : le même fond, au même compte.
   dire(
-    "revocation-confirmation-texte",
-    MESSAGES.confirmationDeRevocation(releve.moyenDOuverture, releve.moyensProposes ?? null),
+    "parcours-avertissement-revocation",
+    MESSAGES.avertissementDeRevocation(moyen, moyens, options),
   );
+  dire("revocation-confirmation-titre", MESSAGES.titreDeLaConfirmationDeRevocation);
+  dire("revocation-confirmation-texte", MESSAGES.confirmationDeRevocation(moyen, moyens, options));
   if (noeud("revocation-confirmation")?.closest("[data-bloc]")?.hidden !== true) return;
   oublierLaConfirmation({
     noeud,

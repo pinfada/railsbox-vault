@@ -238,7 +238,7 @@ button,
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-button:not(:disabled):hover {
+button:not(:disabled):not([aria-disabled="true"]):hover {
   background: var(--survol);
 }
 button[data-principal] {
@@ -256,7 +256,8 @@ button[data-danger] {
   color: var(--danger);
   border-color: var(--danger);
 }
-button:disabled {
+button:disabled,
+button[aria-disabled="true"] {
   background: var(--support);
   color: var(--secondaire);
   border-color: var(--separateur);

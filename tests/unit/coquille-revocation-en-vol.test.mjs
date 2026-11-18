@@ -49,6 +49,13 @@ for (const cas of CAS) {
         !quelqueChosePart,
         `${nom} : « rien ne sera retiré » ne se dit que si rien ne part — ${dit}`,
       );
+      if (cas.moyen !== "recuperation") {
+        assert.doesNotMatch(
+          dit,
+          /autres codes/,
+          `${nom} : une feuille de la séance n'est pas « autre »`,
+        );
+      }
       if (autresFeuilles > 0) {
         const nomme =
           cas.moyen === "recuperation" ? /autres (codes|feuilles)/ : /codes de récupération/;

@@ -103,5 +103,20 @@ de l'enveloppe, de `src/vm/` ni des codes de refus.**
   demanderait que le Worker publie le type de l'emplacement de la séance : Worker touché, reporté.
   La saisie d'un mot à retaper (« REVOQUER ») est écartée : un geste de plus sans information de
   plus.
+- **Relecture de #308 (REFUSÉ `0b15250`), deux défauts corrigés.** (1) _La confirmation disait «
+  rien ne sera retiré » à tort._ `lesAutresRetires` ne voyait que les TYPES de moyens, dédoublonnés
+  : avec deux feuilles, ouvert par l'une, l'autre feuille partait sans être dite. Le compte de
+  codes, que la page connaît déjà (`nombreDeCodes`), est transmis : « vos autres codes de
+  récupération » est dit, sans liste exacte ; l'avertissement écrit au-dessus du bouton suit. (2)
+  _Une révocation en vol pouvait être « annulée » ou renvoyée._ Après « Oui », la demande est EN VOL
+  jusqu'à la réponse du Worker : le geste est `aria-disabled`, la confirmation ne se rouvre pas («
+  Annuler » n'existe plus : la demande est partie), aucun second message ne part, et l'état dit « en
+  cours… ne peut plus être annulée ». Les issues se disent sans ambiguïté : succès (le parcours dit
+  « N moyen(s) retiré(s) »), **refusée** (refus typé), **peut-être eu lieu** (le Worker est mort —
+  aucune réponse —, a jeté sans refus à nommer, ou erreur sans code : l'effacement n'étant pas
+  atomique avec la publication, ADR 0026, la révocation a pu être publiée avant l'erreur ; la page
+  dit de rouvrir le coffre pour le vérifier). La page ne dit jamais « rien n'a été révoqué » d'une
+  demande partie. _Limite écrite_ : un refus typé survenu après la publication ne se distingue pas
+  d'un refus avant ; la page dit « refusée », pas « rien n'a changé ».
 - **Non prouvé.** L'annonce par un vrai lecteur d'écran (seules la description et le nom accessibles
   sont éprouvés, sous Chromium) ; le parcours clavier E2E sur Rails réel (il tourne en CI).

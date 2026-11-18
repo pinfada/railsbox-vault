@@ -67,8 +67,14 @@ const EPREUVE_PARCOURS_CONDUITES = "tests/unit/coquille-parcours-conduites.test.
 
 /** Les gardes de #265 : la révocation d'urgence se confirme en deux temps (aide, pas garde du Worker). */
 const CONFIRMATION = "src/coquille/confirmation-en-deux-temps.mjs";
-const TEXTES = "src/coquille/textes-du-parcours.mjs";
+const TEXTES = "src/coquille/textes-de-la-revocation.mjs";
 const EPREUVE_CONFIRMATION = "tests/unit/coquille-confirmation-revocation.test.mjs";
+/** Relecture de #308 : plusieurs feuilles, révocation en vol et ses issues, demande périmée. */
+const EPREUVE_EN_VOL = "tests/unit/coquille-revocation-en-vol.test.mjs";
+const GESTES_PORTABILITE = "src/coquille/gestes-de-portabilite.mjs";
+const MOYENS_NOMMES = "src/coquille/moyens-nommes.mjs";
+const CONFIRMEE = "src/coquille/confirmation-de-la-revocation.mjs";
+const PAGE_DU_PARCOURS = "public/coquille/parcours-de-la-page.mjs";
 const PREUVE = "src/coquille/preuve-de-la-feuille.mjs";
 const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
 const DEVERROUILLAGE = "public/runtime-worker-deverrouillage.mjs";
@@ -1277,8 +1283,8 @@ export const MUTATIONS = Object.freeze([
     nom: "« Oui » ne part que d'une confirmation OUVERTE, une fois par ouverture (#265)",
     garde: "brancherUneConfirmation — accomplir exige le panneau ouvert",
     fichier: CONFIRMATION,
-    avant: "    if (!ouverte()) return;\n    refermer();\n    confirmee();\n",
-    apres: "    refermer();\n    confirmee();\n",
+    avant: "    if (!ouverte()) return;\n    refermer();\n    enVol = true;\n",
+    apres: "    refermer();\n    enVol = true;\n",
     epreuves: [EPREUVE_CONFIRMATION],
   },
   {
@@ -1325,7 +1331,8 @@ export const MUTATIONS = Object.freeze([
     nom: "la confirmation dit ce qui est retiré et ce qui reste (#265)",
     garde: "MESSAGES.confirmationDeRevocation — l'avertissement propre au moyen d'ouverture",
     fichier: TEXTES,
-    avant: "    `${MESSAGES.avertissementDeRevocation(moyen, moyens)} Vos sauvegardes",
+    avant:
+      "    `${TEXTES_DE_LA_REVOCATION.avertissementDeRevocation(moyen, moyens, options)} Vos sauvegardes",
     apres: "    ` Vos sauvegardes",
     epreuves: [EPREUVE_CONFIRMATION],
   },
@@ -1353,6 +1360,154 @@ export const MUTATIONS = Object.freeze([
     avant: '  "revoquer-confirmer",\n',
     apres: "",
     epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "le premier bouton ne branche JAMAIS directement le geste (#265, relecture de #308)",
+    garde: "brancherLesGestesDePortabilite — « Révoquer… » demande, il ne révoque pas",
+    fichier: GESTES_PORTABILITE,
+    avant: "  return Object.freeze({ sauvegarder, restaurer, revoquer });\n",
+    apres:
+      '  noeud("revoquer-en-urgence")?.addEventListener("click", () => void revoquer());\n  return Object.freeze({ sauvegarder, restaurer, revoquer });\n',
+    epreuves: [EPREUVE_CONFIRMATION],
+  },
+  {
+    nom: "une seule demande en vol : la confirmation ne se rouvre pas avant la réponse (#308)",
+    garde: "brancherUneConfirmation — la garde de `demander`",
+    fichier: CONFIRMATION,
+    avant: "    if (ouverte() || enVol) return;\n",
+    apres: "    if (ouverte()) return;\n",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "la demande est EN VOL dès « Oui » (#308)",
+    garde: "brancherUneConfirmation — l'état « en vol » posé",
+    fichier: CONFIRMATION,
+    avant: "    enVol = true;\n",
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "la demande n'est plus en vol une fois la réponse connue (#308)",
+    garde: "brancherUneConfirmation — l'état « en vol » levé",
+    fichier: CONFIRMATION,
+    avant: "      enVol = false;\n",
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "la demande reste en vol jusqu'à la RÉPONSE du Worker, pas jusqu'au retour du clic (#308)",
+    garde: "brancherUneConfirmation — la promesse attendue",
+    fichier: CONFIRMATION,
+    avant: "      await confirmee();\n",
+    apres: "      confirmee();\n",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "le geste en vol se dit désactivé (#308)",
+    garde: "brancherUneConfirmation — `aria-disabled` posé",
+    fichier: CONFIRMATION,
+    avant: '    noeud(declencheur)?.setAttribute("aria-disabled", "true");\n',
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "la page dit « en cours » dès que la demande part (#308)",
+    garde: "revoquerEnUrgence — l'état « en cours »",
+    fichier: GESTES_PORTABILITE,
+    avant: '  dire("revocation-etat", MESSAGES.revocationEnCours);\n',
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "le succès efface « en cours » (#308)",
+    garde: "revoquerEnUrgence — l'état levé au succès",
+    fichier: GESTES_PORTABILITE,
+    avant:
+      '    dire("revocation-etat", ""); // la réussite se dit par le parcours : « N moyen(s) retiré(s) »\n',
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "un Worker mort laisse la révocation INCERTAINE, jamais « refusée » (#308)",
+    garde: "direLIssueDeLaRevocation — le code `workerMort`",
+    fichier: GESTES_PORTABILITE,
+    avant: "    code === CODES_REFUS_COQUILLE.workerMort ||\n",
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "un Worker qui jette sans refus à nommer laisse la révocation INCERTAINE (#308)",
+    garde: "direLIssueDeLaRevocation — le code `gesteRompu`",
+    fichier: GESTES_PORTABILITE,
+    avant: "    code === CODES_REFUS_COQUILLE.gesteRompu;\n",
+    apres: "    false;\n",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "une erreur sans code laisse la révocation INCERTAINE (#308)",
+    garde: "direLIssueDeLaRevocation — l'absence de code",
+    fichier: GESTES_PORTABILITE,
+    avant: "    code === undefined ||\n",
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "la confirmation compte les feuilles : l'autre feuille part avec le reste (#308)",
+    garde: "lesAutresRetires — les autres feuilles ajoutées à la liste",
+    fichier: MOYENS_NOMMES,
+    avant: '  if (autresFeuilles) noms.push("vos autres codes de récupération");\n',
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "deux feuilles suffisent pour que la seconde parte (#308)",
+    garde: "lesAutresRetires — le seuil du compte de codes",
+    fichier: MOYENS_NOMMES,
+    avant: 'typeof codes === "number" && codes > 1;',
+    apres: 'typeof codes === "number" && codes > 2;',
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "une feuille de la SÉANCE n'est pas « autre » quand la séance est ouverte par la phrase (#308)",
+    garde: "lesAutresRetires — l'autre feuille ne vaut que pour une séance ouverte par un code",
+    fichier: MOYENS_NOMMES,
+    avant: '  const autresFeuilles = moyen === "recuperation" && typeof',
+    apres: "  const autresFeuilles = typeof",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "la page transmet le nombre de codes à la confirmation (#308)",
+    garde: "suivreLaConfirmationDeRevocation — `nombreDeCodes`",
+    fichier: CONFIRMEE,
+    avant: "  const options = { codes: releve.nombreDeCodes ?? null };\n",
+    apres: "  const options = { codes: null };\n",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "la demande de révocation dont le bloc a disparu est oubliée — l'APPEL de `oublierLaConfirmation` (#308)",
+    garde: "suivreLaConfirmationDeRevocation — l'oubli d'une demande périmée",
+    fichier: CONFIRMEE,
+    avant:
+      '  if (noeud("revocation-confirmation")?.closest("[data-bloc]")?.hidden !== true) return;\n',
+    apres: "  return;\n",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "une demande dont le bloc est visible n'est pas oubliée (#308)",
+    garde: "suivreLaConfirmationDeRevocation — la condition de l'oubli",
+    fichier: CONFIRMEE,
+    avant: "?.hidden !== true) return;",
+    apres: "?.hidden === true) return;",
+    epreuves: [EPREUVE_EN_VOL],
+  },
+  {
+    nom: "la page APPELLE la confirmation à chaque rendu, après les blocs (#308)",
+    garde: "rendre — l'appel de `suivreLaConfirmationDeRevocation`",
+    fichier: PAGE_DU_PARCOURS,
+    avant:
+      "    suivreLaConfirmationDeRevocation({ noeud, dire, releve }); // APRÈS les blocs (#265)\n",
+    apres: "",
+    epreuves: [EPREUVE_EN_VOL],
   },
   {
     nom: "un code du chemin rend SA conduite, jamais la phrase générique",
