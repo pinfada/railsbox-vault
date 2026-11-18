@@ -3,27 +3,18 @@
     "region": "Révocation en cours : la demande est partie et ne peut plus être annulée. Attendez la réponse du coffre.",
     "sansRevoquerDesactive": true,
     "retourDesactive": true,
-    "alertes": [
-      "",
-      "Révocation en cours : la demande est partie et ne peut plus être annulée. Attendez la réponse du coffre."
-    ]
+    "alertes": [""]
   },
   "incertaine-etape-9": {
     "region": "La révocation est partie, mais le coffre ne l'a pas confirmée : elle a peut-être eu lieu. Rouvrez votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites la révocation.",
     "sansRevoquerDesactive": true,
     "retourDesactive": false,
-    "alertes": [
-      "",
-      "La révocation est partie, mais le coffre ne l'a pas confirmée : elle a peut-être eu lieu. Rouvrez votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites la révocation."
-    ]
+    "alertes": [""]
   },
   "incertaine-apres-retour": {
     "region": "La révocation est partie, mais le coffre ne l'a pas confirmée : elle a peut-être eu lieu. Rouvrez votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites la révocation.",
     "sansRevoquerDesactive": true,
     "retourDesactive": false,
-    "alertes": [
-      "",
-      "La révocation est partie, mais le coffre ne l'a pas confirmée : elle a peut-être eu lieu. Rouvrez votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites la révocation."
-    ]
+    "alertes": [""]
   }
 }

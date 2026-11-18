@@ -1,0 +1,14 @@
+{
+  "relire": {
+    "region": "La révocation a été faite, mais l'affichage des moyens de ce coffre n'a pas pu être mis à jour. Rouvrez votre coffre pour le relire.",
+    "sansRevoquerDesactive": false,
+    "retourDesactive": false,
+    "alertes": [""]
+  },
+  "apres-reouverture": {
+    "region": "",
+    "sansRevoquerDesactive": false,
+    "retourDesactive": false,
+    "alertes": [""]
+  }
+}
