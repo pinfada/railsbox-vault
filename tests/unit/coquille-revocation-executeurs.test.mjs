@@ -158,3 +158,98 @@ test("[ordre] la garde « transition intacte » est relue en DERNIER : fonction 
     "une lecture a lieu entre la garde et l'appel",
   );
 });
+
+// --- UN SEUL contrat de récepteur : tous les exécuteurs sont appelés SANS récepteur ---------------------
+// (`this === undefined`). Les effets ordinaires recevaient l'objet privé, les lanceurs aucun : l'appelant ne
+// pouvait pas savoir sur quoi compter. L'appelant fournit des fonctions liées ou des fermetures.
+
+test("[this] tous les exécuteurs — effets ordinaires ET lanceurs — sont appelés sans récepteur", async () => {
+  const recepteurs = new Map();
+  const noter = (nom) =>
+    function () {
+      // eslint-disable-next-line no-invalid-this
+      recepteurs.set(nom, [...(recepteurs.get(nom) ?? []), this]);
+    };
+  const envois = [];
+  const lectures = new Map();
+  const executeurs = {
+    envoyer: function () {
+      noter("envoyer").call(this);
+      const attente = Promise.withResolvers();
+      envois.push(attente);
+      return attente.promise;
+    },
+    relire: function (lecture) {
+      noter("relire").call(this);
+      const attente = Promise.withResolvers();
+      lectures.set(lecture, attente);
+      return attente.promise;
+    },
+    noter: function () {
+      noter("noter").call(this);
+      return new Promise(() => {});
+    },
+    masquer: function () {
+      noter("masquer").call(this);
+      return true;
+    },
+    publier: noter("publier"),
+    oublier: noter("oublier"),
+    terminer: noter("terminer"),
+    revenir: noter("revenir"),
+    consigner: noter("consigner"),
+    vueARendre: noter("vueARendre"),
+  };
+  const magasin = creerLaRevocation({ executeurs, indice: false });
+  const lire = async (lecture) => {
+    lectures.get(lecture).resolve({
+      type: "vault.coquille.inventaire-prive-reponse",
+      refus: null,
+      present: true,
+      feuilleEprouvee: true,
+      versionEnveloppe: 3,
+      emplacements: [],
+    });
+    await tourner();
+  };
+  magasin.demarrer();
+  await lire(1);
+  magasin.appliquer({ type: "coffre-ouvert", moyen: "phrase" });
+  await lire(2);
+  magasin.appliquer({ type: "demander-la-revocation" });
+  magasin.appliquer({ type: "annuler" }); // oublier
+  magasin.appliquer({ type: "demander-la-revocation" });
+  magasin.appliquer({ type: "terminer-sans-revoquer" }); // oublier, terminer
+  magasin.appliquer({ type: "demander-la-revocation" });
+  magasin.appliquer({ type: "oui" }); // masquer, envoyer
+  envois[0].resolve({
+    type: "vault.coquille.revoquer-en-urgence-reponse",
+    versionEnveloppe: 4,
+    restants: { phrase: 1 },
+    retires: {},
+    nombreRetires: 0,
+    nombreRestants: 1,
+    copieDeSauvegardeRetiree: false,
+    etat: "ouvert",
+    barrieres: 1,
+  });
+  await tourner(); // noter, relire
+  await lire(magasin.etat().lecture);
+  magasin.appliquer({ type: "revenir-a-l-application" }); // revenir
+  let recepteurDuLanceur = "jamais appelé";
+  magasin.modifier(function () {
+    // eslint-disable-next-line no-invalid-this
+    recepteurDuLanceur = this;
+    return Promise.resolve();
+  });
+  magasin.appliquer({ type: "worker-mort" }); // consigner
+  await tourner();
+  const avecRecepteur = [];
+  for (const nom of Object.keys(executeurs)) {
+    const vus = recepteurs.get(nom);
+    assert.ok(vus !== undefined && vus.length > 0, `« ${nom} » n'a pas été appelé par le parcours`);
+    if (vus.some((recepteur) => recepteur !== undefined)) avecRecepteur.push(nom);
+  }
+  assert.deepEqual(avecRecepteur, [], "des exécuteurs ont reçu un récepteur (this)");
+  assert.equal(recepteurDuLanceur, undefined, "le lanceur de `modifier` a reçu un récepteur");
+});
