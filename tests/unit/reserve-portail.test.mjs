@@ -618,9 +618,11 @@ test("DERNIÈRE GARDE : l'état de révocation et le contrôleur sont relus dans
   });
   await reserve.ouvrirLePortail({
     creerLeTravailleur: () => {
-      observe = ["revocation", "controleur"].map((nom) =>
-        lectures.findLast((lecture) => lecture.nom === nom),
-      );
+      // L'instantané est pris AU MOMENT de la création : plus tard, les micro-tâches ont toutes tourné.
+      observe = ["revocation", "controleur"].map((nom) => {
+        const lecture = lectures.findLast((candidate) => candidate.nom === nom);
+        return lecture ? { nom, tickPasse: lecture.tickPasse } : null;
+      });
       return fabrique.creer();
     },
     annonceDuTravailleur: fabrique.annonce,

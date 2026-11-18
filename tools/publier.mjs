@@ -66,6 +66,7 @@ import {
   verifierEpinglageArgon2,
   verifierEpinglageV86,
 } from "./publier-sources.mjs";
+import { produireLaReserve } from "./publier-reserve.mjs";
 import { REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 export const CODES = Object.freeze({
@@ -251,6 +252,15 @@ function lireOption(argv, nom, defaut = null) {
   return valeur;
 }
 
+/** Une option entière positive ou nulle, ou `null` si elle est absente. */
+function lireEntier(argv, nom) {
+  const valeur = lireOption(argv, nom);
+  if (valeur === null) return null;
+  if (!/^(0|[1-9][0-9]{0,8})$/.test(valeur))
+    throw new Error(`L'option --${nom} attend un entier positif ou nul.`);
+  return Number(valeur);
+}
+
 /**
  * Un arbre est un BANC dès qu'une de ses deux origines n'est pas `https:`.
  *
@@ -311,6 +321,15 @@ async function construireArbre(arbre, options) {
     rendreFichierHeaders(arbre.nom, options),
     "utf8",
   );
+  // La RÉSERVE du Service Worker de la coquille (#299, ADR 0048) : elle se calcule sur l'arbre déjà
+  // construit, `_headers` compris, et ajoute `/sw-coquille.mjs` et le module de séquence de la page.
+  if (arbre.nom === "coquille") {
+    options.reserve = await produireLaReserve({
+      destination,
+      sequence: options.sequence,
+      plancher: options.plancher,
+    });
+  }
   await exigerPolitiqueUniforme(arbre, destination, options);
 
   const epinglage = await fusionnerEpinglages(destination, empreinte, epinglagesAttendus(arbre));
@@ -574,6 +593,7 @@ async function verifier(racine, { tolererIncomplet }) {
 
 const AIDE = `node tools/publier.mjs [--commit <ref>] [--sortie <dir>] [--tolerer-incomplet]
                       [--origine-coquille <url>] [--origine-application <url>]
+                      [--sequence <n>] [--plancher <n>]
 node tools/publier.mjs --verifier <arbre> [--tolerer-incomplet]
 `;
 
@@ -594,19 +614,31 @@ async function principal(argv) {
   const reference = lireOption(argv, "commit");
   if (reference !== null) exigerReferenceResoluble(REPOSITORY_ROOT, reference);
 
+  const sequence = lireEntier(argv, "sequence");
+  const plancher = lireEntier(argv, "plancher") ?? 0;
   const origineCoquille = lireOption(argv, "origine-coquille", ORIGINE_COQUILLE_PAR_DEFAUT);
   const origineApplication = lireOption(
     argv,
     "origine-application",
     ORIGINE_APPLICATION_PAR_DEFAUT,
   );
+  const banc = estUnBanc({ origineCoquille, origineApplication });
+  // Une publication de PRODUCTION porte une séquence que l'exploitant a choisie : la mettre à 1 par défaut
+  // ferait annoncer « différente ou plus ancienne » à chaque version suivante (ADR 0048 § 8).
+  if (sequence === null && !banc) {
+    throw new Error(
+      "--sequence <n> est obligatoire pour une publication de production (origine https) : la séquence est monotone.",
+    );
+  }
   return construire({
+    sequence: sequence ?? 1,
+    plancher,
     sortie,
     reference,
     commit: identiteDuCommit(REPOSITORY_ROOT, reference ?? "HEAD"),
     origineCoquille,
     origineApplication,
-    banc: estUnBanc({ origineCoquille, origineApplication }),
+    banc,
     tolererIncomplet,
   });
 }

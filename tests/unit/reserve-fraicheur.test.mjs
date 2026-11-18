@@ -9,7 +9,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ETATS_DE_FRAICHEUR as E, etatDeFraicheur } from "../../src/coquille/reserve-fraicheur.mjs";
+import {
+  ETATS_DE_FRAICHEUR as E,
+  causeDeLaRevocation,
+  etatDeFraicheur,
+} from "../../src/coquille/reserve-fraicheur.mjs";
 
 const COURANTE = 5;
 const base = { maj: "ok", attente: null, sequenceCourante: COURANTE };
@@ -41,7 +45,7 @@ test("1 · un Worker en attente IDENTIFIÉ au plancher supérieur à la séquenc
   const etat = etatDeFraicheur({ ...base, attente: attente({ plancher: COURANTE + 1 }) });
   assert.equal(etat, E.REVOCATION_CONNUE);
   assert.equal(etat.effet, "refuse");
-  assert.equal(etat.cause, "plancher");
+  assert.equal(causeDeLaRevocation(attente({ plancher: COURANTE + 1 }), COURANTE), "plancher");
   assert.match(etat.texte, /retirée par son éditeur/);
   assert.match(etat.texte, /Fermez toutes les fenêtres du coffre, puis rouvrez-le/);
 });
@@ -49,7 +53,19 @@ test("1 · un Worker en attente IDENTIFIÉ au plancher supérieur à la séquenc
 test("1 · un script de RETRAIT en attente : révocation connue, cause `retrait`", () => {
   const etat = etatDeFraicheur({ ...base, attente: attente({ retrait: true, sequence: 0 }) });
   assert.equal(etat, E.REVOCATION_CONNUE);
-  assert.equal(etat.cause, "retrait");
+  assert.equal(causeDeLaRevocation(attente({ retrait: true, sequence: 0 }), COURANTE), "retrait");
+});
+
+test("la cause d'une révocation : `retrait`, `plancher`, ou rien — l'attente muette n'en est pas une", () => {
+  assert.equal(causeDeLaRevocation(null, COURANTE), null);
+  assert.equal(causeDeLaRevocation({ muet: true, plancher: 99, retrait: true }, COURANTE), null);
+  assert.equal(causeDeLaRevocation(attente({ plancher: COURANTE }), COURANTE), null);
+  assert.equal(causeDeLaRevocation(attente({ plancher: COURANTE + 1 }), COURANTE), "plancher");
+  assert.equal(
+    causeDeLaRevocation(attente({ retrait: true, plancher: 99 }), COURANTE),
+    "retrait",
+    "le retrait prime",
+  );
 });
 
 test("un plancher ÉGAL à la séquence courante n'est pas une révocation (seul le supérieur l'est)", () => {

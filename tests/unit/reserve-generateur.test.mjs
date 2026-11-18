@@ -43,12 +43,12 @@ const fichiers = () =>
     ["/sw-coquille.mjs", Buffer.from("// le script lui-même")],
   ]);
 
-function lister(dossier) {
+function lister(racine, dossier = racine) {
   const sortie = [];
   for (const nom of readdirSync(dossier)) {
     const complet = join(dossier, nom);
-    if (statSync(complet).isDirectory()) sortie.push(...lister(complet));
-    else sortie.push("/" + relative(dossier, complet).split(sep).join("/"));
+    if (statSync(complet).isDirectory()) sortie.push(...lister(racine, complet));
+    else sortie.push("/" + relative(racine, complet).split(sep).join("/"));
   }
   return sortie.sort();
 }
