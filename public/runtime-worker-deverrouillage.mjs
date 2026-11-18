@@ -21,6 +21,10 @@ import {
   moyenParNom,
 } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { ouvrirParLeCode } from "/src/coquille/ouverture-par-le-code.mjs";
+import {
+  enLectureSeule,
+  revaliderSousLeHandle,
+} from "/src/coquille/revalidation-sous-le-handle.mjs";
 import { constaterALOuverture, feuilleConstatee } from "/src/coquille/preuve-de-la-feuille.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
 import {
@@ -43,6 +47,7 @@ import {
 import { hexEnOctets, octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
 import { creerMoyenDeRecuperation } from "/src/vm/moyen-de-recuperation.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { openOpfsSyncAccess } from "/src/vm/opfs-sync-access.mjs";
 
 /** L'identité que l'enveloppe authentifie, celle du COFFRE et du volume `application` (ADR 0039). */
 const IDENTIFIANT_VOLUME = IDENTIFIANT_DU_COFFRE;
@@ -76,11 +81,15 @@ let constaterLaPortabilite;
 let annoncerLaBarriere;
 let exigerUnVolumeAtteignable;
 let volume;
+let ouvrirLeHandle;
 
 /**
  * @param {{ interne: object, support: Function, repondre: Function, repondreCode: Function,
  *           repondreRefus: Function, constater: Function, annoncerLaBarriere: Function,
- *           exigerUnVolumeAtteignable: Function, volume: string }} contexte
+ *           exigerUnVolumeAtteignable: Function, volume: string,
+ *           ouvrirLeHandle?: (nom: string) => Promise<FileSystemSyncAccessHandle> }} contexte
+ *   `ouvrirLeHandle` est LA porte de tout handle exclusif de ce module : le vrai OPFS par défaut, un
+ *   double sous Node — c'est ce qui permet de charger CE module, tel qu'il est servi, dans une épreuve.
  */
 export function brancherLeDeverrouillage(contexte) {
   ({
@@ -94,6 +103,7 @@ export function brancherLeDeverrouillage(contexte) {
     exigerUnVolumeAtteignable,
     volume,
   } = contexte);
+  ouvrirLeHandle = contexte.ouvrirLeHandle ?? openOpfsSyncAccess;
 }
 
 /** Oublie le porteur du code de la session : la fermeture et la restauration le font. */
@@ -162,13 +172,13 @@ export async function deverrouiller(message, correlation) {
     ? await ouvrirLExistante(moyen, message, versionMinimale)
     : await creerLeCoffre(moyen, message);
 
-  // La DEK est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le chemin d'ÉCHEC est
-  // celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
-  // (`VAULT_STORAGE_BUSY`), et les octets en clair de la clé de volume restaient alors dans le tas
-  // du Worker. Un second clic sur « Ouvrir par la phrase » y suffisait — un geste ordinaire, pas un
+  // La DEK (celle de la passe 1) est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le
+  // chemin d'ÉCHEC est celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
+  // (`VAULT_STORAGE_BUSY`) ou quand la revalidation refuse (#311), et les octets en clair de la clé
+  // de volume restaient alors dans le tas du Worker. Un second clic sur « Ouvrir par la phrase » y suffisait — un geste ordinaire, pas un
   // scénario. C'est le constat 5 de la revue de sécurité de la PR #167.
   try {
-    await ouvrirLeVolume(ouverte.dek);
+    await ouvrirLeVolume(ouverte);
   } finally {
     ouverte.dek.fill(0);
   }
@@ -199,8 +209,12 @@ export async function deverrouiller(message, correlation) {
  * Le backend précédent était ÉCRASÉ sans être fermé : le handle exclusif restait tenu par un objet
  * que plus personne ne référençait, et l'ouverture suivante rendait `VAULT_STORAGE_BUSY` — sur le
  * volume que l'utilisateur venait d'ouvrir lui-même. Constat 6 de la même revue.
+ *
+ * `sousLeHandle` est la PASSE 2 de #311 (`revalidation-sous-le-handle.mjs`) : l'ouvreur l'appelle une
+ * fois le handle exclusif pris, avant d'écrire ou d'authentifier quoi que ce soit, et rend le handle
+ * si elle refuse. Ce n'est qu'après elle que l'état peut devenir « ouvert ».
  */
-async function ouvrirLeVolume(dek) {
+async function ouvrirLeVolume(ouverte) {
   const precedent = interne.backend;
   interne.backend = null;
   interne.etat = ETATS_DU_VOLUME.verrouille;
@@ -209,9 +223,12 @@ async function ouvrirLeVolume(dek) {
   interne.backend = await openOpfsVolume({
     name: volume,
     size: TAILLE,
-    cle: dek,
+    cle: ouverte.dek,
     identifiantVolume: IDENTIFIANT_DU_VOLUME_COQUILLE,
     transactionnel: false,
+    openHandle: ouvrirLeHandle,
+    sousLeHandle: () =>
+      revaliderSousLeHandle({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME, ouverte }),
   });
 }
 
@@ -232,6 +249,8 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
     kek: ouverte.kek,
     version: ouverte.version,
     migree: ouverte.migration?.faite === true,
+    identifiantEmplacement: ouverte.identifiantEmplacement,
+    versionMinimale,
     // Seul un CODE éprouve une feuille, jamais l'emplacement d'une phrase ou d'une passkey.
     identifiantEprouve: moyen.derivePar === "page" ? null : ouverte.identifiantEmplacement,
   };
@@ -241,7 +260,7 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
 async function ouvrirSousLaPage(message, versionMinimale) {
   const kek = exigerKekDeLaPage(message.kek);
   const ouverte = await ouvrirEnveloppe({
-    support: support(),
+    support: enLectureSeule(support()),
     identifiantVolume: IDENTIFIANT_VOLUME,
     kek,
     versionMinimale,
@@ -260,7 +279,7 @@ async function ouvrirSousLaPage(message, versionMinimale) {
  */
 async function ouvrirSousLeCode(moyen, message, versionMinimale) {
   return ouvrirParLeCode({
-    support: support(),
+    support: enLectureSeule(support()),
     identifiantVolume: IDENTIFIANT_VOLUME,
     code: String(message.code ?? ""),
     derivateur: CATALOGUE.pour(moyen.typeKek),
@@ -302,7 +321,14 @@ async function creerLeCoffre(moyen, message) {
     parametres,
     identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
   });
-  return { dek, kek, version: creee.version, identifiantEprouve: null };
+  return {
+    dek,
+    kek,
+    version: creee.version,
+    identifiantEprouve: null,
+    identifiantEmplacement: creee.identifiantEmplacement,
+    versionMinimale: null,
+  };
 }
 
 // --- Le moyen de récupération, et son code rendu UNE fois -----------------------------------------
