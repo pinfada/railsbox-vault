@@ -85,3 +85,8 @@ export async function sonderLeStockage({
     await attendre(delaiMs);
   }
 }
+
+/** ROUGE : le détail n'est pas encore rendu. */
+export async function sonderLeStockageEnDetail(options = {}) {
+  return { verdict: await sonderLeStockage(options), code: null };
+}

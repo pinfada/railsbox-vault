@@ -7,6 +7,7 @@ import {
   VERDICTS_DU_STOCKAGE,
   classerLeRejetDeRacine,
   sonderLeStockage,
+  sonderLeStockageEnDetail,
 } from "../../src/vm/sonde-du-stockage.mjs";
 
 // La SONDE du stockage (#231, revue de la PR #305). WebKit 26.6+ rejette `getDirectory()` par un
@@ -129,4 +130,30 @@ test("le classement du rejet de racine : trois familles, et rien d'autre", () =>
   assert.equal(classerLeRejetDeRacine(rejet("QuotaExceededError")), "panne");
   assert.equal(classerLeRejetDeRacine(undefined), "panne");
   assert.equal(classerLeRejetDeRacine({ name: "UnknownError" }), "indetermine");
+});
+
+test("le DÉTAIL de la sonde : un verdict, et le code précis d'une panne — rien d'autre", async () => {
+  const code = async (nom) =>
+    (await sonderLeStockageEnDetail({ storage: stockageScripte([rejet(nom)]).storage })).code;
+  assert.equal(await code("QuotaExceededError"), "VAULT_STORAGE_QUOTA_EXCEEDED");
+  assert.equal(await code("InvalidStateError"), "VAULT_STORAGE_HANDLE_LOST");
+  assert.equal(await code("Error"), "VAULT_STORAGE_SUPPORT_FAILURE");
+
+  const { attendre } = minuteurDouble();
+  const attendus = [
+    ["atteignable", [null]],
+    ["indetermine", [rejet("UnknownError")]],
+    ["absente", [rejet("SecurityError")]],
+  ];
+  for (const [verdict, script] of attendus) {
+    const rendu = await sonderLeStockageEnDetail({
+      storage: stockageScripte(script).storage,
+      attendre,
+    });
+    assert.deepEqual(rendu, { verdict, code: null }, "seule une panne porte un code");
+  }
+  assert.deepEqual(await sonderLeStockageEnDetail({ storage: {} }), {
+    verdict: "absente",
+    code: null,
+  });
 });
