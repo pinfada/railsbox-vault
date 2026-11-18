@@ -1589,15 +1589,18 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
   d'import avec `integrity` n'existe que dans une fenêtre, `import()` n'a pas d'attribut
   d'intégrité. **`libv86` a la confiance de l'origine, comme tout le code de la coquille** ; la
   confrontation au manifeste le protège de l'accident, pas d'une origine hostile (ADR 0046 § 6).
-  Décision du propriétaire : #299. Hors connexion il est lu du cache HTTP en `only-if-cached`
-  (jamais `force-cache`, qui va au réseau sur un cache vide) — **sauf sous WebKit, qui ignore
-  l'option** (mesuré) : « ne touche pas au réseau » n'est établi que sur Chromium et Firefox. La
-  page ne se recharge pas hors connexion (pas de Service Worker). **Mesuré sur l'image réelle : avec
-  les en-têtes de production (code de la coquille en `no-cache`), un Worker neuf créé réseau coupé
-  n'importe pas ses modules et le démarrage hors connexion échoue avant de lire la réserve**
-  (`VAULT_COQUILLE_GESTE_ROMPU`). La décision de repli est éprouvée sous un harnais qui donne une
-  fraîcheur au code ; la condition « code disponible sans réseau » reste ouverte (#299, ADR 0046 §
-  6).
+  Décision du mainteneur (#299) : option (b), un Service Worker de la coquille servira la réserve —
+  livré par la tranche suivante D1h (ADR propre, qui révisera § « Aucun Service Worker sur l'origine
+  de confiance », **en vigueur tant que D1h n'est pas fusionnée**) ; rien n'en est livré ici. Hors
+  connexion il est lu du cache HTTP en `only-if-cached` (jamais `force-cache`, qui va au réseau sur
+  un cache vide) — **sauf sous WebKit, qui ignore l'option** (mesuré) : « ne touche pas au réseau »
+  n'est établi que sur Chromium et Firefox. La page ne se recharge pas hors connexion (pas de
+  Service Worker pour l'instant). **En production, le démarrage hors connexion ne fonctionne pas
+  encore** : mesuré sur l'image réelle, avec les en-têtes de production (code de la coquille en
+  `no-cache`), un Worker neuf créé réseau coupé n'importe pas ses modules et le démarrage échoue
+  avant de lire la réserve (`VAULT_COQUILLE_GESTE_ROMPU`). La décision de repli est éprouvée sous un
+  harnais qui donne une fraîcheur au code ; la condition « code disponible sans réseau » sera
+  fournie par D1h (#299, ADR 0046 § 6).
 
 ## L'instantané de reprise contient la RAM invitée (#65)
 

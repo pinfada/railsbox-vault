@@ -219,29 +219,34 @@ d'être lu.
   refus typé. **WebKit ignore `only-if-cached`** : « ne touche jamais le réseau » n'est établi que
   sur Chromium et Firefox ; hors connexion réelle, la requête de WebKit échoue et le refus typé est
   le même. **Conséquence : le hors ligne dépend du cache HTTP du navigateur pour `libv86`, non
-  garanti** (éviction possible). La décision — accepter, ou payer une liaison (Service Worker, CSP
-  élargie, émulateur en fenêtre) — revient au propriétaire : options, coût et frontière touchée dans
-  #299.
+  garanti** (éviction possible). **Décision du mainteneur (18/11/2026, #299) : option (b)** — un
+  Service Worker de la coquille servira la réserve hors connexion (`libv86`, la page et le code de
+  la coquille, chacun vérifié contre son empreinte épinglée avant d'être servi). Ce n'est NI
+  l'acceptation de la limite NI l'élargissement de la CSP : l'ADR 0013 reste en vigueur
+  (`worker-src 'self'`, sans `blob:`). Il sera livré par une tranche SUIVANTE, **D1h**
+  (`lot:artefacts`), avec son défi C-K, son propre ADR — qui révisera `SECURITY.md` § « Aucun
+  Service Worker sur l'origine de confiance », en vigueur jusque-là — et sa revue de sécurité ;
+  **rien de cela n'est livré par #298**. Suivi : #299, qui se ferme avec D1h.
 
 **Constat de l'E2E sur l'image réelle (lot 5, 18/11/2026) : le démarrage hors connexion n'a pas lieu
 avec les en-têtes de production.** Le code de la coquille est servi `no-cache` (ADR 0023) : un
 Worker NEUF, créé réseau coupé, ne peut pas importer ses modules (`/src/vm/boot-de-reference.mjs`),
 et le démarrage échoue en `VAULT_COQUILLE_GESTE_ROMPU` — avant de lire la réserve. C'est la moitié «
-code de la coquille » de #299, plus dure que « non garantie » : **tant que le code n'est pas servi
-avec une fraîcheur, ou par un Service Worker, il n'y a pas de démarrage hors connexion en
-production.** Cette tranche livre la DÉCISION (repli sur le descripteur scellé, lecture de la
-réserve, refus typés) ; la condition qu'elle suppose — le code de la coquille disponible sans réseau
-— relève de #299. L'E2E la modélise par un harnais : la config Playwright
-(`playwright.e2e.config.mjs`, seul endroit où `VAULT_E2E_CODE_MAX_AGE` est lue) passe au seul
-serveur de la coquille l'argument `--harnais-e2e-hors-ligne <secondes>`, qui donne au code (hors
-`/artifacts/`, qui reste `no-cache` : c'est l'origine « injoignable ») une fraîcheur ; le scénario
-exige la variable en préalable. **Le harnais est borné au banc** : `tools/serve.mjs` ne lit AUCUNE
-variable d'environnement, seulement cet argument — un `npm start` dont l'environnement porterait
-`VAULT_E2E_CODE_MAX_AGE` ne change pas d'en-têtes, et les autres serveurs de la config (et les lots
-1 à 4) ne le reçoivent pas ; un argument sans durée entière positive fait refuser le démarrage
-(`tests/unit/serve-harnais-hors-ligne.test.mjs`). Avec lui, le scénario passe sur l'image réelle :
-premier boot en ligne, redémarrage réseau coupé depuis la réserve sans un octet d'image par le
-réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
+code de la coquille » de #299, plus dure que « non garantie » : **en production, le démarrage hors
+connexion ne fonctionne pas encore ; décision prise (option b, § 6), livraison par D1h, suivi
+#299.** Cette tranche livre la DÉCISION (repli sur le descripteur scellé, lecture de la réserve,
+refus typés) ; la condition qu'elle suppose — le code de la coquille disponible sans réseau — sera
+fournie par le Service Worker de D1h, pas par #298. L'E2E la modélise par un harnais : la config
+Playwright (`playwright.e2e.config.mjs`, seul endroit où `VAULT_E2E_CODE_MAX_AGE` est lue) passe au
+seul serveur de la coquille l'argument `--harnais-e2e-hors-ligne <secondes>`, qui donne au code
+(hors `/artifacts/`, qui reste `no-cache` : c'est l'origine « injoignable ») une fraîcheur ; le
+scénario exige la variable en préalable. **Le harnais est borné au banc** : `tools/serve.mjs` ne lit
+AUCUNE variable d'environnement, seulement cet argument — un `npm start` dont l'environnement
+porterait `VAULT_E2E_CODE_MAX_AGE` ne change pas d'en-têtes, et les autres serveurs de la config (et
+les lots 1 à 4) ne le reçoivent pas ; un argument sans durée entière positive fait refuser le
+démarrage (`tests/unit/serve-harnais-hors-ligne.test.mjs`). Avec lui, le scénario passe sur l'image
+réelle : premier boot en ligne, redémarrage réseau coupé depuis la réserve sans un octet d'image par
+le réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
 
 ### 7. Ce que la personne voit
 
@@ -315,8 +320,8 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
   c'est inhérent, la clé sert à ouvrir le coffre.
 - **`libv86` et le code de la coquille** viennent du cache HTTP ou du réseau (§ 6) : **leurs octets
   ne sont pas liés à ce qui s'exécute** — `libv86` a la confiance de l'origine, comme tout le code
-  de la coquille. La page ne se recharge pas hors connexion sans Service Worker, ce qui n'est pas
-  l'objet de cette tranche.
+  de la coquille. La page ne se recharge pas hors connexion : le Service Worker qui le permettra est
+  décidé (option b, #299) et livré par D1h, pas par cette tranche.
 - **Les redirections ne sont pas suivies** (§ 3) : un hébergement qui redirige le descripteur est
   une origine sans application.
 - **Une opération du magasin déjà lancée n'est pas annulable** (§ 8) ; les partiels portent un nom
