@@ -101,6 +101,12 @@
         <p id="parcours-reussite" role="status" aria-live="polite"></p>
         <p id="parcours-refus" role="alert"></p>
         <!--
+          La révocation EN VOL ou d'issue INCERTAINE (#265, relecture de #308). Hors de tout bloc : elle
+          reste lisible quelle que soit l'étape, et un clic ne l'efface pas. Levée par une révocation
+          qui aboutit, ou par la réouverture du coffre.
+        -->
+        <p id="parcours-incertitude" role="alert"></p>
+        <!--
           Le GESTE QUI ROUVRE, après la mort du Worker de confiance (#163, ADR 0030, décision 3).
           Caché tant qu'aucune mort n'a été constatée ; il RECHARGE la coquille, il ne ressuscite rien.
           Il est ici, hors des blocs d'étape, pour être visible quel que soit l'écran.

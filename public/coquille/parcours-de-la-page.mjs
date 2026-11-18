@@ -99,7 +99,6 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     revocationFaite: false,
     /** « Terminer sans révoquer » (l'étape 9 est facultative) ; « J'ai oublié ma phrase ». */
     sansRevoquer: false,
-    revocationIncertaine: false,
     phrasePerdue: false,
     /** Le bouton du dernier geste : son champ porte le refus qui suit (#266 M2). */
     idDuGeste: null,
@@ -498,10 +497,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       vueComplete,
       dire,
       releve,
-      revocation: {
-        ligneDePortabilite: noeud("portabilite-etat")?.textContent,
-        revocationIncertaine: etat.revocationIncertaine === true,
-      },
+      revocation: REVOCATION,
       visibles:
         applicationVisible && !visibles.includes("espace-de-travail")
           ? [...visibles, "espace-de-travail"]

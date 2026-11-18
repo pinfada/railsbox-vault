@@ -120,18 +120,26 @@ de l'enveloppe, de `src/vm/` ni des codes de refus.**
   la page ne peut pas tenir (relecture de #308, REFUSÉ `5feee19`). Une attestation du Worker (« rien
   n'a été publié ») permettrait de dire « refusée » : c'est un changement du Worker, hors de ce lot
   « page seule », non fait. La page ne dit jamais « rien n'a été révoqué » d'une demande partie.
-- **Relecture de #308 (REFUSÉ `13b01fa`), la sortie et l'alerte.** (1) Pendant une révocation en
-  vol, « Terminer sans révoquer » et « Revenir à mon application » sont FERMÉS (`disabled`) : le
-  premier aurait posé `sansRevoquer` et fait dire « rien n'a été révoqué » d'une demande qui peut
-  aboutir. La page lit ce que le geste publie — la ligne `portabilite:revocation-en-cours` — ;
-  aucune navigation d'étape n'existe par ailleurs à l'étape 9. Après une issue incertaine, «
-  Terminer sans révoquer » RESTE fermé tant que le document vit (l'incertitude est retenue par la
-  page) ; « Revenir à mon application » est rouvert, il ne dit rien du coffre. Une révocation qui
-  aboutit ensuite lève le doute. (2) Un échec reçu après l'envoi n'appelle plus `refuser` : aucune
-  conduite « refusé » n'est écrite, la ligne d'état est `portabilite:revocation-incertaine:<code>`,
-  l'alerte dit « a peut-être eu lieu », le code reste au relevé et en console. _Limite_ :
-  l'incertitude retenue est celle du document ; rechargée, la page ne s'en souvient pas (la personne
-  a été invitée à rouvrir son coffre pour vérifier). Un message altéré livré au Worker le fait
-  cesser de répondre : l'épreuve navigateur joue ainsi, sur le vrai Worker, l'issue « Worker mort ».
+- **Relecture de #308 (REFUSÉ `25254ab`) : réglée par CONCEPTION, pas par un correctif de plus.**
+  Les deux défauts — une sortie pressée que `disabled` n'arrête pas, un avertissement qui disparaît
+  avec la navigation — avaient la même cause : l'état de la révocation était lu dans le rendu. (A)
+  **Un état unique** (`src/coquille/etat-de-la-revocation.mjs`, trois phases : repos, en vol,
+  incertaine), posé de façon SYNCHRONE, dans le tour de boucle de « Oui », AVANT l'envoi, et lu de
+  façon synchrone AU DÉBUT du gestionnaire de chaque geste du parcours (`geste-du-parcours.mjs`). En
+  vol, tous sont fermés ; après une issue incertaine, « Terminer sans révoquer » — le seul qui
+  dirait « rien n'a été révoqué » — reste fermé, « Revenir à mon application » est permis.
+  `disabled` reste, pour la personne, mais ne garde rien : un `click` retenu par un rendu différé
+  pendant un appui (`pression-du-bouton.mjs`) ou un `dispatchEvent()` synthétique atteignent le
+  gestionnaire, qui décide. (B) **Un avertissement hors du bloc** : `#parcours-incertitude`
+  (`role="alert"`), une région persistante de la carte, que le nettoyage des messages au clic
+  n'efface pas (`messages-de-geste.mjs`). Elle dit « en cours… ne peut plus être annulée » en vol,
+  puis « a peut-être eu lieu — rouvrez votre coffre pour vérifier » ; elle ne se lève que par une
+  révocation qui aboutit ou la réouverture du coffre (le document se recharge). Un échec reçu après
+  l'envoi n'appelle plus `refuser` : aucune conduite « refusé », le code reste au relevé, dans la
+  ligne d'état et en console. Un refus typé peut survenir après la publication (ADR 0026) et le
+  Worker n'atteste pas la phase : une attestation permettrait de dire « refusée » ; c'est un
+  changement du Worker, hors de ce lot « page seule », non fait. _Limite_ : l'état est celui du
+  document ; rechargé, il n'est pas persisté (la personne a été invitée à rouvrir son coffre pour
+  vérifier).
 - **Non prouvé.** L'annonce par un vrai lecteur d'écran (seules la description et le nom accessibles
   sont éprouvés, sous Chromium) ; le parcours clavier E2E sur Rails réel (il tourne en CI).

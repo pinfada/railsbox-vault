@@ -14,6 +14,7 @@
 // rien : aucun de ces trois types n'existe sur le port restreint.
 
 import { brancherUneConfirmation } from "./confirmation-en-deux-temps.mjs";
+import { REVOCATION } from "./etat-de-la-revocation.mjs";
 import { AVERTISSEMENT_SANS_RECUPERATION } from "./feuille-de-recuperation.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
@@ -71,6 +72,7 @@ export function brancherLesGestesDePortabilite(liaison) {
   const noeud = (id) => liaison.racine.querySelector(`#${id}`);
   const contexte = {
     ...liaison,
+    revocation: liaison.revocation ?? REVOCATION,
     noeud,
     dire: (id, texte) => {
       const cible = noeud(id);
@@ -94,6 +96,7 @@ export function brancherLesGestesDePortabilite(liaison) {
     annuler: "revoquer-annuler",
     confirmer: "revoquer-confirmer",
     confirmee: revoquer,
+    enCours: () => contexte.revocation.enVol(),
     demandee: () => contexte.dire("revocation-etat", ""),
     annulee: () => contexte.dire("revocation-etat", MESSAGES.revocationAnnulee),
   });
@@ -190,16 +193,29 @@ async function restaurerLeCoffre(contexte, fichier) {
   }
 }
 
-/** RÉVOQUER EN URGENCE : tout ce qui ouvre ce coffre, sauf ce qui vient de l'ouvrir. */
+/**
+ * RÉVOQUER EN URGENCE : tout ce qui ouvre ce coffre, sauf ce qui vient de l'ouvrir.
+ *
+ * L'état de la révocation (`etat-de-la-revocation.mjs`) est posé EN PREMIER, de façon synchrone,
+ * AVANT l'envoi : chaque gestionnaire de sortie de l'étape 9 le lit, sans attendre aucun rendu.
+ * L'avertissement vit dans `parcours-incertitude`, HORS du bloc de la révocation (relecture de #308).
+ */
 async function revoquerEnUrgence(contexte) {
-  const { demander, rapport, publier, dire } = contexte;
+  const { demander, rapport, publier, dire, revocation } = contexte;
+  revocation.commencer();
   dire("portabilite-refus", "");
-  // La demande part pour de bon : la page le dit AVANT d'attendre, et ne dit plus « annulée » (#308).
-  // La ligne « en cours » est ce que la page lit pour fermer les sorties de l'étape 9.
-  dire("revocation-etat", MESSAGES.revocationEnCours);
+  dire("parcours-incertitude", MESSAGES.revocationEnCours);
+  // La ligne « en cours » : ce que la page lit pour fermer ses autres gestes longs.
   conclure(contexte, "portabilite:revocation-en-cours");
   try {
-    const rendu = await demander("revoquerEnUrgence", {});
+    let rendu;
+    try {
+      rendu = await demander("revoquerEnUrgence", {});
+    } catch (erreur) {
+      return douterDeLaRevocation(contexte, erreur);
+    }
+    revocation.aboutir();
+    dire("parcours-incertitude", ""); // la réussite se dit par le parcours : « N moyen(s) retiré(s) »
     rapport.portabilite.revocation = {
       versionEnveloppe: rendu.versionEnveloppe,
       restants: rendu.restants,
@@ -215,21 +231,27 @@ async function revoquerEnUrgence(contexte) {
       contexte,
       `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`,
     );
-    dire("revocation-etat", ""); // la réussite se dit par le parcours : « N moyen(s) retiré(s) »
-    await contexte.apresRevocation?.();
-    return rapport.portabilite.revocation;
-  } catch (erreur) {
-    // Tout échec reçu APRÈS l'envoi se dit « a peut-être eu lieu » : un refus typé peut survenir
-    // après la publication de la page neuve (ADR 0026), et le Worker n'atteste pas la phase. Aucune
-    // conduite « refusé » n'est écrite ; le code reste au relevé et dans la ligne d'état (diagnostic).
-    const code = erreur?.code ?? CODES_REFUS_COQUILLE.gesteRompu;
-    rapport.portabilite.revocation = { incertaine: true, code };
-    dire("revocation-etat", MESSAGES.revocationIncertaine);
-    conclure(contexte, `portabilite:revocation-incertaine:${code}`);
+    // Relire l'inventaire n'est pas la révocation : son échec ne la défait pas, il se relit au geste suivant.
+    await Promise.resolve(contexte.apresRevocation?.()).catch(() => {});
     return rapport.portabilite.revocation;
   } finally {
     publier();
   }
+}
+
+/**
+ * Tout échec reçu APRÈS l'envoi laisse la révocation INCERTAINE : un refus typé peut survenir après la
+ * publication de la page neuve (ADR 0026), et le Worker n'atteste pas la phase. Aucune conduite
+ * « refusé » n'est écrite ; le code reste au relevé et dans la ligne d'état (diagnostic).
+ */
+function douterDeLaRevocation(contexte, erreur) {
+  const { rapport, dire, revocation } = contexte;
+  const code = erreur?.code ?? CODES_REFUS_COQUILLE.gesteRompu;
+  revocation.douter();
+  rapport.portabilite.revocation = { incertaine: true, code };
+  dire("parcours-incertitude", MESSAGES.revocationIncertaine);
+  conclure(contexte, `portabilite:revocation-incertaine:${code}`);
+  return rapport.portabilite.revocation;
 }
 
 /**

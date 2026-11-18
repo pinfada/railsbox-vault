@@ -16,7 +16,7 @@ export const SECTIONS = ["deverrouillage", "feuille", "cycle", "portabilite"];
  * @param {{ doc: { querySelectorAll: (s: string) => Iterable<any> },
  *           noeud: (id: string) => any, visibles: readonly string[], vueComplete: boolean,
  *           dire: (id: string, texte: string) => void, releve: object,
- *           revocation?: { ligneDePortabilite?: string | null, revocationIncertaine?: boolean } }} page
+ *           revocation?: { sortieFermee: (id: string) => boolean } }} page
  */
 export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve, revocation }) {
   for (const element of doc.querySelectorAll("[data-bloc]")) {
@@ -29,5 +29,5 @@ export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, relev
       !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);
   }
   suivreLaConfirmationDeRevocation({ noeud, dire, releve });
-  if (revocation !== undefined) poserLaSortie({ noeud, ...revocation });
+  if (revocation !== undefined) poserLaSortie({ noeud, revocation });
 }

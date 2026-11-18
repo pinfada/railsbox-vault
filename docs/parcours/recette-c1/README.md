@@ -30,6 +30,16 @@ et `node tools/serve.mjs --role app --host localhost --port 4106`), puis
 La mise en page des écrans ne change pas (mêmes blocs ; texte plus long seulement dans le cas à deux
 feuilles). Rejouer : `scripts/recette-deux-feuilles.mjs <origine> <dossier>`.
 
+## Relecture de #308 (REFUSÉ `25254ab`) : l'état unique et l'avertissement qui reste
+
+Le message de révocation est retenu entre la page et le Worker ; l'issue incertaine est un refus
+typé livré à la page après l'envoi. Captures `en-vol-*`, `incertaine-etape-9-*`,
+`incertaine-apres-retour-*` (360/1280, clair/sombre) et `mesures-incertitude-*.json` : en vol, les
+deux sorties sont désactivées et la région dit « en cours » ; après l'issue incertaine, « Terminer
+sans révoquer » reste désactivé, « Revenir à mon application » est permis, et la région **reste
+visible** à l'étape 4 (hors du bloc de la révocation). Rejouer :
+`scripts/recette-incertitude.mjs <origine> <dossier>`.
+
 ## Limites de la recette
 
 - Sans machine virtuelle : le parcours clavier sur Rails réel est l'E2E `parcours-clavier.spec.mjs`

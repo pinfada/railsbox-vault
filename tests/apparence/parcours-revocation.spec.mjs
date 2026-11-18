@@ -159,6 +159,7 @@ test("en vol : une sortie PRESSÉE pendant le départ de la demande (rendu diff�
   const oui = bouton(page, "Oui, révoquer les autres moyens");
   // Un appui est maintenu sur « Terminer sans révoquer » : `pression-du-bouton.mjs` RETIENT le rendu
   // — donc `disabled` — jusqu'au relâchement. Pendant ce temps, « Oui » part, au clavier.
+  await page.locator("#parcours-sans-revoquer").scrollIntoViewIfNeeded();
   const cible = await page.locator("#parcours-sans-revoquer").boundingBox();
   await page.mouse.move(cible.x + 8, cible.y + 8);
   await page.mouse.down();
@@ -193,12 +194,13 @@ test("issue incertaine : l'avertissement vit hors du bloc, survit à « Revenir 
   // La navigation permise : « Revenir à mon application ». L'avertissement RESTE, visible et dans
   // l'arbre d'accessibilité, hors du bloc de la révocation (qui n'est plus à l'écran).
   await bouton(page, "Revenir à mon application").click();
-  await expect(titre(page, "Votre application")).toBeVisible();
+  await expect(titre(page, "Travailler dans l'application")).toBeVisible();
   await expect(avertissement).toBeVisible();
   await expect(page.locator("#parcours")).toContainText("Rouvrez votre coffre");
   expect(await page.locator("#parcours").ariaSnapshot()).toContain("peut-être eu lieu");
-  // Un autre geste ne l'efface pas non plus.
-  await bouton(page, "Sauvegarder mon coffre").click();
+  // Un autre geste ne l'efface pas non plus : « Continuer » ramène à l'étape 9.
+  await bouton(page, "Continuer : Révoquer en urgence").click();
+  await expect(titre(page, "Révoquer en urgence")).toBeVisible();
   await expect(avertissement).toBeVisible();
 
   // Levée : une révocation qui aboutit.

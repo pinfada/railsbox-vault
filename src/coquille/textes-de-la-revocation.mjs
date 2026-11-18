@@ -23,8 +23,7 @@ export const TEXTES_DE_LA_REVOCATION = Object.freeze({
     "Révocation en cours : la demande est partie et ne peut plus être annulée. Attendez la réponse " +
     "du coffre.",
   revocationIncertaine:
-    "La révocation est partie, mais le coffre ne l'a pas confirmée (la raison, s'il en a donné une, " +
-    "est écrite plus haut) : elle a peut-être eu lieu. " +
+    "La révocation est partie, mais le coffre ne l'a pas confirmée : elle a peut-être eu lieu. " +
     "Rouvrez votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites " +
     "la révocation.",
   avertissementDeRevocation: (moyen, moyens = null, options = {}) =>

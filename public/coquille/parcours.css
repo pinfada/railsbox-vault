@@ -308,6 +308,7 @@ button[aria-disabled="true"] {
 }
 #parcours-attente:not(:empty),
 #parcours-refus:not(:empty),
+#parcours-incertitude:not(:empty),
 #parcours-reussite:not(:empty) {
   border-left: 3px solid var(--bord);
   background: var(--support);
@@ -315,7 +316,8 @@ button[aria-disabled="true"] {
   font-size: 16px;
   margin-bottom: 24px;
 }
-#parcours-refus:not(:empty) {
+#parcours-refus:not(:empty),
+#parcours-incertitude:not(:empty) {
   border: 1px solid var(--bord);
   border-left-width: 4px;
 }
@@ -639,7 +641,7 @@ html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open]))
   visibility: hidden;
 }
 html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open]))
-  :is(#parcours-attente, #parcours-refus):not(:empty),
+  :is(#parcours-attente, #parcours-refus, #parcours-incertitude):not(:empty),
 html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coquille:not([hidden]) {
   visibility: visible;
   position: fixed;
@@ -654,6 +656,9 @@ html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coqu
 }
 html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coquille:not([hidden]) {
   bottom: 96px;
+}
+html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #parcours-incertitude:not(:empty) {
+  bottom: 176px;
 }
 /* Menu OUVERT : le panneau du coffre s'ouvre à droite, l'application se resserre à sa gauche. */
 html[data-travail-pret="true"]:has(#menu-du-coffre[open]) main {

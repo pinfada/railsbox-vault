@@ -56,13 +56,11 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
   }
 
   /**
-   * Une révocation PARTIE dont l'issue n'est pas connue : alerte « a peut-être eu lieu », jamais
-   * « refusée ». La page retient l'incertitude : « Terminer sans révoquer » ne la contredit pas.
+   * Une révocation PARTIE dont l'issue n'est pas connue : le diagnostic va en console. L'annonce, elle,
+   * vit dans `parcours-incertitude`, hors du bloc, écrite par le geste : aucune alerte « refusée ».
    */
   function incertaine(code) {
     console.warn(`[RailsBox Vault] révocation incertaine : ${code ?? "sans code"}`);
-    etat.revocationIncertaine = true;
-    refuserSansCode(MESSAGES.revocationIncertaine);
   }
 
   function refuserSansCode(texte) {
@@ -154,7 +152,6 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     }
     if (ligne.evenement === "revoque") {
       etat.revocationFaite = true;
-      etat.revocationIncertaine = false; // une révocation qui aboutit lève le doute
       pas("revocation-faite");
       const revocation = lireJson("coquille-rapport").portabilite?.revocation ?? {};
       const retires = revocation.nombreRetires ?? 0;

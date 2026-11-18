@@ -9,9 +9,11 @@
 // paramètre, ADR 0039, § 5). La garde reste dans le Worker, inchangée. Ce que le module garantit est
 // plus modeste et vérifiable : `confirmee` n'est appelée que depuis « le panneau est ouvert », une
 // fois par ouverture, et JAMAIS tant qu'une demande précédente attend sa réponse. L'état « ouverte »
-// est celui du DOM (l'attribut `hidden` du panneau) ; l'état « en vol » est tenu ici, et dit sur le
-// geste (`aria-disabled`) : une fois « Oui » cliqué, la demande est partie et ne s'annule plus, donc
-// la confirmation ne se rouvre pas, « Annuler » n'existe plus, et aucun second message ne part.
+// est celui du DOM (l'attribut `hidden` du panneau). L'état « en vol » n'est PAS tenu ici : l'appelant
+// le donne (`enCours`), parce qu'il doit être posé par le geste lui-même, AVANT l'envoi, et lu par
+// d'autres que ce composant (`etat-de-la-revocation.mjs`). Une fois « Oui » cliqué, la demande est
+// partie et ne s'annule plus : la confirmation ne se rouvre pas, « Annuler » n'existe plus, aucun
+// second message ne part ; le geste se dit `aria-disabled` le temps de la demande.
 //
 // Le module ne porte aucun texte : la page écrit ce que la confirmation dit (`textes-du-parcours.mjs`).
 // #218 (retirer un code que l'on n'a plus) réutilise ce composant avec ses propres identifiants.
@@ -19,7 +21,8 @@
 /**
  * @param {{ noeud: (id: string) => any,
  *           declencheur: string, panneau: string, annuler: string, confirmer: string,
- *           confirmee: () => void | Promise<unknown>, demandee?: () => void, annulee?: () => void }} liaison
+ *           confirmee: () => void | Promise<unknown>, enCours?: () => boolean,
+ *           demandee?: () => void, annulee?: () => void }} liaison
  * @returns {{ demander: () => void, annuler: () => void, confirmer: () => Promise<void> }}
  */
 export function brancherUneConfirmation({
@@ -29,16 +32,16 @@ export function brancherUneConfirmation({
   annuler,
   confirmer,
   confirmee,
+  enCours = () => false,
   demandee = () => {},
   annulee = () => {},
 }) {
-  let enVol = false;
   const ouverte = () => noeud(panneau)?.hidden === false;
   const dire = (ouvert) => noeud(declencheur)?.setAttribute("aria-expanded", String(ouvert));
 
   function demander() {
     // La SEULE garde « une demande en vol » : la confirmation ne se rouvre qu'une fois la réponse connue.
-    if (ouverte() || enVol) return;
+    if (ouverte() || enCours()) return;
     noeud(panneau).hidden = false;
     dire(true);
     noeud(annuler)?.focus();
@@ -55,16 +58,15 @@ export function brancherUneConfirmation({
     refermer();
     annulee();
   }
-  /** `confirmee` peut rendre une promesse : tant qu'elle n'est pas réglée, la demande est EN VOL. */
+  /** `confirmee` peut rendre une promesse : le geste reste `aria-disabled` jusqu'à sa réponse. */
   async function accomplir() {
     if (!ouverte()) return;
     refermer();
-    enVol = true;
+    const attente = confirmee(); // pose l'état « en vol », de façon synchrone, AVANT l'envoi
     noeud(declencheur)?.setAttribute("aria-disabled", "true");
     try {
-      await confirmee();
+      await attente;
     } finally {
-      enVol = false;
       noeud(declencheur)?.removeAttribute("aria-disabled");
     }
   }

@@ -6,8 +6,10 @@
  *           revocation: { sortieFermee: (id: string) => boolean } }} liaison
  */
 export function brancherUnGesteDuParcours({ noeud, id, faire, rendre, revocation }) {
-  void revocation;
   noeud(id)?.addEventListener("click", () => {
+    // La garde est ICI, synchrone, au début du gestionnaire : `disabled` ne la remplace pas (un
+    // `dispatchEvent()` synthétique, ou un `click` retenu par un rendu différé, atteint le gestionnaire).
+    if (revocation.sortieFermee(id)) return;
     faire();
     rendre();
   });
