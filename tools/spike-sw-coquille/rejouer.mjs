@@ -17,7 +17,12 @@ import { Epreuve, MOTEURS } from "./banc/cadre.mjs";
 
 const ICI = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
-const option = (nom, defaut) => argv.find((a) => a.startsWith(`--${nom}=`))?.split("=").slice(1).join("=") ?? defaut;
+const option = (nom, defaut) =>
+  argv
+    .find((a) => a.startsWith(`--${nom}=`))
+    ?.split("=")
+    .slice(1)
+    .join("=") ?? defaut;
 const moteurs = option("moteurs", "chromium,firefox,webkit").split(",").filter(Boolean);
 const filtre = option("epreuves", "*").split(",");
 const dossierSortie = resolve(option("sortie", join(ICI, "sorties")));
@@ -29,11 +34,17 @@ for (const g of groupes) {
     const module = await import(`./epreuves/${g}.mjs`);
     toutes.push(...module.epreuves);
   } catch (erreur) {
-    if (erreur?.code !== "ERR_MODULE_NOT_FOUND" || !String(erreur.message).includes(`epreuves/${g}.mjs`)) throw erreur;
+    if (
+      erreur?.code !== "ERR_MODULE_NOT_FOUND" ||
+      !String(erreur.message).includes(`epreuves/${g}.mjs`)
+    )
+      throw erreur;
   }
 }
 const correspond = (id) =>
-  filtre.some((f) => (f === "*" ? true : f.endsWith("*") ? id.startsWith(f.slice(0, -1)) : id === f));
+  filtre.some((f) =>
+    f === "*" ? true : f.endsWith("*") ? id.startsWith(f.slice(0, -1)) : id === f,
+  );
 const aJouer = toutes.filter((e) => correspond(e.id));
 
 const resultats = [];
@@ -51,17 +62,38 @@ for (const nom of moteurs) {
     try {
       await Promise.race([
         epreuve.run(t),
-        new Promise((_, ko) => setTimeout(() => ko(new Error(`délai d'épreuve dépassé (${epreuve.delaiMs ?? 120000} ms)`)), epreuve.delaiMs ?? 120000)),
+        new Promise((_, ko) =>
+          setTimeout(
+            () => ko(new Error(`délai d'épreuve dépassé (${epreuve.delaiMs ?? 120000} ms)`)),
+            epreuve.delaiMs ?? 120000,
+          ),
+        ),
       ]);
     } catch (e) {
-      erreur = String(e?.stack ?? e).split("\n").slice(0, 4).join(" | ");
+      erreur = String(e?.stack ?? e)
+        .split("\n")
+        .slice(0, 4)
+        .join(" | ");
     }
     await t.nettoyer();
     const ok = erreur === null && t.assertions.length > 0 && t.assertions.every((a) => a.ok);
-    resultats.push({ id: epreuve.id, titre: epreuve.titre, moteur: nom, ok, ms: Date.now() - debut, erreur, assertions: t.assertions, mesures: t.mesures, notes: t.notes });
-    process.stdout.write(`${ok ? "OK  " : "ÉCHEC"} ${epreuve.id.padEnd(6)} ${nom.padEnd(8)} ${String(Date.now() - debut).padStart(6)} ms  ${epreuve.titre}\n`);
+    resultats.push({
+      id: epreuve.id,
+      titre: epreuve.titre,
+      moteur: nom,
+      ok,
+      ms: Date.now() - debut,
+      erreur,
+      assertions: t.assertions,
+      mesures: t.mesures,
+      notes: t.notes,
+    });
+    process.stdout.write(
+      `${ok ? "OK  " : "ÉCHEC"} ${epreuve.id.padEnd(6)} ${nom.padEnd(8)} ${String(Date.now() - debut).padStart(6)} ms  ${epreuve.titre}\n`,
+    );
     if (!ok) {
-      for (const a of t.assertions.filter((x) => !x.ok)) process.stdout.write(`        ✗ ${a.message}\n`);
+      for (const a of t.assertions.filter((x) => !x.ok))
+        process.stdout.write(`        ✗ ${a.message}\n`);
       if (erreur) process.stdout.write(`        ! ${erreur}\n`);
     }
     await navigateur.close().catch(() => {});
@@ -72,7 +104,11 @@ const horodatage = new Date().toISOString();
 const rapport = {
   contrat: "spike-sw-coquille-d1h/1",
   horodatage,
-  machine: { plateforme: `${os.platform()} ${os.arch()}`, noyau: os.release(), node: process.version },
+  machine: {
+    plateforme: `${os.platform()} ${os.arch()}`,
+    noyau: os.release(),
+    node: process.version,
+  },
   moteurs: versions,
   filtre,
   total: resultats.length,
@@ -82,5 +118,7 @@ const rapport = {
 mkdirSync(dossierSortie, { recursive: true });
 const nom = `${horodatage.slice(0, 10)}-${moteurs.join("+")}-${filtre.join("+").replace(/\*/g, "tout")}.json`;
 writeFileSync(join(dossierSortie, nom), JSON.stringify(rapport, null, 2) + "\n");
-process.stdout.write(`\n${rapport.ok}/${rapport.total} épreuves ok — ${join(dossierSortie, nom)}\n`);
+process.stdout.write(
+  `\n${rapport.ok}/${rapport.total} épreuves ok — ${join(dossierSortie, nom)}\n`,
+);
 process.exit(rapport.ok === rapport.total ? 0 : 1);

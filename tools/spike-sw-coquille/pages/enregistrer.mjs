@@ -8,13 +8,18 @@
 // chargement de la page sur une installation.
 const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
 try {
-  const registration = await navigator.serviceWorker.register("/sw-coquille.mjs", { scope: "/", updateViaCache: "none" });
+  const registration = await navigator.serviceWorker.register("/sw-coquille.mjs", {
+    scope: "/",
+    updateViaCache: "none",
+  });
   const ver = registration.installing ?? registration.waiting ?? registration.active;
   const limite = Date.now() + 25000;
-  while (ver && ver.state !== "activated" && ver.state !== "redundant" && Date.now() < limite) await attendre(50);
+  while (ver && ver.state !== "activated" && ver.state !== "redundant" && Date.now() < limite)
+    await attendre(50);
   if (!ver || ver.state === "redundant") throw new Error("installation rejetée");
   if (ver.state !== "activated") throw new Error("délai d'activation");
   document.documentElement.dataset.enregistrement = "actif";
 } catch (erreur) {
-  document.documentElement.dataset.enregistrement = "echec:" + erreur?.name + ":" + String(erreur?.message).slice(0, 80);
+  document.documentElement.dataset.enregistrement =
+    "echec:" + erreur?.name + ":" + String(erreur?.message).slice(0, 80);
 }

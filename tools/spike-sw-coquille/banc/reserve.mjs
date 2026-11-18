@@ -78,10 +78,12 @@ export function reglesHeadersPubliees() {
 export function entetesDe(regles, chemin) {
   const entetes = enTetesPour(regles, chemin);
   if (chemin === "/spike/sans-csp.html") {
-    for (const nom of Object.keys(entetes)) if (nom.toLowerCase() === "content-security-policy") delete entetes[nom];
+    for (const nom of Object.keys(entetes))
+      if (nom.toLowerCase() === "content-security-policy") delete entetes[nom];
   }
   if (chemin === "/spike/sans-coop.html") {
-    for (const nom of Object.keys(entetes)) if (nom.toLowerCase() === "cross-origin-opener-policy") delete entetes[nom];
+    for (const nom of Object.keys(entetes))
+      if (nom.toLowerCase() === "cross-origin-opener-policy") delete entetes[nom];
   }
   return entetes;
 }
@@ -120,14 +122,19 @@ export function fabriquerGeneration({
   }
   if (!sansFixtures) {
     for (const complet of lister(PAGES)) {
-      fichiers.set("/spike/" + relative(PAGES, complet).split(sep).join("/"), readFileSync(complet));
+      fichiers.set(
+        "/spike/" + relative(PAGES, complet).split(sep).join("/"),
+        readFileSync(complet),
+      );
     }
   }
   // La version de la réserve vue de la page ET du Worker : le module que les deux importent.
   const version = `pub-${String(sequence).padStart(4, "0")}`;
   fichiers.set(
     "/spike/version-reserve.mjs",
-    Buffer.from(`export const VERSION = ${JSON.stringify(version)};\nexport const SEQUENCE = ${sequence};\n`),
+    Buffer.from(
+      `export const VERSION = ${JSON.stringify(version)};\nexport const SEQUENCE = ${sequence};\n`,
+    ),
   );
   for (const [chemin, octets] of Object.entries(surcharges)) {
     if (octets === null) fichiers.delete(chemin);

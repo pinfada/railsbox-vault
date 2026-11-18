@@ -20,22 +20,28 @@ export const ETATS = Object.freeze({
   },
   ECHOUEE: {
     id: "verification-echouee",
-    texte: "La vérification a échoué : l'éditeur a publié une version que cette copie n'a pas pu installer. Cette version n'est peut-être plus la bonne.",
+    texte:
+      "La vérification a échoué : l'éditeur a publié une version que cette copie n'a pas pu installer. Cette version n'est peut-être plus la bonne.",
     portail: "autorise, avertissement permanent affiché",
   },
   NON_VERIFIABLE: {
     id: "version-courante-non-verifiable",
-    texte: "Impossible de savoir si cette version a été retirée (hors connexion, ou éditeur injoignable).",
-    portail: "autorise (le hors connexion est la fonction), avertissement permanent, jamais « à jour »",
+    texte:
+      "Impossible de savoir si cette version a été retirée (hors connexion, ou éditeur injoignable).",
+    portail:
+      "autorise (le hors connexion est la fonction), avertissement permanent, jamais « à jour »",
   },
   PRETE: {
     id: "mise-a-jour-prete",
-    texte: "Une version plus récente est prête. Fermez TOUTES les fenêtres du coffre, puis rouvrez-le.",
-    portail: "autorise, bandeau permanent ; la mise à jour ne s'applique qu'après la fermeture de tous les clients",
+    texte:
+      "Une version plus récente est prête. Fermez TOUTES les fenêtres du coffre, puis rouvrez-le.",
+    portail:
+      "autorise, bandeau permanent ; la mise à jour ne s'applique qu'après la fermeture de tous les clients",
   },
   REVOQUEE: {
     id: "revocation-connue",
-    texte: "Cette version a été retirée par son éditeur. Fermez TOUTES les fenêtres du coffre, puis rouvrez-le.",
+    texte:
+      "Cette version a été retirée par son éditeur. Fermez TOUTES les fenêtres du coffre, puis rouvrez-le.",
     portail: "REFUSE (VAULT_COQUILLE_RESERVE_PERIMEE) avant tout Worker et toute clé",
   },
   VERIFIEE: {
@@ -67,16 +73,40 @@ export function etatDeFraicheur({ maj, attente, sequenceCourante }) {
  * DÉCISION DU PORTAIL — fonction pure. Un refus porte un code typé ET une cause (diagnostic).
  * Aucun Worker n'est créé tant que `autorise` n'est pas vrai.
  */
-export function decider({ controleur, sequencePage, identite, verification, fraicheur, controleurChange }) {
+export function decider({
+  controleur,
+  sequencePage,
+  identite,
+  verification,
+  fraicheur,
+  controleurChange,
+}) {
   if (!controleur) return { autorise: false, code: CODES.ABSENTE, cause: "aucun-controleur" };
-  if (identite === null || identite === undefined) return { autorise: false, code: CODES.ABSENTE, cause: "silence-du-sw" };
+  if (identite === null || identite === undefined)
+    return { autorise: false, code: CODES.ABSENTE, cause: "silence-du-sw" };
   if (identite.retrait) return { autorise: false, code: CODES.PERIMEE, cause: "retrait" };
-  if (controleurChange) return { autorise: false, code: CODES.DIVERGENTE, cause: "controleur-change" };
-  if (identite.sequence !== sequencePage) return { autorise: false, code: CODES.DIVERGENTE, cause: "sequence" };
-  if (verification === null || verification === undefined) return { autorise: false, code: CODES.ABSENTE, cause: "silence-du-sw" };
-  if (verification.manquants?.length > 0) return { autorise: false, code: CODES.INCOMPLETE, cause: "entrees-manquantes", detail: verification.manquants };
-  if (verification.alteres?.length > 0) return { autorise: false, code: CODES.ALTEREE, cause: "entrees-alterees", detail: verification.alteres };
-  if (fraicheur === ETATS.REVOQUEE) return { autorise: false, code: CODES.PERIMEE, cause: "plancher" };
+  if (controleurChange)
+    return { autorise: false, code: CODES.DIVERGENTE, cause: "controleur-change" };
+  if (identite.sequence !== sequencePage)
+    return { autorise: false, code: CODES.DIVERGENTE, cause: "sequence" };
+  if (verification === null || verification === undefined)
+    return { autorise: false, code: CODES.ABSENTE, cause: "silence-du-sw" };
+  if (verification.manquants?.length > 0)
+    return {
+      autorise: false,
+      code: CODES.INCOMPLETE,
+      cause: "entrees-manquantes",
+      detail: verification.manquants,
+    };
+  if (verification.alteres?.length > 0)
+    return {
+      autorise: false,
+      code: CODES.ALTEREE,
+      cause: "entrees-alterees",
+      detail: verification.alteres,
+    };
+  if (fraicheur === ETATS.REVOQUEE)
+    return { autorise: false, code: CODES.PERIMEE, cause: "plancher" };
   return { autorise: true, code: null, cause: null };
 }
 
@@ -138,19 +168,31 @@ export async function observerLaFraicheur(registration, { delaiMs, delaiReponseM
     const fin = new Promise((r) => {
       const ver = registration.installing;
       const verifier = () => {
-        if (ver.state === "installed" || ver.state === "redundant" || ver.state === "activated") r("regle");
+        if (ver.state === "installed" || ver.state === "redundant" || ver.state === "activated")
+          r("regle");
       };
       ver.addEventListener("statechange", verifier);
       verifier();
     });
-    const issue = await Promise.race([fin, new Promise((r) => setTimeout(() => r("delai"), Math.max(0, delaiMs - (performance.now() - t0))))]);
+    const issue = await Promise.race([
+      fin,
+      new Promise((r) =>
+        setTimeout(() => r("delai"), Math.max(0, delaiMs - (performance.now() - t0))),
+      ),
+    ]);
     if (issue === "delai") maj = "delai";
   }
-  if (maj === "ok" && (installationRejetee || (trouve && !registration.waiting && !registration.installing))) maj = "rejetee";
+  if (
+    maj === "ok" &&
+    (installationRejetee || (trouve && !registration.waiting && !registration.installing))
+  )
+    maj = "rejetee";
   let attente = null;
   if (registration.waiting) {
     const reponse = await interroger(registration.waiting, "version", delaiReponseMs);
-    attente = reponse ? { sequence: reponse.sequence, plancher: reponse.plancher, retrait: reponse.retrait } : { sequence: -1, plancher: 0, retrait: false, muet: true };
+    attente = reponse
+      ? { sequence: reponse.sequence, plancher: reponse.plancher, retrait: reponse.retrait }
+      : { sequence: -1, plancher: 0, retrait: false, muet: true };
   }
   noter("etat:" + maj + (attente ? " attente=" + JSON.stringify(attente) : ""));
   return { maj, attente, chronologie, enRetard: maj === "delai" ? miseAJour : null };
@@ -161,7 +203,14 @@ export async function observerLaFraicheur(registration, { delaiMs, delaiReponseM
  * Rend `{ autorise, code, cause, fraicheur, travailleur }`. Aucun secret ne circule ici.
  * `crochets.avantCreation` / `crochets.apresVerification` laissent l'épreuve interposer une faute.
  */
-export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000, delaiReponseMs = 3000, creerLeTravailleur, crochets = {}, mutants = {} }) {
+export async function ouvrirLePortail({
+  sequencePage,
+  delaiVerificationMs = 5000,
+  delaiReponseMs = 3000,
+  creerLeTravailleur,
+  crochets = {},
+  mutants = {},
+}) {
   const conteneur = navigator.serviceWorker;
   const controleur = conteneur.controller;
   let controleurChange = false;
@@ -171,15 +220,33 @@ export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000
   conteneur.addEventListener("controllerchange", surChangement);
   try {
     if (!controleur) {
-      if (mutants.contourneSansSW) return { autorise: true, code: null, cause: "contourne", fraicheur: ETATS.NON_VERIFIABLE, travailleur: creerLeTravailleur() };
+      if (mutants.contourneSansSW)
+        return {
+          autorise: true,
+          code: null,
+          cause: "contourne",
+          fraicheur: ETATS.NON_VERIFIABLE,
+          travailleur: creerLeTravailleur(),
+        };
       // Pas de contrôleur : page chargée avant l'activation, rechargement forcé, OU moteur qui ne donne
       // pas de contrôleur à un SW de retrait (Firefox, mesuré R3). On interroge l'inscription ACTIVE pour
       // ne pas confondre « retrait » et « pas de SW » dans ce que la personne lit.
       const inscription = await conteneur.getRegistration("/").catch(() => null);
       if (inscription?.active) {
         const identiteActive = await interroger(inscription.active, "version", delaiReponseMs);
-        if (identiteActive?.retrait) return { autorise: false, code: CODES.PERIMEE, cause: "retrait", fraicheur: ETATS.REVOQUEE };
-        return { autorise: false, code: CODES.ABSENTE, cause: "inscription-sans-controle", fraicheur: ETATS.NON_VERIFIABLE };
+        if (identiteActive?.retrait)
+          return {
+            autorise: false,
+            code: CODES.PERIMEE,
+            cause: "retrait",
+            fraicheur: ETATS.REVOQUEE,
+          };
+        return {
+          autorise: false,
+          code: CODES.ABSENTE,
+          cause: "inscription-sans-controle",
+          fraicheur: ETATS.NON_VERIFIABLE,
+        };
       }
       return { ...decider({ controleur: null }), fraicheur: ETATS.NON_VERIFIABLE };
     }
@@ -191,14 +258,31 @@ export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000
         ? observerLaFraicheur(registration, { delaiMs: delaiVerificationMs, delaiReponseMs })
         : Promise.resolve({ maj: "non-tentee", attente: null }),
     ]);
-    const fraicheur = etatDeFraicheur({ maj: observation.maj, attente: observation.attente, sequenceCourante: identite?.sequence ?? sequencePage });
+    const fraicheur = etatDeFraicheur({
+      maj: observation.maj,
+      attente: observation.attente,
+      sequenceCourante: identite?.sequence ?? sequencePage,
+    });
     await crochets.apresVerification?.();
-    const decision = decider({ controleur: true, sequencePage, identite, verification: mutants.sansVerification ? { manquants: [], alteres: [] } : verification, fraicheur: mutants.ignoreLaRevocation ? ETATS.PRETE : fraicheur, controleurChange });
+    const decision = decider({
+      controleur: true,
+      sequencePage,
+      identite,
+      verification: mutants.sansVerification ? { manquants: [], alteres: [] } : verification,
+      fraicheur: mutants.ignoreLaRevocation ? ETATS.PRETE : fraicheur,
+      controleurChange,
+    });
     if (!decision.autorise) return { ...decision, fraicheur, observation };
     await crochets.avantCreation?.();
     // Le contrôleur a-t-il changé entre la vérification et la création ? (identité d'objet + événement)
     if (!mutants.sansRecontrole && (conteneur.controller !== controleur || controleurChange)) {
-      return { autorise: false, code: CODES.DIVERGENTE, cause: "controleur-change", fraicheur, observation };
+      return {
+        autorise: false,
+        code: CODES.DIVERGENTE,
+        cause: "controleur-change",
+        fraicheur,
+        observation,
+      };
     }
     const travailleur = creerLeTravailleur();
     // POIGNÉE DE MAIN : rien ne passe au Worker avant qu'il ait dit QUELLE version il exécute.
@@ -214,22 +298,71 @@ export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000
       });
       travailleur.postMessage({ type: "bonjour" });
     });
-    if (mutants.sansPoigneeDeMain) return { autorise: true, code: null, cause: null, fraicheur, travailleur, accueil, observation };
+    if (mutants.sansPoigneeDeMain)
+      return {
+        autorise: true,
+        code: null,
+        cause: null,
+        fraicheur,
+        travailleur,
+        accueil,
+        observation,
+      };
     if (accueil.erreur) {
       travailleur.terminate();
       // Un Worker qui ne se charge pas ne dit pas pourquoi (`error` générique) : le code typé vient
       // d'une NOUVELLE vérification de la réserve, jamais de l'événement.
-      const apres = await interroger(conteneur.controller ?? controleur, "verifier", delaiReponseMs);
-      if (apres === null) return { autorise: false, code: CODES.ABSENTE, cause: "silence-du-sw", fraicheur };
-      if (apres.alteres?.length) return { autorise: false, code: CODES.ALTEREE, cause: "entree-alteree-apres-le-portail", detail: apres.alteres, fraicheur };
-      if (apres.manquants?.length) return { autorise: false, code: CODES.INCOMPLETE, cause: "entree-absente-apres-le-portail", detail: apres.manquants, fraicheur };
+      const apres = await interroger(
+        conteneur.controller ?? controleur,
+        "verifier",
+        delaiReponseMs,
+      );
+      if (apres === null)
+        return { autorise: false, code: CODES.ABSENTE, cause: "silence-du-sw", fraicheur };
+      if (apres.alteres?.length)
+        return {
+          autorise: false,
+          code: CODES.ALTEREE,
+          cause: "entree-alteree-apres-le-portail",
+          detail: apres.alteres,
+          fraicheur,
+        };
+      if (apres.manquants?.length)
+        return {
+          autorise: false,
+          code: CODES.INCOMPLETE,
+          cause: "entree-absente-apres-le-portail",
+          detail: apres.manquants,
+          fraicheur,
+        };
       return { autorise: false, code: CODES.ABSENTE, cause: "worker-" + accueil.erreur, fraicheur };
     }
-    if (accueil.sequence !== sequencePage || conteneur.controller !== controleur || controleurChange) {
+    if (
+      accueil.sequence !== sequencePage ||
+      conteneur.controller !== controleur ||
+      controleurChange
+    ) {
       travailleur.terminate();
-      return { autorise: false, code: CODES.DIVERGENTE, cause: accueil.sequence !== sequencePage ? "worker-d-une-autre-version" : "controleur-change-apres-creation", fraicheur, accueil };
+      return {
+        autorise: false,
+        code: CODES.DIVERGENTE,
+        cause:
+          accueil.sequence !== sequencePage
+            ? "worker-d-une-autre-version"
+            : "controleur-change-apres-creation",
+        fraicheur,
+        accueil,
+      };
     }
-    return { autorise: true, code: null, cause: null, fraicheur, travailleur, accueil, observation };
+    return {
+      autorise: true,
+      code: null,
+      cause: null,
+      fraicheur,
+      travailleur,
+      accueil,
+      observation,
+    };
   } finally {
     conteneur.removeEventListener("controllerchange", surChangement);
   }

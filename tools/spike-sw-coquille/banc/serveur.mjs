@@ -9,7 +9,15 @@ import { createReadStream, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, posix } from "node:path";
 
-import { RACINE_DEPOT, CHEMIN_DU_SW, arbreDeBase, entetesDe, estEnPassage, reglesHeadersPubliees, typeDe } from "./reserve.mjs";
+import {
+  RACINE_DEPOT,
+  CHEMIN_DU_SW,
+  arbreDeBase,
+  entetesDe,
+  estEnPassage,
+  reglesHeadersPubliees,
+  typeDe,
+} from "./reserve.mjs";
 
 export const MAUVAIS = "export const V = 'MAUVAIS';\n";
 
@@ -71,7 +79,11 @@ export class Origine {
     let chemin = brut === "/" ? "/index.html" : brut;
     if (this.tolerant) {
       try {
-        chemin = posix.normalize(decodeURIComponent(chemin)).toLowerCase().replace(/\/{2,}/g, "/").replace(/\/$/, "");
+        chemin = posix
+          .normalize(decodeURIComponent(chemin))
+          .toLowerCase()
+          .replace(/\/{2,}/g, "/")
+          .replace(/\/$/, "");
       } catch {
         /* chemin non décodable : tel quel */
       }
@@ -102,7 +114,9 @@ export class Origine {
     if (reglage?.pendre) return; // l'origine accepte la connexion et ne répond jamais
     if (reglage?.delaiMs) await new Promise((r) => setTimeout(r, reglage.delaiMs));
     if (reglage?.statut) {
-      reponse.writeHead(reglage.statut, { "Content-Type": "text/plain", "Cache-Control": "no-store" }).end("statut imposé");
+      reponse
+        .writeHead(reglage.statut, { "Content-Type": "text/plain", "Cache-Control": "no-store" })
+        .end("statut imposé");
       return;
     }
     if (reglage?.redirection) {
@@ -111,14 +125,22 @@ export class Origine {
     }
     const entetesProduction =
       this.role === "app"
-        ? { "Content-Security-Policy": "frame-ancestors http://127.0.0.1:4293", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-store" }
+        ? {
+            "Content-Security-Policy": "frame-ancestors http://127.0.0.1:4293",
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+          }
         : { ...entetesDe(this.enTetes, brut), ...(this.regles.get(brut)?.entetes ?? {}) };
     if (reglage?.corps !== undefined) {
-      reponse.writeHead(200, { "Content-Type": reglage.type ?? typeDe(chemin), ...entetesProduction }).end(reglage.corps);
+      reponse
+        .writeHead(200, { "Content-Type": reglage.type ?? typeDe(chemin), ...entetesProduction })
+        .end(reglage.corps);
       return;
     }
     if (brut === CHEMIN_DU_SW) {
-      reponse.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", ...entetesProduction }).end(this.generation.script);
+      reponse
+        .writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", ...entetesProduction })
+        .end(this.generation.script);
       return;
     }
     // /artifacts/** : le répertoire d'artefacts du dépôt (image de référence), comme `tools/serve.mjs`.
@@ -126,7 +148,11 @@ export class Origine {
       try {
         const complet = join(RACINE_DEPOT, decodeURIComponent(brut.slice(1)));
         const taille = statSync(complet).size;
-        reponse.writeHead(200, { "Content-Type": typeDe(complet), "Content-Length": taille, ...entetesProduction });
+        reponse.writeHead(200, {
+          "Content-Type": typeDe(complet),
+          "Content-Length": taille,
+          ...entetesProduction,
+        });
         createReadStream(complet).pipe(reponse);
         return;
       } catch {
@@ -135,18 +161,31 @@ export class Origine {
     }
     const fichier = this.generation?.fichiers.get(chemin);
     if (fichier) {
-      const corps = this.hostile && !chemin.startsWith("/artifacts/") ? Buffer.from(MAUVAIS) : fichier;
-      reponse.writeHead(200, { "Content-Type": typeDe(chemin), "Content-Length": corps.byteLength, ...entetesProduction }).end(corps);
+      const corps =
+        this.hostile && !chemin.startsWith("/artifacts/") ? Buffer.from(MAUVAIS) : fichier;
+      reponse
+        .writeHead(200, {
+          "Content-Type": typeDe(chemin),
+          "Content-Length": corps.byteLength,
+          ...entetesProduction,
+        })
+        .end(corps);
       return;
     }
     // Passage nommé : les artefacts de VM de l'arbre publié (pas dans la réserve).
     const publie = arbreDeBase().get(chemin);
     if (publie && estEnPassage(chemin)) {
       const taille = statSync(publie.disque).size;
-      reponse.writeHead(200, { "Content-Type": typeDe(chemin), "Content-Length": taille, ...entetesProduction });
+      reponse.writeHead(200, {
+        "Content-Type": typeDe(chemin),
+        "Content-Length": taille,
+        ...entetesProduction,
+      });
       createReadStream(publie.disque).pipe(reponse);
       return;
     }
-    reponse.writeHead(404, { "Content-Type": "text/plain", "Cache-Control": "no-store" }).end("Not found");
+    reponse
+      .writeHead(404, { "Content-Type": "text/plain", "Cache-Control": "no-store" })
+      .end("Not found");
   }
 }

@@ -5,17 +5,26 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const dossier = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "sorties"));
+const dossier = resolve(
+  process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "sorties"),
+);
 const dernier = new Map();
 const versions = {};
-for (const nom of readdirSync(dossier).filter((n) => n.endsWith(".json")).sort()) {
+for (const nom of readdirSync(dossier)
+  .filter((n) => n.endsWith(".json"))
+  .sort()) {
   const rapport = JSON.parse(readFileSync(join(dossier, nom), "utf8"));
   Object.assign(versions, rapport.moteurs);
-  for (const r of rapport.resultats) dernier.set(`${r.id}|${r.moteur}`, { ...r, fichier: nom, horodatage: rapport.horodatage });
+  for (const r of rapport.resultats)
+    dernier.set(`${r.id}|${r.moteur}`, { ...r, fichier: nom, horodatage: rapport.horodatage });
 }
-const ids = [...new Set([...dernier.values()].map((r) => r.id))].sort((a, b) => a.localeCompare(b, "fr", { numeric: true }));
+const ids = [...new Set([...dernier.values()].map((r) => r.id))].sort((a, b) =>
+  a.localeCompare(b, "fr", { numeric: true }),
+);
 const moteurs = ["chromium", "firefox", "webkit"];
-process.stdout.write(`Moteurs : ${moteurs.map((m) => `${m} ${versions[m] ?? "?"}`).join(", ")}\n\n| Épreuve | ${moteurs.join(" | ")} |\n| --- | --- | --- | --- |\n`);
+process.stdout.write(
+  `Moteurs : ${moteurs.map((m) => `${m} ${versions[m] ?? "?"}`).join(", ")}\n\n| Épreuve | ${moteurs.join(" | ")} |\n| --- | --- | --- | --- |\n`,
+);
 let ok = 0;
 let total = 0;
 for (const id of ids) {

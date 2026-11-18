@@ -23,10 +23,9 @@ export const attendre = (ms) => new Promise((r) => setTimeout(r, ms));
 /** Réessaie `fonction` jusqu'à ce qu'elle rende une valeur « vraie », puis la rend (ou `null`). */
 export async function jusqua(fonction, { delaiMs = 15000, pasMs = 100 } = {}) {
   const limite = Date.now() + delaiMs;
-  let derniere = null;
   while (Date.now() < limite) {
     try {
-      derniere = await fonction();
+      const derniere = await fonction();
       if (derniere) return derniere;
     } catch {
       /* contexte détruit pendant une navigation : on repose la question */
@@ -62,7 +61,11 @@ export class Epreuve {
   }
   /** Démarre l'origine de la coquille avec `generation` et rend l'`Origine`. */
   async origineDe(generation, options = {}) {
-    const origine = new Origine({ port: options.port ?? PORT_COQUILLE, hote: options.hote ?? "127.0.0.1", role: options.role });
+    const origine = new Origine({
+      port: options.port ?? PORT_COQUILLE,
+      hote: options.hote ?? "127.0.0.1",
+      role: options.role,
+    });
     origine.publier(generation);
     await origine.demarrer();
     this.origines.push(origine);
@@ -78,7 +81,9 @@ export class Epreuve {
   async contextePersistant(dossier = null) {
     const dir = dossier ?? mkdtempSync(join(tmpdir(), "spike-d1h-"));
     this.dossiers.push(dir);
-    const contexte = await MOTEURS[this.moteur].launchPersistentContext(dir, { serviceWorkers: "allow" });
+    const contexte = await MOTEURS[this.moteur].launchPersistentContext(dir, {
+      serviceWorkers: "allow",
+    });
     this.contextes.push(contexte);
     return { contexte, dir };
   }
@@ -86,7 +91,10 @@ export class Epreuve {
   async installer(contexte, chemin = "/spike/enregistrer.html") {
     const page = await contexte.newPage();
     await page.goto(ORIGINE_COQUILLE + chemin, { waitUntil: "commit" });
-    const etat = await jusqua(() => page.evaluate(() => document.documentElement.dataset.enregistrement), { delaiMs: 30000 });
+    const etat = await jusqua(
+      () => page.evaluate(() => document.documentElement.dataset.enregistrement),
+      { delaiMs: 30000 },
+    );
     return { page, etat };
   }
   /** Rend une page du banc, CONTRÔLÉE par le SW (navigation neuve après l'activation). */

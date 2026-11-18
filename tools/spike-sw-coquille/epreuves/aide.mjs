@@ -2,9 +2,13 @@
 import { fabriquerGeneration } from "../banc/reserve.mjs";
 import { jusqua, ORIGINE_COQUILLE } from "../banc/cadre.mjs";
 
-export const LIB_V2 = { "/spike/lib.mjs": 'export const LIB = "lib-v2";\n', "/spike/lib-tardive.mjs": 'export const LIB_TARDIVE = "tardive-v2";\n' };
+export const LIB_V2 = {
+  "/spike/lib.mjs": 'export const LIB = "lib-v2";\n',
+  "/spike/lib-tardive.mjs": 'export const LIB_TARDIVE = "tardive-v2";\n',
+};
 export const v1 = (options = {}) => fabriquerGeneration({ sequence: 1, ...options });
-export const v2 = (options = {}) => fabriquerGeneration({ sequence: 2, surcharges: LIB_V2, ...options });
+export const v2 = (options = {}) =>
+  fabriquerGeneration({ sequence: 2, surcharges: LIB_V2, ...options });
 
 /** Demande à l'inscription de chercher une mise à jour (peut rejeter : on rend la forme observable). */
 export function majDepuisLaPage(page) {
@@ -13,7 +17,12 @@ export function majDepuisLaPage(page) {
     const t0 = performance.now();
     try {
       await r.update();
-      return { ok: true, ms: Math.round(performance.now() - t0), installing: r.installing?.state ?? null, waiting: r.waiting?.state ?? null };
+      return {
+        ok: true,
+        ms: Math.round(performance.now() - t0),
+        installing: r.installing?.state ?? null,
+        waiting: r.waiting?.state ?? null,
+      };
     } catch (e) {
       return { ok: false, erreur: e?.name, ms: Math.round(performance.now() - t0) };
     }
@@ -24,7 +33,8 @@ export const attendreEtat = (page, cle, valeur, delaiMs = 20000) =>
   jusqua(async () => (await inscription(page))?.[cle] === valeur, { delaiMs });
 export const identite = (page) => page.evaluate(() => window.banc.interroger("version"));
 export const cachesDe = (page) => page.evaluate(() => caches.keys());
-export const controleurChanges = (page) => page.evaluate(() => window.banc.journalDesChangements.length);
+export const controleurChanges = (page) =>
+  page.evaluate(() => window.banc.journalDesChangements.length);
 export async function bonjourDuTravailleur(page, query = "") {
   return page.evaluate(async (q) => {
     const w = window.banc.creerTravailleur(q);

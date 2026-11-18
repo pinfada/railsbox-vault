@@ -142,7 +142,9 @@ self.addEventListener("activate", (evenement) => {
 // ---------------------------------------------------------------------------------------------
 async function servir(chemin, entree) {
   const cache = await caches.open(NOM_DU_CACHE);
-  const reponse = await cache.match(new Request(new URL(entree.alias ?? chemin, self.location.origin)));
+  const reponse = await cache.match(
+    new Request(new URL(entree.alias ?? chemin, self.location.origin)),
+  );
   if (!reponse) return refus("RESERVE_INCOMPLETE", chemin);
   const octets = await reponse.arrayBuffer();
   const cible = entree.alias ? CONFIG.liste[entree.alias] : entree;
@@ -174,11 +176,18 @@ async function passer(requete, url) {
   }
   let reponse;
   try {
-    reponse = await fetch(new Request(requete, { redirect: CONFIG.variante?.passageSuitLesRedirections ? "follow" : "manual" }));
-  } catch (erreur) {
+    reponse = await fetch(
+      new Request(requete, {
+        redirect: CONFIG.variante?.passageSuitLesRedirections ? "follow" : "manual",
+      }),
+    );
+  } catch {
     return Response.error(); // réseau coupé : l'échec doit rester un échec RÉSEAU (TypeError côté page)
   }
-  if (!CONFIG.variante?.passageSuitLesRedirections && (reponse.type === "opaqueredirect" || (reponse.status >= 300 && reponse.status < 400))) {
+  if (
+    !CONFIG.variante?.passageSuitLesRedirections &&
+    (reponse.type === "opaqueredirect" || (reponse.status >= 300 && reponse.status < 400))
+  ) {
     return refus("PASSAGE_REDIRECTION", url.pathname);
   }
   const type = reponse.headers.get("Content-Type") ?? "";
@@ -192,7 +201,10 @@ async function passer(requete, url) {
 }
 function enPassage(chemin) {
   if (CONFIG.variante?.artefactsServisParLeSW) return false;
-  return chemin.startsWith("/artifacts/") || CONFIG.passage.some((source) => new RegExp(source).test(chemin));
+  return (
+    chemin.startsWith("/artifacts/") ||
+    CONFIG.passage.some((source) => new RegExp(source).test(chemin))
+  );
 }
 
 self.addEventListener("fetch", (evenement) => {
@@ -233,7 +245,8 @@ async function verifierToutes() {
       continue;
     }
     const octets = await reponse.arrayBuffer();
-    if (octets.byteLength !== entree.taille || (await sha256(octets)) !== entree.sha256) alteres.push(chemin);
+    if (octets.byteLength !== entree.taille || (await sha256(octets)) !== entree.sha256)
+      alteres.push(chemin);
   }
   return { ok: manquants.length === 0 && alteres.length === 0, manquants, alteres };
 }
@@ -252,7 +265,8 @@ self.addEventListener("message", (evenement) => {
   const valide =
     source !== null &&
     source !== undefined &&
-    (CONFIG.variante?.messagesDeTousLesClients || (source.type === "window" && source.frameType === "top-level")) &&
+    (CONFIG.variante?.messagesDeTousLesClients ||
+      (source.type === "window" && source.frameType === "top-level")) &&
     donnees !== null &&
     typeof donnees === "object" &&
     !Array.isArray(donnees) &&
@@ -269,7 +283,9 @@ self.addEventListener("message", (evenement) => {
   if (donnees.type === "journal") return repondre({ journal });
   if (donnees.type === "clients") {
     evenement.waitUntil(
-      self.clients.matchAll({ includeUncontrolled: true, type: "window" }).then((liste) => repondre({ fenetres: liste.length })),
+      self.clients
+        .matchAll({ includeUncontrolled: true, type: "window" })
+        .then((liste) => repondre({ fenetres: liste.length })),
     );
     return;
   }
