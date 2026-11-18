@@ -257,6 +257,7 @@ self.addEventListener("message", (evenement) => {
     typeof donnees === "object" &&
     !Array.isArray(donnees) &&
     Object.keys(donnees).every((cle) => cle === "type" || cle === "id") &&
+    (donnees.id === undefined || (typeof donnees.id === "string" && donnees.id.length <= 64)) &&
     ["version", "verifier", "clients", "journal"].includes(donnees.type) &&
     evenement.ports?.length === 1;
   if (!valide) {

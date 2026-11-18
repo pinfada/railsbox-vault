@@ -58,6 +58,7 @@ window.banc = {
     navigator.serviceWorker.addEventListener("controllerchange", () => this.journalDesChangements.push(Date.now()));
   },
   attendre,
+  retirerLaCopie: (mutants) => portail.retirerLaCopie({ mutants }),
   /** Le portail, avec compteur de créations de Worker, mutants et crochets nommés (pour les épreuves). */
   async ouvrirLePortail({ delaiVerificationMs = 5000, delaiReponseMs = 3000, crochet = null, mutants = {}, garder = true } = {}) {
     window.__crees = 0;
@@ -68,14 +69,17 @@ window.banc = {
       crochets.avantCreation = async () => (await caches.open(`reserve-${VERSION}`)).put("/spike/lib.mjs", new Response('export const LIB = "alteree";'));
     } else if (crochet === "supprimer-le-worker") {
       crochets.avantCreation = async () => (await caches.open(`reserve-${VERSION}`)).delete("/spike/travailleur.mjs");
-    } else if (crochet === "changer-de-controleur") {
-      crochets.apresVerification = async () => {
+    } else if (crochet === "changer-de-controleur" || crochet === "changer-de-controleur-tard") {
+      const changer = async () => {
         await window.publierV2();
         const reg = await navigator.serviceWorker.getRegistration("/");
         const change = new Promise((ok) => navigator.serviceWorker.addEventListener("controllerchange", ok, { once: true }));
         await reg.update();
         await Promise.race([change, attendre(8000)]);
       };
+      // « tôt » : entre la vérification et la décision ; « tard » : entre la décision et la création.
+      if (crochet === "changer-de-controleur") crochets.apresVerification = changer;
+      else crochets.avantCreation = changer;
     }
     const debut = performance.now();
     const r = await portail.ouvrirLePortail({

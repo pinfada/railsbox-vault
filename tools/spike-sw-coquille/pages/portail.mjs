@@ -225,3 +225,24 @@ export async function ouvrirLePortail({ sequencePage, delaiVerificationMs = 5000
     conteneur.removeEventListener("controllerchange", surChangement);
   }
 }
+
+/**
+ * GESTE « Retirer la copie hors connexion » : `unregister()` ET suppression des caches du PRODUIT
+ * (S12 : `unregister()` seul laisse le cache). N'efface que le préfixe `reserve-` — un autre cache de
+ * l'origine n'est jamais touché. Idempotent : rejouable après une interruption. La page courante reste
+ * contrôlée jusqu'à sa prochaine navigation (spécification).
+ */
+export async function retirerLaCopie({ mutants = {} } = {}) {
+  const regs = await navigator.serviceWorker.getRegistrations();
+  for (const r of regs) await r.unregister();
+  if (mutants.sansCaches) return { desinscrites: regs.length, caches: [] };
+  const noms = await caches.keys();
+  const supprimes = [];
+  for (const nom of noms) {
+    if (mutants.toutLesCaches || nom.startsWith("reserve-")) {
+      await caches.delete(nom);
+      supprimes.push(nom);
+    }
+  }
+  return { desinscrites: regs.length, caches: supprimes };
+}
