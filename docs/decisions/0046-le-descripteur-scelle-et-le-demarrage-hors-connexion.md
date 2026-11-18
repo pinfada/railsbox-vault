@@ -378,7 +378,9 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
 
 ## Ce qui n'est pas prouvé
 
-- Le démarrage hors connexion **sur l'image réelle** (E2E ci-dessus) : écrit, relu, non exécuté.
+- Le démarrage hors connexion **avec les en-têtes de production** : l'E2E ci-dessus est exécuté sous
+  le harnais de cache du code seulement ; avec les en-têtes de production il échoue ; suite : #299
+  (tranche D1h).
 - **Que `libv86` reste dans le cache HTTP** hors connexion en conditions réelles (éviction) : non
   mesuré ; le spike montre la lecture du cache après un `import()` sur les trois moteurs, pas sa
   durée de vie.
