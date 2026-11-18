@@ -161,7 +161,7 @@ export function fabriquerGeneration({
     retrait,
     liste: retrait ? {} : liste,
     profils,
-    passage: [],
+    passage: PASSAGE_NOMME.map((m) => m.source),
     variante,
     faute,
   };

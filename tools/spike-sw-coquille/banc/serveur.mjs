@@ -27,6 +27,7 @@ export class Origine {
     this.sockets = new Set();
     this.serveur = null;
     this.enTetes = reglesHeadersPubliees();
+    this.tolerant = false; // true : normalise casse, `//`, barre finale, %-encodage pour retrouver un fichier
     this.coupure = null; // { apres: n, vues: 0 } : la connexion est détruite à partir de la n+1-ième requête
   }
   /** Coupe le réseau à partir de la `n+1`-ième requête suivante (coupure PENDANT une installation). */
@@ -67,7 +68,18 @@ export class Origine {
     const url = new URL(requete.url ?? "/", this.origine);
     // Le chemin BRUT (avant toute normalisation du serveur) : c'est ce que voit une origine réelle.
     const brut = (requete.url ?? "/").split("?")[0];
-    const chemin = brut === "/" ? "/index.html" : brut;
+    let chemin = brut === "/" ? "/index.html" : brut;
+    if (this.tolerant) {
+      try {
+        chemin = decodeURIComponent(chemin).toLowerCase().replace(/\/{2,}/g, "/").replace(/\/$/, "");
+      } catch {
+        /* chemin non décodable : tel quel */
+      }
+      if (this.generation?.fichiers.has(chemin) === false) {
+        const trouve = [...this.generation.fichiers.keys()].find((c) => c.toLowerCase() === chemin);
+        if (trouve) chemin = trouve;
+      }
+    }
     this.journal.push({
       methode: requete.method,
       chemin: brut,

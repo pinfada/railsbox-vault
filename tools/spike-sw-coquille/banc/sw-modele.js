@@ -192,7 +192,7 @@ async function passer(requete, url) {
 }
 function enPassage(chemin) {
   if (CONFIG.variante?.artefactsServisParLeSW) return false;
-  return chemin.startsWith("/artifacts/") || CONFIG.passage.includes(chemin);
+  return chemin.startsWith("/artifacts/") || CONFIG.passage.some((source) => new RegExp(source).test(chemin));
 }
 
 self.addEventListener("fetch", (evenement) => {
