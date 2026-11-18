@@ -6,9 +6,10 @@
 
 ## Contexte
 
-Depuis le 29/10/2026, `ubuntu-latest` est ubuntu-26.04. Deux défauts y cassent les jobs qui
-fabriquent l'image de référence ou lancent les épreuves VM. Les deux sont établis par exécution CI
-(détail et liens de runs dans #295 et #301).
+`ubuntu-latest` bascule vers ubuntu-26.04 par un déploiement progressif commencé le 19/10/2026 et
+annoncé comme achevé le 19/11/2026 (actions/runner-images#14748) ; le premier rouge observé ici date
+du 29/10/2026. Deux défauts y cassent les jobs qui fabriquent l'image de référence ou lancent les
+épreuves VM. Les deux sont établis par exécution CI (détail et liens de runs dans #295 et #301).
 
 1. **Docker 29.4.2 donne `ENOSYS` à `socket` aux processus 32 bits des étapes `RUN`.** Le profil
    seccomp par défaut a été resserré (moby#52494, CVE-2026-31431). L'étage i386 de

@@ -26,11 +26,15 @@ gem "activesupport", "8.1.4.1"
 
 gem "sqlite3", "= 2.10.2"
 
-# Puma 8.0.3 et non 6.6.1 : les versions 5.5.0 à 7.2.0 et 8.0.0 à 8.0.2 sont
-# exposées à CVE-2026-47736 et CVE-2026-47737 (analyseur PROXY protocol v1).
-# La fixture n'active pas `proxy_protocol` — elle écoute sur 127.0.0.1 dans le
-# guest — donc elle n'est pas exploitable, mais une dépendance vulnérable ne se
-# tait pas : elle se corrige. Voir `SECURITY.md`, section « Analyse de secrets ».
+# Puma 8.0.3 et non 6.6.1 : les versions 5.5.0 à 7.2.0 et 8.0.0 à 8.0.1 étaient exposées à
+# CVE-2026-47736 et CVE-2026-47737 (analyseur PROXY protocol v1), corrigées en 8.0.2. La 8.0.3
+# corrige sept avis suivants, relevés par `bundler-audit` le 17/11/2026 : GHSA-86xc-wrr9-xmmq (TLS
+# de pumactl), GHSA-jm4r-w4xx-qxw7 (arrêt gracieux), GHSA-m5xw-3hrw-qcmf (file du reactor),
+# GHSA-r885-m39c-939g (`ssl_cipher_filter`), GHSA-rf6g-xhmp-gm7v (boucle d'accept sans descripteurs),
+# GHSA-x646-wp7c-h9mg et GHSA-xw3h-pgr9-3vg7 (client qui cesse de lire). La fixture n'active ni TLS
+# ni `proxy_protocol` — elle écoute sur 127.0.0.1 dans le guest — donc elle n'est pas exploitable,
+# mais une dépendance vulnérable ne se tait pas : elle se corrige. Voir `SECURITY.md`, section
+# « Analyse de secrets ».
 gem "puma", "= 8.0.3"
 
 # Bootsnap ne change ni le comportement ni le code : il met en cache ce que le
