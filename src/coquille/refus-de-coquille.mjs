@@ -324,7 +324,7 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
   /** Le paquet dépasse les données, mais aucune migration n'a été autorisée par le geste (revue de #249, 4). */
   migrationNonAutorisee: "VAULT_COQUILLE_MIGRATION_NON_AUTORISEE",
 
-  // --- Le démarrage HORS CONNEXION (#247, D1g ; ADR 0044 § 6, ADR 0045) -------------------------
+  // --- Le démarrage HORS CONNEXION (#247, D1g ; ADR 0044 § 6, ADR 0046) -------------------------
   //
   // Rendus seulement quand l'origine est INJOIGNABLE — `fetch` a levé un `TypeError` sur le
   // descripteur. Aucun ne boote, aucun n'écrit un octet du volume. Dès que l'origine RÉPOND, quoi

@@ -1534,12 +1534,14 @@ L'[ADR 0044](docs/decisions/0044-le-magasin-d-artefacts.md) range le rootfs et l
   réseau (gel de version au sens de TUF, accepté par l'amendement du 04/10 de l'ADR 0042 tant que
   les paquets ne sont pas signés). **Il n'y a aucune durée maximale avant la signature des paquets
   (jalon 6)** : une date d'expiration non signée ne protège de rien. La date de la dernière
-  vérification est dite à la personne ; elle ne borne rien.
+  vérification est **publiée** (`horsConnexion.rangeLe`) mais **son affichage à la personne n'est
+  pas encore livré** (il touche les textes du parcours du lot B2, et vient en dernier) ; elle ne
+  borne rien.
 - **Un adversaire qui écrit dans l'OPFS ET contrôle l'origine** : il peut servir un descripteur dont
   la racine désigne ses propres tranches. Le magasin n'ajoute rien à la confiance faite à l'origine
   (ADR 0042) ; seule la signature du jalon 6 y répondra.
 
-### Le démarrage hors connexion : le descripteur scellé (#247, D1g, ADR 0045)
+### Le démarrage hors connexion : le descripteur scellé (#247, D1g, ADR 0046)
 
 Quand l'origine est injoignable, le coffre démarre sur le **descripteur rangé au magasin**. L'OPFS
 n'authentifie rien : ce descripteur est donc **scellé** (HMAC-SHA-256) sous une clé qui descend de
@@ -1555,14 +1557,24 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
   (`VAULT_COQUILLE_HORS_LIGNE_DESCRIPTEUR_REFUSE`) et sans repli ; le démarrage en ligne suivant le
   remplace.
 - **« Injoignable » est uniquement un `TypeError` levé par `fetch`.** Un délai, une réponse HTTP
-  (5xx comprise), un descripteur différent ou du HTML de portail captif n'ouvrent PAS le repli :
-  l'origine fait foi (ADR 0042), et le descripteur rangé n'est ni lu ni cru.
+  (5xx comprise), un descripteur différent, du HTML de portail captif ou **une redirection**
+  n'ouvrent PAS le repli : l'origine fait foi (ADR 0042), et le descripteur rangé n'est ni lu ni
+  cru. Le descripteur est demandé en `redirect: "manual"` : une boucle de 302 (qui lèverait un
+  `TypeError` indiscernable d'un réseau coupé), un 301 vers une autre origine ou une redirection
+  opaque sont des réponses de l'origine, jamais suivies.
 - **Anti-retour** : le descripteur rangé repasse par la décision de déphasage ; une version
   antérieure à celle déjà migrée dans le volume est refusée (`APPLICATION_ANTERIEURE`). Sans volume,
   pas de hors ligne (`HORS_LIGNE_SANS_COFFRE`).
 - Le descripteur n'est rangé qu'après une acquisition complète que la réserve tient tout entière ;
   sinon le précédent est oublié. Wasm, BIOS, VGA BIOS, noyau, initrd, rootfs et paquet sont lus du
-  magasin, chacun vérifié contre son empreinte épinglée ; hors connexion, rien n'est téléchargé.
+  magasin, chacun vérifié contre son empreinte épinglée ; hors connexion, rien de ceux-là n'est
+  téléchargé. **Aucun octet de boot n'atteint le guest sans empreinte épinglée** : `boot.empreintes`
+  est obligatoire dans le descripteur servi (un descripteur sans lui, ou scellé avant cette règle,
+  est refusé avant tout boot), `image:manifest` le produit toujours, et l'acquisition refuse une
+  épingle absente avant tout téléchargement.
+- **L'annulation est tenue après chaque attente** : une opération du magasin abandonnée à l'échéance
+  (20 s) ne part plus modifier le magasin — pas de renommage qui remplace un descripteur plus
+  récent, pas de suppression de plus. Un appel déjà lancé va à son terme (non annulable).
 
 **Ce que le scellement ne protège pas.**
 
@@ -1572,8 +1584,17 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
 - **Le retour arrière complet de l'OPFS ET du volume ensemble** : l'anti-retour perd sa référence
   (l'ancrage monotone est la question n° 3 de l'ADR 0033, #23).
 - **L'origine qui ment de façon cohérente** et **l'adversaire qui détient la clé du coffre**.
-- **`libv86` et le code de la coquille** viennent du cache HTTP du navigateur, non garanti ; la page
-  ne se recharge pas hors connexion (pas de Service Worker). Le démarrage hors connexion exige donc
+- **`libv86` n'est pas vérifié au sens où ses octets exécutés seraient ceux qu'on a hachés.** Le
+  module est importé par `import()`, qui refait sa requête : rien ne lie les octets confrontés au
+  manifeste à ceux qui s'exécutent, et le spike `tools/spike-liaison-libv86.mjs` (Chromium, Firefox,
+  WebKit) n'a trouvé, dans un Worker sous la CSP actuelle, aucun mécanisme qui les lie — la carte
+  d'import avec `integrity` n'existe que dans une fenêtre, `import()` n'a pas d'attribut
+  d'intégrité. **`libv86` a la confiance de l'origine, comme tout le code de la coquille** ; la
+  confrontation au manifeste le protège de l'accident, pas d'une origine hostile (ADR 0046 § 6).
+  Décision du propriétaire : #299. Hors connexion il est lu du cache HTTP en `only-if-cached`
+  (jamais `force-cache`, qui va au réseau sur un cache vide) — **sauf sous WebKit, qui ignore
+  l'option** (mesuré) : « ne touche pas au réseau » n'est établi que sur Chromium et Firefox. La
+  page ne se recharge pas hors connexion (pas de Service Worker) : le démarrage hors connexion exige
   une page déjà chargée et `libv86` encore en cache — sinon refus typé, sans effet sur les données.
 
 ## L'instantané de reprise contient la RAM invitée (#65)

@@ -78,13 +78,13 @@ avant la copie, échéance qui annule, racine confrontée à l'admission, réten
 ## Amendement — Le hors ligne et les restes de la revue de D1f (lot D1g, 17/11/2026)
 
 La décision 6 est implémentée, et précisée par
-l'[ADR 0045](0045-le-descripteur-scelle-et-le-demarrage-hors-connexion.md) (**proposé**, en attente
+l'[ADR 0046](0046-le-descripteur-scelle-et-le-demarrage-hors-connexion.md) (**proposé**, en attente
 d'accord) : le descripteur rangé est **scellé** (HMAC-SHA-256, clé dérivée de la clé du coffre dans
 un domaine dédié), « injoignable » est **uniquement un `TypeError` de `fetch`**, la version rangée
 n'est jamais antérieure à celle du volume, la date est publiée, et le descripteur n'est rangé
 qu'après une acquisition complète que la réserve tient tout entière. Wasm, BIOS, VGA BIOS, noyau et
 initrd passent désormais par le magasin, épinglés. **`libv86` fait exception** (inexécutable depuis
-l'OPFS sous la CSP) : cache HTTP, limite écrite dans l'ADR 0045.
+l'OPFS sous la CSP) : cache HTTP, limite écrite dans l'ADR 0046.
 
 Les restes de la revue de #292 sont soldés : `retenir` porte un jeton d'annulation testé avant
 chaque geste visible (journal, purge), une admission abandonnée **retire son `.partiel`**, et la

@@ -3,7 +3,7 @@
  * le magasin, chacun vérifié contre son empreinte épinglée (#247, D1g ; décision du superviseur n° 1).
  *
  * `libv86` n'en fait pas partie : un module ES ne peut pas être exécuté depuis l'OPFS sous la CSP du
- * Worker (`script-src 'self'`, pas de `blob:`). Il est dit, pas oublié : ADR 0045.
+ * Worker (`script-src 'self'`, pas de `blob:`). Il est dit, pas oublié : ADR 0046.
  */
 
 import assert from "node:assert/strict";

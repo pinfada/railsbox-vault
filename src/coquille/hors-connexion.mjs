@@ -1,5 +1,5 @@
 // Le DÉMARRAGE HORS CONNEXION : quand l'origine est INJOIGNABLE, la dernière version vérifiée fait foi
-// (#247, lot D1g ; ADR 0044 § 6, ADR 0045 ; amendement du 04/10/2026 de l'ADR 0042).
+// (#247, lot D1g ; ADR 0044 § 6, ADR 0046 ; amendement du 04/10/2026 de l'ADR 0042).
 //
 // ## « Injoignable » est un fait de réseau, et un seul
 //

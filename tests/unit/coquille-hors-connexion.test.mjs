@@ -1,5 +1,5 @@
 /**
- * Le DÉMARRAGE HORS CONNEXION (#247, D1g ; ADR 0044 § 6, ADR 0045), au niveau le plus bas qui le prouve.
+ * Le DÉMARRAGE HORS CONNEXION (#247, D1g ; ADR 0044 § 6, ADR 0046), au niveau le plus bas qui le prouve.
  *
  * Décisions du superviseur (04/10/2026) : « injoignable » est UNIQUEMENT un `TypeError` de `fetch` ;
  * le descripteur rangé est scellé sous la clé du coffre ; il n'est rangé qu'après une acquisition

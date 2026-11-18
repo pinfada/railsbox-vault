@@ -1,4 +1,4 @@
-// La CLÉ de scellement du DESCRIPTEUR rangé au magasin d'artefacts (#247, lot D1g ; ADR 0045).
+// La CLÉ de scellement du DESCRIPTEUR rangé au magasin d'artefacts (#247, lot D1g ; ADR 0046).
 //
 // Le descripteur que le magasin garde pour démarrer HORS CONNEXION n'est authentifié par rien
 // d'extérieur à l'OPFS : un adversaire qui y écrit, sans la clé du coffre, pourrait fabriquer le
@@ -13,7 +13,7 @@
 // AEAD : la liste de l'ADR 0033 est close parce que chacun de ses domaines porte un BUDGET de clé
 // (nonces d'AES-GCM, ADR 0015). Un HMAC n'a pas de nonce — il est déterministe, donc sans budget — et
 // l'ajouter à la liste ferait compter un compteur qui n'existe pas. Le domaine vit donc ici, avec sa
-// propre étiquette, et l'ADR 0045 le dit.
+// propre étiquette, et l'ADR 0046 le dit.
 //
 //     info = LP("railsbox-vault/derivation-de-domaine/v1")   le schéma de l'ADR 0033, inchangé
 //          ‖ LP("descripteur")                               le domaine : aucun des six autres

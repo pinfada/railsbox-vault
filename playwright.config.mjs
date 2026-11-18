@@ -40,7 +40,7 @@ const FRONTIERE_CSP = [
 const FRONTIERE_HIERARCHIE = ["**/hierarchie-de-cles-frontiere.spec.mjs"];
 
 /**
- * Le DESCRIPTEUR SCELLÉ du démarrage hors connexion (#247, D1g ; ADR 0045) : un HMAC non extractible
+ * Le DESCRIPTEUR SCELLÉ du démarrage hors connexion (#247, D1g ; ADR 0046) : un HMAC non extractible
  * dérivé par HKDF, et un fichier rangé dans le vrai OPFS. Un garanti qui repose sur la plate-forme se
  * mesure sur les trois moteurs ; aucun artefact v86, quelques secondes.
  */

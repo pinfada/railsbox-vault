@@ -5,8 +5,9 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "../support/test.mjs";
 import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
+import { adresseDe } from "../../src/v86-adresses.mjs";
 
-// FRONTIÈRE du DESCRIPTEUR SCELLÉ, sur les trois moteurs (#247, D1g ; ADR 0045).
+// FRONTIÈRE du DESCRIPTEUR SCELLÉ, sur les trois moteurs (#247, D1g ; ADR 0046).
 //
 // Le scellement s'appuie sur la PLATE-FORME : HKDF-SHA-256 puis un HMAC dont la clé est NON
 // EXTRACTIBLE, que `crypto.subtle.sign` et `verify` seuls savent employer — jamais `encrypt`, jamais
@@ -445,7 +446,7 @@ test("une boucle de 302 ou un 301 vers une autre origine n'ouvre pas le repli ; 
 // refus typé est le même ; mais « ne touche jamais le réseau » n'est établi que sur deux moteurs.
 // L'attente de WebKit est écrite telle quelle : le jour où il change, ce test le dit.
 
-const LIBV86 = "/vendor/v86/artefacts/libv86-4444444444444444.mjs";
+const LIBV86 = adresseDe("libv86.mjs", "4".repeat(64));
 
 test("hors connexion, lire libv86 dans un cache vide n'envoie aucune requête (WebKit : une, limite mesurée)", async ({
   page,

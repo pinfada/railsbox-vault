@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CAMPAGNE DE MUTATION des gardes du DÉMARRAGE HORS CONNEXION (#247, lot D1g ; ADR 0044 § 6, ADR 0045).
+// CAMPAGNE DE MUTATION des gardes du DÉMARRAGE HORS CONNEXION (#247, lot D1g ; ADR 0044 § 6, ADR 0046).
 //
 //     node tools/muter-gardes-hors-ligne.mjs [--json]
 //
@@ -42,6 +42,7 @@ const T = {
   hors: "tests/unit/coquille-hors-connexion.test.mjs",
   redirections: "tests/unit/coquille-descripteur-redirections.test.mjs",
   libv86: "tests/unit/vm-lecture-de-libv86-hors-connexion.test.mjs",
+  annulation: "tests/unit/vm-magasin-annulation-a-chaque-attente.test.mjs",
   cle: "tests/unit/vm-cle-du-descripteur-scelle.test.mjs",
   demarrage: "tests/unit/coquille-demarrage-hors-connexion.test.mjs",
   preparation: "tests/unit/coquille-preparation-du-demarrage.test.mjs",
@@ -511,8 +512,9 @@ export const MUTATIONS = Object.freeze([
     nom: "le descripteur rangé est remplacé, sans reste de l'ancien",
     garde: "ecrireLeDescripteurScelle — supprimer avant renommer",
     fichier: MAGASIN,
-    avant: "  await primitives.supprimer(NOM_DU_DESCRIPTEUR_SCELLE);\n  await primitives.renommer(",
-    apres: "  await primitives.renommer(",
+    avant:
+      "  await primitives.supprimer(NOM_DU_DESCRIPTEUR_SCELLE);\n  // La suppression de l'ancien a pu durer",
+    apres: "  // La suppression de l'ancien a pu durer",
     epreuves: [T.opfs],
   },
   {
@@ -529,16 +531,16 @@ export const MUTATIONS = Object.freeze([
     fichier: MAGASIN,
     avant: "  if (jeton.annule) return false;\n  await primitives.ecrire(partiel, 0, octets);\n",
     apres: "  await primitives.ecrire(partiel, 0, octets);\n",
-    epreuves: [T.opfs],
+    epreuves: [T.opfs, T.annulation],
   },
   {
     nom: "un rangement annulé après écriture ne remplace pas le descripteur rangé",
     garde: "ecrireLeDescripteurScelle — jeton avant le remplacement",
     fichier: MAGASIN,
     avant:
-      "  if (jeton.annule) {\n    await primitives.supprimer(partiel);\n    return false;\n  }\n",
-    apres: "",
-    epreuves: [T.magasin],
+      "  if (jeton.annule) {\n    await primitives.supprimer(partiel);\n    return false;\n  }\n  await primitives.supprimer(NOM_DU_DESCRIPTEUR_SCELLE);\n",
+    apres: "  await primitives.supprimer(NOM_DU_DESCRIPTEUR_SCELLE);\n",
+    epreuves: [T.magasin, T.annulation],
   },
   {
     nom: "la purge ne retire pas le descripteur rangé",

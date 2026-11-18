@@ -1,5 +1,5 @@
 /**
- * La CLÉ de scellement du descripteur rangé (#247, D1g ; ADR 0045) : HKDF-SHA-256 sous la clé du
+ * La CLÉ de scellement du descripteur rangé (#247, D1g ; ADR 0046) : HKDF-SHA-256 sous la clé du
  * coffre, dans un domaine dédié, rendue en HMAC-SHA-256 NON EXTRACTIBLE.
  *
  * Le vecteur est calculé par `node:crypto`, avec une info écrite à la main : le module n'est pas

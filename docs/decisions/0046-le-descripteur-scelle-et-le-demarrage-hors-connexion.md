@@ -1,8 +1,10 @@
-# ADR 0045 — Le descripteur scellé et le démarrage hors connexion
+# ADR 0046 — Le descripteur scellé et le démarrage hors connexion
 
 - Statut : **proposé** — format persistant et cryptographie : la fusion attend l'accord du
   propriétaire, et une revue de sécurité distincte
-- Date : 2026-11-17
+- Date : 2026-11-17 · amendé le 2026-11-18 (revue de sécurité de #298 : redirections, empreintes du
+  boot obligatoires, `libv86`, annulation)
+- Numéro : 0046 — le 0045 est pris par le lot CI-0 (#296)
 - Complète : l'ADR 0044 (§ 6, le hors-ligne « arrêté mais pas implémenté »), l'ADR 0042 (la décision
   de déphasage et son amendement du 04/10 sur le gel de version), l'ADR 0033 (la hiérarchie de clés)
 - Issues : #247 (lot D1, `lot:artefacts`, ne la ferme pas : D2 suit), #236
@@ -103,6 +105,16 @@ descripteur rangé **n'est même pas lu** ni la clé du coffre demandée. Une or
 donne à personne un droit au repli : sans cela, une réponse d'erreur forgée suffirait à faire
 démarrer l'ancien code.
 
+**Une redirection est une réponse de l'origine** (amendement du 18/11, constat 1 de la revue de
+#298). `fetch` suit les redirections par défaut, et une BOUCLE de redirections lève un `TypeError` —
+le même signal que « pas de réseau » : une origine qui répondait par une boucle de 302 ouvrait le
+repli. Le descripteur est donc demandé en `redirect: "manual"` : toute redirection (statut 3xx côté
+Node, `opaqueredirect` de statut 0 côté navigateur) est classée « descripteur redirigé », **jamais
+suivie** — un 301 vers une autre origine n'est plus lu —, et n'ouvre pas le repli. Conséquence
+assumée : le descripteur doit être servi à son adresse, sans redirection ; un hébergement qui
+redirige `/artifacts/application.json` est, pour la coquille, une origine sans application. Mesuré
+avec un vrai serveur sur Chromium, Firefox et WebKit.
+
 ### 4. Anti-retour : le rangé repasse par la décision de déphasage
 
 Le descripteur rangé est traité comme un descripteur servi par `deciderLeDephasage` : une version
@@ -127,34 +139,110 @@ tient plus (la rétention retire les artefacts d'une autre version). Un rangemen
 jamais échouer un boot : il coûte le hors ligne. Hors connexion, rien n'est re-rangé : il vient
 d'être lu.
 
-### 6. Les artefacts du démarrage passent par le magasin, épinglés — avec une limite sur `libv86`
+### 6. Les artefacts du démarrage passent par le magasin, épinglés — `libv86` a la confiance de l'origine
+
+**Invariant : aucun octet n'atteint le guest sans empreinte épinglée** (amendement du 18/11, constat
+2 de la revue de #298).
 
 - **wasm, BIOS, VGA BIOS, noyau, initrd** : servis par le magasin s'ils y sont et vérifiés (chemin
   lent : `sha256` du fichier entier, une seule tranche), sinon téléchargés, **confrontés à leur
   empreinte et à leur taille épinglées**, puis rangés. L'épingle du wasm vient du manifeste v86,
   celles des quatre autres du descripteur : `boot.empreintes: { kernel, initrd, bios, vgaBios }`,
-  chacune `{ sha256, octets }`, **facultatif et tout-ou-rien**, ajouté par `image:manifest` (un
-  champ de plus au descripteur v2, sans changer sa version : un descripteur sans ce bloc reste
-  lisible, sans hors ligne). Hors connexion, un artefact absent, altéré ou sans épingle est un refus
-  typé (`HORS_LIGNE_ARTEFACT_ABSENT`) : **rien n'est téléchargé**. Retenue : les cinq courants sont
-  gardés par la rétention, et `descripteur.scelle` n'est jamais purgé.
-- **`libv86` NE passe PAS par le magasin — écart à la décision n° 1 du superviseur, à trancher.** Un
+  chacune `{ sha256, octets }`.
+- **Changement de format du descripteur servi.** `boot.empreintes` est **OBLIGATOIRE** et
+  tout-ou-rien. Un descripteur qui n'en porte pas n'est pas une application : `formeDuDescripteur`
+  le refuse (« empreintes du boot absentes »), avant tout boot, en ligne comme à la réouverture d'un
+  descripteur scellé (la forme est rejouée : un descripteur scellé avant cette règle est refusé sur
+  son contenu, et remplacé par le démarrage en ligne suivant). `image:manifest` les produit TOUJOURS
+  : un manifeste d'image qui ne décrit pas l'un des quatre artefacts fait échouer la fabrication au
+  lieu de produire un descripteur dégradé. `descripteurVersion` reste **2** : aucun déploiement réel
+  n'existe (ADR 0041), le descripteur et la coquille qui le lit partent ensemble, et une version 3
+  n'apporterait que de quoi refuser, ce que la forme fait déjà. Le lecteur d'avant ce lot ignorait
+  le bloc : le retour arrière est sans effet sur lui.
+- **Défense en profondeur** : `acquerirLesPetitsArtefacts` refuse AVANT tout téléchargement une
+  épingle absente (`null` ou clé manquante) — y compris celle du wasm, qui ne se trouverait pas au
+  manifeste v86 —, quel que soit l'appelant : les bancs de bout en bout reçoivent leurs empreintes
+  du manifeste d'image (`tests/support/image-de-reference.mjs`). Hors connexion, ce refus est le
+  code typé `HORS_LIGNE_ARTEFACT_ABSENT` ; en ligne, une erreur d'acquisition marquée, comme un
+  artefact altéré. Hors connexion, un artefact absent ou altéré est un refus typé : **rien n'est
+  téléchargé**. Retenue : les cinq courants sont gardés par la rétention, et `descripteur.scelle`
+  n'est jamais purgé.
+- **`libv86` NE passe PAS par le magasin, et ses octets ne sont PAS liés à ce qui s'exécute.** Un
   module ES ne s'exécute pas depuis l'OPFS sous la CSP du Worker :
   `script-src 'self' 'wasm-unsafe-eval'` (ni `blob:`, ni `unsafe-eval` ; ADR 0013 refuse d'y ajouter
-  `blob:`). Le ranger au magasin n'aurait servi à rien. Il est chargé par `import()`, donc par le
-  **cache HTTP** du navigateur — adressé par empreinte, `immutable` (ADR 0023), comme tout le code
-  de la coquille. Hors connexion, ses octets sont lus du cache (`force-cache`), vérifiés contre le
-  manifeste scellé, puis importés ; absent du cache, refus typé. **Conséquence : le hors ligne
-  dépend du cache HTTP du navigateur pour `libv86`, non garanti** (éviction possible). Deux voies
-  s'ouvrent et ne sont pas prises ici : un Service Worker qui sert la réserve (surface de confiance
-  neuve, ADR propre), ou l'élargissement de la CSP (refusé par l'ADR 0013).
+  `blob:`). Il est chargé par `import()`, donc par le cache HTTP du navigateur — adressé par
+  empreinte, `immutable` (ADR 0023), comme tout le code de la coquille. Le produit le hachait par un
+  `fetch`, puis l'important par une SECONDE requête : **rien ne liait les deux**. Le spike
+  `tools/spike-liaison-libv86.mjs` (mesuré le 18/11/2026 sur Chromium 151, Firefox 153, WebKit 26.5)
+  a cherché un mécanisme qui lie les octets, dans un Worker module sous la CSP de la coquille :
+
+  | essai                                                                                                                      | Chromium                                     | Firefox                        | WebKit                                     |
+  | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------ | ------------------------------------------ |
+  | E1 `fetch(url, {integrity})` puis `import(url)`, origine qui répond « bon » au fetch et « mauvais » à l'import, sans cache | exécute « mauvais »                          | exécute « mauvais »            | exécute « mauvais »                        |
+  | E1 idem avec les en-têtes du produit (`immutable`)                                                                         | exécute « bon » (cache partagé, non garanti) | idem                           | exécute « mauvais » (pas de cache partagé) |
+  | E2 `import(url, { with: { integrity } })`                                                                                  | refusé : clé inconnue                        | refusé : attribut non supporté | refusé : attribut non supporté             |
+  | E3a carte d'import avec `integrity`, dans un Worker                                                                        | inexistante (spécificateur nu non résolu)    | idem                           | idem                                       |
+  | E3b carte d'import avec `integrity`, dans une fenêtre                                                                      | vérifie (refuse l'écart)                     | vérifie                        | vérifie                                    |
+  | E4 `cache: "only-if-cached"` sur une adresse jamais chargée                                                                | échoue, 0 requête                            | échoue, 0 requête              | **IGNORÉ : 200 par le réseau, 1 requête**  |
+  | E4 `cache: "force-cache"` sur une adresse jamais chargée                                                                   | **va au réseau** (1 requête)                 | idem                           | idem                                       |
+  | E5 `only-if-cached` d'un module déjà importé, Worker neuf                                                                  | 200, 0 requête                               | 200, 0 requête                 | 200 mais **réseau touché**                 |
+
+  **Aucun mécanisme ne lie les octets sous la CSP actuelle.** La seule liaison existante (E3b, la
+  carte d'import avec `integrity`) vit dans la FENÊTRE, où `libv86` ne tourne pas : l'émulateur
+  s'exécute dans un Worker — un Worker n'a pas de carte d'import, et rien n'est hérité de la page.
+  Les autres voies (`blob:`, `data:`, `eval`, `new Function`) sont refusées par la CSP ; un Service
+  Worker est exclu de cette session. **`libv86` a donc la confiance de l'origine, comme tout le code
+  de la coquille** : la confrontation de ses octets au manifeste qui précède l'import — conservée,
+  elle vient de #123 — est une défense contre l'ACCIDENT (un cache qui garde une version à côté du
+  manifeste d'une autre, un octet retourné), **pas une liaison, et elle ne prouve pas ce qui
+  s'exécute**. Une origine hostile qui répond autrement à `import()` qu'à `fetch` l'emporte (E1).
+  Hors connexion, `libv86` est lu du cache HTTP en `only-if-cached` (jamais `force-cache`, qui va au
+  réseau sur un cache vide — E4), confronté au manifeste scellé, puis importé ; absent du cache,
+  refus typé. **WebKit ignore `only-if-cached`** : « ne touche jamais le réseau » n'est établi que
+  sur Chromium et Firefox ; hors connexion réelle, la requête de WebKit échoue et le refus typé est
+  le même. **Conséquence : le hors ligne dépend du cache HTTP du navigateur pour `libv86`, non
+  garanti** (éviction possible). La décision — accepter, ou payer une liaison (Service Worker, CSP
+  élargie, émulateur en fenêtre) — revient au propriétaire : options, coût et frontière touchée dans
+  #299.
 
 ### 7. Ce que la personne voit
 
 La coquille publie `horsConnexion: { rangeLe, version }` dans le constat de la page et dans le
-compte rendu du démarrage (`null` quand l'origine a répondu). Les quatre codes de refus ont leur
-conduite en langage humain (`conduites-du-dephasage.mjs`), enregistrés dans le registre des codes et
-la spécification (§ 10 de `docs/format-de-volume-v3.md`).
+compte rendu du démarrage (`null` quand l'origine a répondu) : **la donnée est publiée, son
+AFFICHAGE (« hors connexion, version du <date> ») n'est pas livré** — il touche les fichiers de
+textes du parcours du lot B2 et se fait en dernier, après la fusion de B2 (revue de #298, constat
+5). Les quatre codes de refus ont leur conduite en langage humain (`conduites-du-dephasage.mjs`),
+enregistrés dans le registre des codes et la spécification (§ 10 de `docs/format-de-volume-v3.md`).
+
+### 8. L'annulation est tenue APRÈS CHAQUE ATTENTE (amendement du 18/11, constat 4 de la revue de #298)
+
+Une opération du magasin qui dépasse son délai (20 s) est **abandonnée** : l'appelant a repris la
+main — il télécharge, ou il range autre chose — et son jeton est annulé (`avantLEcheance`). Le jeton
+n'était testé qu'AVANT certaines attentes : annulé PENDANT une suppression, une opération reprenait
+et renommait quand même — remplaçant un descripteur plus récent — ou continuait des suppressions
+après un seul contrôle.
+
+**Règle** : le jeton est testé après chaque attente, avant tout geste qui modifie le magasin
+(écriture, renommage, suppression). **Opérations en vol** : un appel de primitive déjà lancé — un
+`move`, une suppression — va à son terme ; il n'est pas annulable, et rien ici ne le prétend. Ce qui
+est garanti est qu'**aucun geste modificateur NE PART après l'annulation**, sauf le nettoyage de SON
+propre partiel (`<sha256>.partiel`, `descripteur.scelle.partiel`). Concrètement : `oublier` teste le
+jeton avant chacune de ses trois suppressions ; `admettre` après le budget (avant d'oublier
+l'ancienne entrée), au début de chaque tranche, après chaque hachage de tranche (avant de l'écrire)
+et après le hachage de la racine — et une admission abandonnée ne hache plus une tranche de plus ;
+`ecrireLeDescripteurScelle` à l'entrée et après la suppression de l'ancien descripteur, avant de
+renommer ; `servir`, `purger` et l'oubli du descripteur transmettent le jeton à `oublier`. Un
+rangement abandonné après la suppression de l'ancien descripteur laisse « aucun descripteur » —
+l'état sûr que ce module annonçait déjà pour une coupure.
+
+**Collisions entre sessions.** Le nom d'un partiel est partagé : deux onglets qui admettent la même
+empreinte, ou une opération abandonnée suivie d'une nouvelle sur la même empreinte, écrivent sous le
+même `<sha256>.partiel`. Le nettoyage tardif d'une opération abandonnée peut donc retirer le partiel
+d'une plus récente ; une écriture concurrente peut échouer sur la poignée exclusive de l'OPFS. Le
+pire est un téléchargement de plus : jamais un octet servi non vérifié, puisque `servir` revérifie
+tout. Des noms de partiel uniques par opération élimineraient la collision ; ils compliquent la
+purge (retrouver les partiels d'une empreinte) et ne sont pas pris ici. La rétention (`retenir`) a
+le même régime : jeton testé avant chaque geste visible.
 
 ## Modèle d'adversaire
 
@@ -185,8 +273,14 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
   monotone est la question n° 3 de l'ADR 0033 (#23), non traitée ici.
 - **L'adversaire qui détient la clé du coffre** (donc le coffre ouvert) peut sceller ce qu'il veut :
   c'est inhérent, la clé sert à ouvrir le coffre.
-- **`libv86` et le code de la coquille** viennent du cache HTTP ou du réseau (§ 6) : la page ne se
-  recharge pas hors connexion sans Service Worker, ce qui n'est pas l'objet de cette tranche.
+- **`libv86` et le code de la coquille** viennent du cache HTTP ou du réseau (§ 6) : **leurs octets
+  ne sont pas liés à ce qui s'exécute** — `libv86` a la confiance de l'origine, comme tout le code
+  de la coquille. La page ne se recharge pas hors connexion sans Service Worker, ce qui n'est pas
+  l'objet de cette tranche.
+- **Les redirections ne sont pas suivies** (§ 3) : un hébergement qui redirige le descripteur est
+  une origine sans application.
+- **Une opération du magasin déjà lancée n'est pas annulable** (§ 8) ; les partiels portent un nom
+  partagé entre sessions.
 - **La date `rangeLe` vient de l'horloge de l'appareil** : informative, jamais utilisée pour
   décider.
 - **Le stockage** : le descripteur rangé, le manifeste v86 et les noms d'artefacts ne sont pas des
@@ -202,6 +296,14 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
 - **Authentifier par le `sha256` du descripteur** : l'empreinte du descripteur ne vient que de
   lui-même.
 - **Ranger `libv86` au magasin** : inexécutable sous la CSP (§ 6).
+- **Présenter la confrontation de `libv86` comme une vérification de ce qui s'exécute** : le spike
+  (§ 6) n'a trouvé aucun mécanisme qui lie les octets dans un Worker sous cette CSP.
+- **`redirect: "error"`** pour les redirections : il lève un `TypeError`, indiscernable d'un réseau
+  coupé — exactement le défaut. `manual` rend une réponse que l'on peut classer.
+- **Vérifier les octets de boot contre `vendor/v86/artefacts/MANIFEST-*.json`** : ce manifeste ne
+  décrit que les artefacts v86 (`libv86`, wasm, BIOS, Linux d'essai), pas le noyau ni l'initrd de
+  l'image de référence ; l'obligation d'un `boot.empreintes` dans le descripteur est la seule source
+  commune aux quatre.
 
 ## Preuves
 
@@ -213,13 +315,16 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
   `coquille-preparation-du-demarrage` (ordre des refus avant tout boot),
   `vm-acquisition-des-petits-artefacts` et `vm-acquisition-disque-systeme` (hors connexion : fetch
   jamais appelé), `coquille-empreintes-du-boot`.
-- **Mutation** : la campagne `hors-ligne` (`tools/muter-gardes-hors-ligne.mjs`) tient 53 gardes, 53
-  tuées ; la campagne `magasin` en tient 20, 20 tuées (dont les restes de la revue de #292 : jeton
-  d'annulation de `retenir`, `.partiel` orphelin, jeton testé avant `renommer`). Les deux sont dans
-  le job requis « Campagnes de mutation ».
-- **Intégration navigateur, trois moteurs** : `tests/browser/descripteur-scelle.spec.mjs` — le HMAC
-  non extractible sur le vrai WebCrypto, le descripteur rangé et relu dans le vrai OPFS, remplacé
-  sans reste, altéré refusé.
+- **Mutation** (rejouée le 18/11/2026) : la campagne `hors-ligne`
+  (`tools/muter-gardes-hors-ligne.mjs`) tient 64 gardes, 64 tuées ; la campagne `magasin` en tient
+  32, 32 tuées (dont les restes de la revue de #292 et le jeton testé après chaque attente, § 8).
+  Les deux sont dans le job requis « Campagnes de mutation ».
+- **Intégration navigateur, trois moteurs** (Chromium, Firefox et WebKit exécutés le 18/11/2026) :
+  `tests/browser/descripteur-scelle.spec.mjs` — le HMAC non extractible sur le vrai WebCrypto, le
+  descripteur rangé et relu dans le vrai OPFS, remplacé sans reste, altéré refusé ; avec un VRAI
+  serveur : boucle de 302, 301 inter-origines et connexion refusée (§ 3), lecture de `libv86` sans
+  requête sur cache vide (§ 6 ; WebKit : une requête, limite mesurée).
+- **Spike** : `node tools/spike-liaison-libv86.mjs` rejoue la mesure du § 6 sur les trois moteurs.
 - **Bout en bout** : `tests/e2e/hors-ligne.spec.mjs` — réseau coupé, démarrage depuis la réserve,
   aucune réponse pour l'image ; descripteur altéré, HTTP 500 et portail captif sans repli. **Non
   exécuté dans cette session** : l'image de référence n'est pas fabriquée dans le sandbox de
@@ -228,9 +333,12 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
 ## Ce qui n'est pas prouvé
 
 - Le démarrage hors connexion **sur l'image réelle** (E2E ci-dessus) : écrit, relu, non exécuté.
-- Le comportement sous **WebKit** de l'épreuve d'intégration : non exécutable dans le sandbox de
-  l'agent (dépendances système) ; Chromium et Firefox, oui.
-- **Que `libv86` reste dans le cache HTTP** hors connexion, sur chaque moteur : non mesuré.
+- **Que `libv86` reste dans le cache HTTP** hors connexion en conditions réelles (éviction) : non
+  mesuré ; le spike montre la lecture du cache après un `import()` sur les trois moteurs, pas sa
+  durée de vie.
+- **L'AFFICHAGE** « hors connexion, version du <date> » : non livré (§ 7), après la fusion de B2.
+- **Un `move` déjà lancé** n'est pas annulable (§ 8) ; collisions de partiels entre onglets :
+  écrites, non éprouvées avec deux vrais onglets.
 - Le **coût** des empreintes de cinq artefacts de plus au premier démarrage, et la taille du magasin
   : non mesurés (image absente). `docs/quality-attributes.md` garde « non mesuré ».
 - Le retour arrière (rangé antérieur au volume) **sur l'image réelle** : prouvé au niveau unitaire

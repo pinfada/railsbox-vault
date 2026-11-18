@@ -14,8 +14,9 @@ import test from "node:test";
 
 import { lireDuCacheHttp } from "../../src/vm/acquisition-des-artefacts.mjs";
 import { CODE_ARTEFACT_ABSENT_HORS_CONNEXION } from "../../src/vm/artefact-absent-hors-connexion.mjs";
+import { adresseDe } from "../../src/v86-adresses.mjs";
 
-const ADRESSE = "/vendor/v86/artefacts/libv86-4444444444444444.mjs";
+const ADRESSE = adresseDe("libv86.mjs", "4".repeat(64));
 
 test("hors connexion, libv86 est lu en `only-if-cached` : jamais `force-cache`, qui va au réseau", async () => {
   const demandes = [];

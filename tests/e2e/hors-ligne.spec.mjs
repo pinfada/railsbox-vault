@@ -1,4 +1,4 @@
-// LA PREUVE du DÉMARRAGE HORS CONNEXION (#247, lot D1g ; ADR 0044 § 6, ADR 0045) : un coffre déjà
+// LA PREUVE du DÉMARRAGE HORS CONNEXION (#247, lot D1g ; ADR 0044 § 6, ADR 0046) : un coffre déjà
 // démarré une fois, réseau coupé, démarre depuis la réserve sans télécharger un octet de l'image.
 //
 // Sur le modèle de `mise-a-jour-du-paquet.spec.mjs` : la coquille réelle, la vraie image, le vrai
@@ -16,7 +16,7 @@
 //     la décision de l'ADR 0042 (`APPLICATION_NON_SERVIE`) s'applique, quoi que la réserve contienne.
 //
 // La page n'est jamais rechargée hors connexion : sans Service Worker, le code de la coquille vient du
-// cache HTTP ou du réseau, et ce n'est pas l'objet de cette tranche (ADR 0045, limite écrite).
+// cache HTTP ou du réseau, et ce n'est pas l'objet de cette tranche (ADR 0046, limite écrite).
 //
 // Ce que ce scénario ne prouve PAS : le retour arrière (rangé antérieur au volume) — il demande une
 // mise à jour complète de l'image ; il est prouvé par `tests/unit/coquille-hors-connexion.test.mjs` et

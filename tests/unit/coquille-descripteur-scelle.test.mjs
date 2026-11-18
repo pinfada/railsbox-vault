@@ -1,5 +1,5 @@
 /**
- * Le DESCRIPTEUR SCELLÉ (#247, D1g ; ADR 0045) : le format persistant rangé au magasin pour démarrer
+ * Le DESCRIPTEUR SCELLÉ (#247, D1g ; ADR 0046) : le format persistant rangé au magasin pour démarrer
  * hors connexion. Un adversaire qui écrit dans l'OPFS SANS la clé du coffre ne peut ni le fabriquer
  * ni le modifier ; un fichier non scellé, d'une autre version ou d'un autre coffre est REFUSÉ — jamais
  * accepté, jamais lu « au mieux ».

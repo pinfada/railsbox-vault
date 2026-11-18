@@ -1,5 +1,5 @@
 // Le DESCRIPTEUR SCELLÉ : le format persistant que le magasin d'artefacts garde pour démarrer HORS
-// CONNEXION (#247, lot D1g ; ADR 0045).
+// CONNEXION (#247, lot D1g ; ADR 0046).
 //
 // Ce que le fichier est : une copie du descripteur applicatif que l'origine a servi, rangée APRÈS une
 // acquisition complète, et SCELLÉE — HMAC-SHA-256 — sous une clé que seul le coffre déverrouillé sait

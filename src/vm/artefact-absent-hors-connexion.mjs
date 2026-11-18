@@ -1,4 +1,4 @@
-// Le refus typé d'un démarrage HORS CONNEXION auquel il manque un artefact (#247, D1g ; ADR 0045).
+// Le refus typé d'un démarrage HORS CONNEXION auquel il manque un artefact (#247, D1g ; ADR 0046).
 //
 // Il vit côté `src/vm/` — c'est là qu'il est levé. Le registre des codes de la coquille
 // (`refus-de-coquille.mjs`, publié à l'origine applicative) porte la MÊME chaîne : `src/vm/` n'importe
