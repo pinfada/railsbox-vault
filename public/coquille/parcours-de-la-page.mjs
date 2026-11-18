@@ -22,6 +22,7 @@ import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
 import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
 import { montrerLesBlocs } from "/src/coquille/blocs-montres.mjs";
+import { ecranDuParcours } from "/src/coquille/ecran-du-parcours.mjs";
 import { REVOCATION } from "/src/coquille/etat-de-la-revocation.mjs";
 import { brancherUnGesteDuParcours } from "/src/coquille/geste-du-parcours.mjs";
 import { effacerLesMessagesDeGeste } from "/src/coquille/messages-de-geste.mjs";
@@ -43,8 +44,6 @@ import {
   STATUTS,
   annonceDeLaSaisie,
   attenteDeLaPhrase,
-  coffreObserve,
-  ecranCourant,
   ecrireProgression,
   etapeAdmise,
   etapeApres,
@@ -391,32 +390,14 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     evitement.textContent = dansLaBarre ? "Aller à l'application" : "Aller au parcours";
   }
 
-  function ecranAMontrer(releve, rapport) {
-    etat.coffre = coffreObserve({
-      etat: rapport.etat,
+  const ecranAMontrer = (releve, rapport) =>
+    ecranDuParcours({
+      etat,
+      releve,
+      rapport,
       texteDesMoyens: noeud("deverrouillage-moyens").textContent,
-      moyensProposes: releve.moyensProposes ?? [],
-      dernierRefus: releve.dernierRefus,
-    });
-    if (!etat.progressionLue) return "chargement";
-    return ecranCourant({
-      pointeur: etat.pointeur,
-      coffre: etat.coffre,
-      moyens: releve.moyensProposes ?? [],
-      nombreDeCodes: releve.nombreDeCodes,
-      // Le CONSTAT du Worker, jamais l'indice du fichier : c'est la garde des étapes 4 à 9 (#239).
-      feuilleEprouvee: rapport.feuilleEprouvee === true,
-      inventaireRelu: releve.inventaireRelu !== false,
-      progression: etat.progression,
-      sousEtatDuCode: etat.sousEtatDuCode,
-      revocationFaite: etat.revocationFaite,
-      sansRevoquer: etat.sansRevoquer,
-      phrasePerdue: etat.phrasePerdue,
-      nouveauCodeDemande: etat.nouveauCodeDemande,
-      refus: releve.dernierRefus ?? null,
       moteur,
     });
-  }
 
   function rendre({ deplacerLeFocus = true } = {}) {
     if (pression.differerLeRendu(() => rendre({ deplacerLeFocus }))) return;
