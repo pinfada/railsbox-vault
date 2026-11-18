@@ -887,7 +887,7 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
     ouvert ». Le refus est celui d'une clé inconnue, le handle est rendu, la clé effacée
     ([ADR 0029](docs/decisions/0029-deverrouillage-dans-la-coquille.md), limite 12). Mesuré sur le
     Worker de produit, deux onglets réels, Chromium ; la même séquence rend « ouvert » sans le
-    correctif (commit rouge `0dd3109`).
+    correctif (commit rouge `795c7a7`).
 
     **Ce qui reste, dit sans détour.** (a) **Un détenteur antérieur de la clé de volume la garde** :
     s'il avait exécuté l'ouverture de l'enveloppe avant la révocation, il lit le volume (limite 12)
