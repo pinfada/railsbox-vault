@@ -114,11 +114,12 @@ classification « injoignable », l'anti-retour par la vraie décision de dépha
 **intégration navigateur sur les trois moteurs** (`npm run test:browser`, projets
 `frontiere-descripteur-*`) pour WebCrypto et l'OPFS réels ; **bout en bout**
 (`tests/e2e/hors-ligne.spec.mjs`, lot 5 de `reprise.yml`, sous le harnais `VAULT_E2E_CODE_MAX_AGE`
-de `tools/serve.mjs` : le code de la coquille y est en cache, ce que les en-têtes de production ne
-font pas — #299) pour le démarrage réellement hors ligne et les contre-épreuves — descripteur
-altéré, HTTP 500, portail captif. Les contre-épreuves « fabriqué » et « d'un autre coffre » sont
-prouvées en unitaire et en intégration navigateur, pas en bout en bout ; le retour arrière, en
-unitaire.
+
+- `--harnais-e2e-hors-ligne` de `tools/serve.mjs` — le serveur refuse de démarrer l'un sans l'autre
+  : le code de la coquille y est en cache, ce que les en-têtes de production ne font pas — #299)
+  pour le démarrage réellement hors ligne et les contre-épreuves — descripteur altéré, HTTP 500,
+  portail captif. Les contre-épreuves « fabriqué » et « d'un autre coffre » sont prouvées en
+  unitaire et en intégration navigateur, pas en bout en bout ; le retour arrière, en unitaire.
 
 Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve
