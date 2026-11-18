@@ -27,6 +27,7 @@
 
 import { fileURLToPath } from "node:url";
 
+import { MUTATIONS_DE_LA_REVOCATION } from "./mutants-de-la-revocation.mjs";
 import { campagneDeMutation } from "./moteur-de-mutation.mjs";
 
 const ADMISSION = "src/coquille/admission-applicative.mjs";
@@ -1260,6 +1261,8 @@ export const MUTATIONS = Object.freeze([
     apres: "",
     epreuves: [EPREUVE_PARCOURS_CONDUITES],
   },
+  // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
+  ...MUTATIONS_DE_LA_REVOCATION,
 ]);
 
 function rapporter({ resultats }, json) {

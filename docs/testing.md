@@ -165,6 +165,29 @@ révision datée qui nomme ce qui a dérivé plutôt que de corriger en silence 
 ajouter une ligne à `CAMPAGNES` dans `tools/rejouer-les-campagnes.mjs`, et documenter le compte ici
 et dans l'ADR de la tranche.
 
+### Le modèle d'état de la révocation (#310, ADR 0049)
+
+Sept modules purs de `src/coquille/` (`*-de-la-revocation.mjs`), éprouvés sous Node, sans navigateur
+:
+
+| Épreuve                                              | Ce qu'elle prouve                                                                                                                                                                                                                                       |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/unit/coquille-revocation-table.test.mjs`      | la table de l'ADR 0049, LUE mot à mot (24 lignes × 16 colonnes = 384 cellules, 26 « — »), puis chaque cellule rejouée sur `transiter` ; chaque message nomme sa cellule (`[P × oui]`)                                                                   |
+| `tests/unit/coquille-revocation-invariants.test.mjs` | les invariants, sur le graphe quotienté, avec des prédicats écrits dans l'épreuve — jamais déduits de l'ADR (D6) : fermetures, provenance, T9 (18 arêtes), occurrence, empreinte (bijection sur le produit des entrées), les 32 cellules phase × indice |
+| `tests/unit/coquille-revocation-magasin.test.mjs`    | l'ordre état → effets, le pré-vol fermé (8 sources × 4 façons d'échouer), les échecs par classe d'effet, les lectures abandonnées dans les deux ordres, `noter` et la remise à zéro                                                                     |
+| `tests/unit/coquille-revocation-fermeture.test.mjs`  | la fermeture et la réentrance : zéro envoi et zéro lancement quand un exécuteur appelle `terminer`, `appliquer`, `modifier`… (propagé ou avalé), huit sources                                                                                           |
+| `tests/unit/coquille-revocation-executeurs.test.mjs` | les exécuteurs copiés à la création : accesseur, propriété héritée, valeur non fonction refusés ; propriété remplacée ou ajoutée après coup ignorée ; `Proxy` jamais lu par `get` ; aucun récepteur (`this`) pour aucun exécuteur                       |
+| `tests/unit/coquille-revocation-reponse.test.mjs`    | le contrat du succès de la révocation et la normalisation de l'inventaire (N1′-N12), toutes deux totales                                                                                                                                                |
+| `tests/unit/coquille-revocation-purete.test.mjs`     | aucun DOM, aucune horloge, aucun état de module, aucun import de `public/`                                                                                                                                                                              |
+
+Leurs mutants sont dans `tools/mutants-de-la-revocation.mjs`, table SÉPARÉE concaténée à la campagne
+`coquille` (`tools/muter-gardes-coquille.mjs` fait déjà plus de 1 300 lignes) : aucune nouvelle
+campagne, aucun nouveau seuil. Le moteur recopie désormais aussi `docs/decisions/` dans l'atelier,
+parce que l'épreuve de la table lit l'ADR. Un mutant **équivalent** au comportement actuel n'est pas
+compté ; la liste en est écrite dans l'en-tête de la table et dans l'ADR. Ce que C1 ne mesure PAS
+(DOM, CSS, focus, lecteurs d'écran, trois moteurs, ordre des écritures de `parcours.json` entre deux
+documents) est un critère bloquant de C2.
+
 ### La frontière de la coquille de PRODUIT (#161)
 
 Depuis #161, la frontière d'origine est éprouvée **deux fois**, et les deux épreuves ne portent pas
