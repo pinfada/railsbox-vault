@@ -141,6 +141,13 @@ spike (`app-inter.mjs`) et du banc, éprouvable par le seul navigateur — `apps
 moteurs) et `deverrouillage-frontiere.spec.mjs` — ; et `PEUT_OUVRIR = true` à la levée de
 l'indétermination, que le double du Worker ne distingue pas d'un refus tiers.
 
+Les deux campagnes qui tenaient déjà `conduiteApresLaMort` et `conduiteApresLeVerrouillage`
+(`cycle-de-vie`, `verrouillage`) suivent l'état `indetermine` : leur mutant « un moteur INDISPONIBLE
+reste indisponible » vise la nouvelle expression, et un mutant par campagne retire la préservation
+de `indetermine`. **407/407 mutants tués sur les quatorze campagnes** (`npm run check:mutations`,
+18/11/2026) — une première version de ce lot n'avait rejoué que `coquille` en local, et la CI a
+trouvé le survivant de `cycle-de-vie` : le texte muté avait changé.
+
 Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve
 rejouée avant ET après le retrait d'une garde, restauration. Avant #196, rien ne les jouait TOUTES
