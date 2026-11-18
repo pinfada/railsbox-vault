@@ -180,3 +180,17 @@ test("#302 : application démarrée, une région d'alerte vide est hors de l'éc
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(page.getByRole("alert")).not.toBeEmpty();
 });
+
+test("#302 : application démarrée, « Où suis-je ? » se lit par le menu « Coffre », et résume les neuf étapes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await jusquAuTravail(page);
+  await simulerLigneDuCycle(page, "cycle:application-demarree");
+  await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
+  const ouSuisJe = page.getByText("Où suis-je ?", { exact: true });
+  await expect(ouSuisJe, "menu fermé : le panneau est caché").toBeHidden();
+  await page.locator("#menu-du-coffre > summary").click();
+  await ouSuisJe.click();
+  await expect(page.getByRole("listitem")).toHaveCount(9);
+});

@@ -147,7 +147,11 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   const telechargement = a.waitForEvent("download", { timeout: 180_000 });
   await activer(a, bouton(a, "Sauvegarder mon coffre"));
   await (await telechargement).saveAs(fichier);
-  await expect(a.getByText(/^Sauvegarde prête\./)).toBeVisible({ timeout: 180_000 });
+  // #269 (c2c2bc5, `MESSAGES.sauvegardeEnregistree`) : la sauvegarde dit sa TAILLE une fois faite ; « Sauvegarde
+  // prête. » n'est plus dite que si la taille est inconnue. Même exigence : le message de fin se voit.
+  await expect(
+    a.getByText(/^Sauvegarde de \d+ Mo enregistrée dans votre dossier de téléchargements/),
+  ).toBeVisible({ timeout: 180_000 });
   await activer(a, bouton(a, "Continuer : Restaurer sur un autre appareil"));
   await a.close();
   const b = await context.newPage();
