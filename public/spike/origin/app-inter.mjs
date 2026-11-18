@@ -44,11 +44,11 @@ function publier(rapport, etat) {
 // --- Phase « poser » : l'application A dépose un actif par mécanisme --------------------------
 
 async function poserOpfs(rapport) {
-  if (!navigator.storage?.getDirectory) {
-    rapport.opfs = "indisponible: navigator.storage.getDirectory absent";
+  const { racine, absent } = await racineDeLOpfs();
+  if (absent) {
+    rapport.opfs = `${absent.resultat}: ${absent.detail}`;
     return;
   }
-  const racine = await navigator.storage.getDirectory();
   const fichier = await racine.getFileHandle(ACTIFS_A.opfsFichier, { create: true });
   let flux = await fichier.createWritable();
   await flux.write(SECRET_A);
@@ -205,6 +205,22 @@ function indisponible(detail) {
   return { resultat: "indisponible", detail };
 }
 
+/**
+ * La racine de l'OPFS, ou son ABSENCE dite comme telle. WebKit 26.6+ expose `getDirectory` mais le
+ * REJETTE en contexte éphémère (#231) : un rejet est une indisponibilité du moteur, pas une sonde
+ * cassée — c'est le vocabulaire que le témoin attend déjà pour la fonction absente.
+ */
+async function racineDeLOpfs() {
+  if (!navigator.storage?.getDirectory) {
+    return { absent: indisponible("navigator.storage.getDirectory absent") };
+  }
+  try {
+    return { racine: await navigator.storage.getDirectory() };
+  } catch (erreur) {
+    return { absent: indisponible(`navigator.storage.getDirectory rejeté (${erreur?.name})`) };
+  }
+}
+
 const SONDES = [
   {
     nom: "opfs-fichier-de-a",
@@ -213,7 +229,8 @@ const SONDES = [
     async run() {
       if (!navigator.storage?.getDirectory)
         return indisponible("navigator.storage.getDirectory absent");
-      const racine = await navigator.storage.getDirectory();
+      const { racine, absent } = await racineDeLOpfs();
+      if (absent) return absent;
       try {
         const handle = await racine.getFileHandle(ACTIFS_A.opfsFichier);
         return lu(`contenu : ${await (await handle.getFile()).text()}`);
@@ -229,7 +246,8 @@ const SONDES = [
     async run() {
       if (!navigator.storage?.getDirectory)
         return indisponible("navigator.storage.getDirectory absent");
-      const racine = await navigator.storage.getDirectory();
+      const { racine, absent } = await racineDeLOpfs();
+      if (absent) return absent;
       try {
         const repertoire = await racine.getDirectoryHandle(ACTIFS_A.opfsRepertoire);
         const handle = await repertoire.getFileHandle(ACTIFS_A.opfsFichierDansRepertoire);
@@ -246,7 +264,8 @@ const SONDES = [
     async run() {
       if (!navigator.storage?.getDirectory)
         return indisponible("navigator.storage.getDirectory absent");
-      const racine = await navigator.storage.getDirectory();
+      const { racine, absent } = await racineDeLOpfs();
+      if (absent) return absent;
       try {
         await racine.removeEntry(ACTIFS_A.opfsRepertoire, { recursive: true });
       } catch (erreur) {

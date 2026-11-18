@@ -360,7 +360,14 @@ async function lireCacheStorage() {
 async function lireOpfs() {
   if (!navigator.storage?.getDirectory) return "";
   const morceaux = [];
-  const racine = await navigator.storage.getDirectory();
+  let racine;
+  try {
+    racine = await navigator.storage.getDirectory();
+  } catch {
+    // WebKit 26.6+ REJETTE `getDirectory()` en contexte éphémère (#231) : il n'y a alors rien à
+    // fouiller, exactement comme quand la fonction manque. Rien n'a pu s'y déposer.
+    return "";
+  }
   for await (const [nom, poignee] of racine.entries()) {
     morceaux.push(nom);
     if (poignee.kind !== "file") continue;
