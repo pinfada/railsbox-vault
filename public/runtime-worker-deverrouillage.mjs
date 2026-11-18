@@ -35,6 +35,7 @@ import {
   inventorierEnveloppe,
   ouvrirEnveloppe,
 } from "/src/vm/enveloppe-de-cle.mjs";
+import { cleRefusee } from "/src/vm/enveloppe/enveloppe-errors.mjs";
 import {
   TYPES_KEK,
   tirerCleDeVolume,
@@ -162,13 +163,13 @@ export async function deverrouiller(message, correlation) {
     ? await ouvrirLExistante(moyen, message, versionMinimale)
     : await creerLeCoffre(moyen, message);
 
-  // La DEK est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le chemin d'ÉCHEC est
+  // La DEK de la passe 1 est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le chemin d'ÉCHEC est
   // celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
   // (`VAULT_STORAGE_BUSY`), et les octets en clair de la clé de volume restaient alors dans le tas
   // du Worker. Un second clic sur « Ouvrir par la phrase » y suffisait — un geste ordinaire, pas un
   // scénario. C'est le constat 5 de la revue de sécurité de la PR #167.
   try {
-    await ouvrirLeVolume(ouverte.dek);
+    await ouvrirLeVolume(ouverte.dek, () => revaliderSousLeHandle(ouverte));
   } finally {
     ouverte.dek.fill(0);
   }
@@ -200,7 +201,7 @@ export async function deverrouiller(message, correlation) {
  * que plus personne ne référençait, et l'ouverture suivante rendait `VAULT_STORAGE_BUSY` — sur le
  * volume que l'utilisateur venait d'ouvrir lui-même. Constat 6 de la même revue.
  */
-async function ouvrirLeVolume(dek) {
+async function ouvrirLeVolume(dek, revalider) {
   const precedent = interne.backend;
   interne.backend = null;
   interne.etat = ETATS_DU_VOLUME.verrouille;
@@ -212,7 +213,66 @@ async function ouvrirLeVolume(dek) {
     cle: dek,
     identifiantVolume: IDENTIFIANT_DU_VOLUME_COQUILLE,
     transactionnel: false,
+    sousLeHandle: revalider,
   });
+}
+
+/**
+ * LA REVALIDATION de #311, sous le handle exclusif du volume.
+ *
+ * La passe 1 a obtenu la clé de volume AVANT que ce Worker soit seul : entre elle et la prise du
+ * handle, un autre onglet qui tenait le volume a pu révoquer l'emplacement, puis fermer. Ouvrir
+ * alors le volume publiait « ouvert » sous une KEK que l'enveloppe refuse. Ici l'enveloppe est
+ * OUVERTE UNE SECONDE FOIS, sous le handle — plus personne ne peut en retirer une clé tant que ce
+ * Worker le tient —, et deux choses sont exigées de la réponse : le MÊME emplacement, et la MÊME clé
+ * de volume. Le refus est celui de la clé inconnue (`VAULT_ENVELOPPE_CLE_REFUSEE`) ; l'ouvreur
+ * rend le handle, `deverrouiller` efface la clé de la passe 1, et rien n'est publié.
+ *
+ * C'est aussi ICI que la migration de page v1→v2 a lieu : une écriture d'enveloppe ne se fait que
+ * sous le handle, sans quoi un onglet en retard pouvait republier l'ANCIENNE liste d'emplacements
+ * par-dessus une révocation. `version` et `migree` publiés sont ceux de cette passe, l'autoritaire.
+ *
+ * **Ce que cela ne fait pas** : retirer la clé de volume à qui l'a déjà eue (SECURITY.md, limite 12).
+ */
+async function revaliderSousLeHandle(ouverte) {
+  const sous = await ouvrirEnveloppe({
+    support: support(),
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek: ouverte.kek,
+    versionMinimale: ouverte.versionMinimale,
+  });
+  try {
+    if (
+      sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||
+      !memesOctets(sous.dek, ouverte.dek)
+    ) {
+      throw cleRefusee({ volume: IDENTIFIANT_VOLUME });
+    }
+    ouverte.version = sous.version;
+    ouverte.migree = sous.migration?.faite === true;
+  } finally {
+    sous.dek.fill(0);
+  }
+}
+
+/** Égalité sans court-circuit : le temps ne dépend pas du rang du premier octet qui diffère. */
+function memesOctets(a, b) {
+  let ecart = a.length ^ b.length;
+  for (let index = 0; index < a.length; index += 1) ecart |= a[index] ^ (b[index] ?? 0);
+  return ecart === 0;
+}
+
+/**
+ * Le support de la PASSE 1 : l'enveloppe se LIT, elle ne s'écrit pas. `ouvrirEnveloppe` migre une
+ * page v1 en l'écrivant, et une écriture faite avant la prise du handle est exactement ce que #311
+ * interdit ; l'écriture refusée ici est avalée par la migration, qui rend « non faite » et que la
+ * passe 2 rejoue sous le handle.
+ */
+function enLectureSeule(support) {
+  const refuser = () => {
+    throw new Error("L'enveloppe est en lecture seule avant la prise du handle du volume (#311).");
+  };
+  return Object.freeze({ ...support, allouer: refuser, ecrire: refuser, barriere: refuser });
 }
 
 /**
@@ -232,6 +292,8 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
     kek: ouverte.kek,
     version: ouverte.version,
     migree: ouverte.migration?.faite === true,
+    identifiantEmplacement: ouverte.identifiantEmplacement,
+    versionMinimale,
     // Seul un CODE éprouve une feuille, jamais l'emplacement d'une phrase ou d'une passkey.
     identifiantEprouve: moyen.derivePar === "page" ? null : ouverte.identifiantEmplacement,
   };
@@ -241,7 +303,7 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
 async function ouvrirSousLaPage(message, versionMinimale) {
   const kek = exigerKekDeLaPage(message.kek);
   const ouverte = await ouvrirEnveloppe({
-    support: support(),
+    support: enLectureSeule(support()),
     identifiantVolume: IDENTIFIANT_VOLUME,
     kek,
     versionMinimale,
@@ -260,7 +322,7 @@ async function ouvrirSousLaPage(message, versionMinimale) {
  */
 async function ouvrirSousLeCode(moyen, message, versionMinimale) {
   return ouvrirParLeCode({
-    support: support(),
+    support: enLectureSeule(support()),
     identifiantVolume: IDENTIFIANT_VOLUME,
     code: String(message.code ?? ""),
     derivateur: CATALOGUE.pour(moyen.typeKek),
@@ -302,7 +364,14 @@ async function creerLeCoffre(moyen, message) {
     parametres,
     identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
   });
-  return { dek, kek, version: creee.version, identifiantEprouve: null };
+  return {
+    dek,
+    kek,
+    version: creee.version,
+    identifiantEprouve: null,
+    identifiantEmplacement: creee.identifiantEmplacement,
+    versionMinimale: null,
+  };
 }
 
 // --- Le moyen de récupération, et son code rendu UNE fois -----------------------------------------
