@@ -195,7 +195,9 @@ async function revoquerEnUrgence(contexte) {
   const { demander, rapport, publier, dire } = contexte;
   dire("portabilite-refus", "");
   // La demande part pour de bon : la page le dit AVANT d'attendre, et ne dit plus « annulée » (#308).
+  // La ligne « en cours » est ce que la page lit pour fermer les sorties de l'étape 9.
   dire("revocation-etat", MESSAGES.revocationEnCours);
+  conclure(contexte, "portabilite:revocation-en-cours");
   try {
     const rendu = await demander("revoquerEnUrgence", {});
     rapport.portabilite.revocation = {
@@ -218,9 +220,13 @@ async function revoquerEnUrgence(contexte) {
     return rapport.portabilite.revocation;
   } catch (erreur) {
     // Tout échec reçu APRÈS l'envoi se dit « a peut-être eu lieu » : un refus typé peut survenir
-    // après la publication de la page neuve (ADR 0026), et le Worker n'atteste pas la phase.
+    // après la publication de la page neuve (ADR 0026), et le Worker n'atteste pas la phase. Aucune
+    // conduite « refusé » n'est écrite ; le code reste au relevé et dans la ligne d'état (diagnostic).
+    const code = erreur?.code ?? CODES_REFUS_COQUILLE.gesteRompu;
+    rapport.portabilite.revocation = { incertaine: true, code };
     dire("revocation-etat", MESSAGES.revocationIncertaine);
-    return refuser(contexte, "revocation", erreur);
+    conclure(contexte, `portabilite:revocation-incertaine:${code}`);
+    return rapport.portabilite.revocation;
   } finally {
     publier();
   }

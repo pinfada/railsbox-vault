@@ -128,9 +128,7 @@ async function toutLeTexteDit(page) {
   const alertes = await page.getByRole("alert").allTextContents();
   const etat = await page.locator("#revocation-etat").textContent();
   const refus = await page.locator("#portabilite-refus").textContent();
-  const declencheur = page.getByRole("button", { name: REVOQUER, exact: true });
-  const description = await declencheur.evaluate((n) => n.getAttribute("aria-describedby") ?? "");
-  return { alertes, etat, refus, description };
+  return { alertes, etat, refus };
 }
 
 test("en vol : « Terminer sans révoquer » et « Revenir à mon application » sont fermés, rien n'est affirmé", async ({
@@ -162,8 +160,9 @@ test("issue incertaine (le Worker ne décode pas le message et meurt : aucune r�
     expect(texte, "aucune alerte ni annonce ne dit « refusée »").not.toMatch(/refus/i);
   }
   await expect(page.locator("#revocation-etat")).toContainText("peut-être eu lieu");
-  await expect(bouton(page, "Terminer sans révoquer")).toBeDisabled();
-  await expect(bouton(page, "Revenir à mon application")).toBeEnabled();
-  await expect(bouton(page, REVOQUER)).not.toHaveAttribute("aria-disabled", "true");
+  // Le Worker mort remonte l'écran de réouverture : les gestes de l'étape 9 sont cachés, et le
+  // restent fermés (l'incertitude est retenue, la sortie qui dirait « rien n'a été révoqué » aussi).
+  await expect(page.locator("#parcours-sans-revoquer")).toBeDisabled();
+  await expect(page.locator("#parcours-retour-application")).toBeEnabled();
   await expect(page.getByText("tous vos moyens", { exact: false })).toHaveCount(0);
 });

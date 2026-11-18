@@ -55,6 +55,16 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     dire("parcours-refus", conduiteHumaine(code));
   }
 
+  /**
+   * Une révocation PARTIE dont l'issue n'est pas connue : alerte « a peut-être eu lieu », jamais
+   * « refusée ». La page retient l'incertitude : « Terminer sans révoquer » ne la contredit pas.
+   */
+  function incertaine(code) {
+    console.warn(`[RailsBox Vault] révocation incertaine : ${code ?? "sans code"}`);
+    etat.revocationIncertaine = true;
+    refuserSansCode(MESSAGES.revocationIncertaine);
+  }
+
   function refuserSansCode(texte) {
     dire("parcours-reussite", "");
     dire("parcours-refus", texte);
@@ -122,10 +132,13 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
       etat.referenceDesRefus = null;
       return dire("parcours-attente", MESSAGES.sauvegardeEnCours);
     }
+    // La révocation EN VOL se dit dans son bloc (`revocation-etat`) ; elle n'est pas une restauration.
+    if (ligne.evenement === "revocation-en-cours") return dire("parcours-attente", "");
     if (ligne.evenement.endsWith("-en-cours")) {
       return dire("parcours-attente", MESSAGES.restaurationEnCours);
     }
     dire("parcours-attente", "");
+    if (ligne.evenement === "revocation-incertaine") return incertaine(ligne.code);
     if (ligne.evenement.endsWith("-refusee")) return refuser(ligne.code);
     if (ligne.evenement === "sauvegarde-prete") {
       const ecrite = lireJson("coquille-rapport").portabilite?.sauvegarde?.taille ?? null;
@@ -141,6 +154,7 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     }
     if (ligne.evenement === "revoque") {
       etat.revocationFaite = true;
+      etat.revocationIncertaine = false; // une révocation qui aboutit lève le doute
       pas("revocation-faite");
       const revocation = lireJson("coquille-rapport").portabilite?.revocation ?? {};
       const retires = revocation.nombreRetires ?? 0;

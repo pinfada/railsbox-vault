@@ -120,5 +120,18 @@ de l'enveloppe, de `src/vm/` ni des codes de refus.**
   la page ne peut pas tenir (relecture de #308, REFUSÉ `5feee19`). Une attestation du Worker (« rien
   n'a été publié ») permettrait de dire « refusée » : c'est un changement du Worker, hors de ce lot
   « page seule », non fait. La page ne dit jamais « rien n'a été révoqué » d'une demande partie.
+- **Relecture de #308 (REFUSÉ `13b01fa`), la sortie et l'alerte.** (1) Pendant une révocation en
+  vol, « Terminer sans révoquer » et « Revenir à mon application » sont FERMÉS (`disabled`) : le
+  premier aurait posé `sansRevoquer` et fait dire « rien n'a été révoqué » d'une demande qui peut
+  aboutir. La page lit ce que le geste publie — la ligne `portabilite:revocation-en-cours` — ;
+  aucune navigation d'étape n'existe par ailleurs à l'étape 9. Après une issue incertaine, «
+  Terminer sans révoquer » RESTE fermé tant que le document vit (l'incertitude est retenue par la
+  page) ; « Revenir à mon application » est rouvert, il ne dit rien du coffre. Une révocation qui
+  aboutit ensuite lève le doute. (2) Un échec reçu après l'envoi n'appelle plus `refuser` : aucune
+  conduite « refusé » n'est écrite, la ligne d'état est `portabilite:revocation-incertaine:<code>`,
+  l'alerte dit « a peut-être eu lieu », le code reste au relevé et en console. _Limite_ :
+  l'incertitude retenue est celle du document ; rechargée, la page ne s'en souvient pas (la personne
+  a été invitée à rouvrir son coffre pour vérifier). Un message altéré livré au Worker le fait
+  cesser de répondre : l'épreuve navigateur joue ainsi, sur le vrai Worker, l'issue « Worker mort ».
 - **Non prouvé.** L'annonce par un vrai lecteur d'écran (seules la description et le nom accessibles
   sont éprouvés, sous Chromium) ; le parcours clavier E2E sur Rails réel (il tourne en CI).

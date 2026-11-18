@@ -75,6 +75,9 @@ const GESTES_PORTABILITE = "src/coquille/gestes-de-portabilite.mjs";
 const MOYENS_NOMMES = "src/coquille/moyens-nommes.mjs";
 const CONFIRMEE = "src/coquille/confirmation-de-la-revocation.mjs";
 const BLOCS_MONTRES = "src/coquille/blocs-montres.mjs";
+const SORTIE = "src/coquille/sortie-de-la-revocation.mjs";
+const OBSERVATEURS = "public/coquille/observateurs-du-parcours.mjs";
+const EPREUVE_SORTIE = "tests/unit/coquille-revocation-sortie.test.mjs";
 const EPREUVE_BLOCS = "tests/unit/coquille-blocs-montres.test.mjs";
 const PREUVE = "src/coquille/preuve-de-la-feuille.mjs";
 const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
@@ -1498,9 +1501,9 @@ export const MUTATIONS = Object.freeze([
     garde: "montrerLesBlocs — l'ordre de l'appel",
     fichier: BLOCS_MONTRES,
     avant:
-      'export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve }) {\n  for (const element of doc.querySelectorAll("[data-bloc]")) {\n    element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);\n  }\n  for (const id of SECTIONS) {\n    const section = noeud(id);\n    if (section === null) continue;\n    section.hidden =\n      !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);\n  }\n  suivreLaConfirmationDeRevocation({ noeud, dire, releve });\n}\n',
+      'export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve, revocation }) {\n  for (const element of doc.querySelectorAll("[data-bloc]")) {\n    element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);\n  }\n  for (const id of SECTIONS) {\n    const section = noeud(id);\n    if (section === null) continue;\n    section.hidden =\n      !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);\n  }\n  suivreLaConfirmationDeRevocation({ noeud, dire, releve });\n  if (revocation !== undefined) poserLaSortie({ noeud, ...revocation });\n}\n',
     apres:
-      'export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve }) {\n  suivreLaConfirmationDeRevocation({ noeud, dire, releve });\n  for (const element of doc.querySelectorAll("[data-bloc]")) {\n    element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);\n  }\n  for (const id of SECTIONS) {\n    const section = noeud(id);\n    if (section === null) continue;\n    section.hidden =\n      !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);\n  }\n}\n',
+      'export function montrerLesBlocs({ doc, noeud, visibles, vueComplete, dire, releve, revocation }) {\n  suivreLaConfirmationDeRevocation({ noeud, dire, releve });\n  for (const element of doc.querySelectorAll("[data-bloc]")) {\n    element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);\n  }\n  for (const id of SECTIONS) {\n    const section = noeud(id);\n    if (section === null) continue;\n    section.hidden =\n      !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);\n  }\n  if (revocation !== undefined) poserLaSortie({ noeud, ...revocation });\n}\n',
     epreuves: [EPREUVE_BLOCS],
   },
   {
@@ -1510,6 +1513,127 @@ export const MUTATIONS = Object.freeze([
     avant: "    element.hidden = !vueComplete && !visibles.includes(element.dataset.bloc);\n",
     apres: "    element.hidden = !visibles.includes(element.dataset.bloc);\n",
     epreuves: [EPREUVE_BLOCS],
+  },
+  {
+    nom: "pendant une révocation en vol, « Terminer sans révoquer » est fermé (#308)",
+    garde: "sortieDeLEtape9 — l'état « en vol » ferme la sortie qui dit « rien »",
+    fichier: SORTIE,
+    avant: "enVol || revocationIncertaine === true",
+    apres: "revocationIncertaine === true",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "après une issue incertaine, « Terminer sans révoquer » reste fermé (#308)",
+    garde: "sortieDeLEtape9 — l'incertitude retenue",
+    fichier: SORTIE,
+    avant: "enVol || revocationIncertaine === true",
+    apres: "enVol",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "pendant une révocation en vol, « Revenir à mon application » est fermé aussi (#308)",
+    garde: "sortieDeLEtape9 — toute sortie de l'étape",
+    fichier: SORTIE,
+    avant: "retourFerme: enVol",
+    apres: "retourFerme: false",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "« en vol » se lit sur la ligne « revocation-en-cours » que le geste publie (#308)",
+    garde: "sortieDeLEtape9 — le nom de l'événement",
+    fichier: SORTIE,
+    avant: 'evenement === "revocation-en-cours"',
+    apres: 'evenement === "revocation-en-cours-x"',
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "la sortie fermée est POSÉE sur « Terminer sans révoquer » (#308)",
+    garde: "poserLaSortie — le bouton de la fin sans révoquer",
+    fichier: SORTIE,
+    avant: "sans.disabled = sansRevoquerFerme;",
+    apres: "sans.disabled = false;",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "la sortie fermée est POSÉE sur « Revenir à mon application » (#308)",
+    garde: "poserLaSortie — le bouton de retour",
+    fichier: SORTIE,
+    avant: "retour.disabled = retourFerme;",
+    apres: "retour.disabled = false;",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "la page ferme la sortie à chaque rendu des blocs — l'APPEL de `poserLaSortie` (#308)",
+    garde: "montrerLesBlocs — la sortie de l'étape 9",
+    fichier: BLOCS_MONTRES,
+    avant: "  if (revocation !== undefined) poserLaSortie({ noeud, ...revocation });\n",
+    apres: "",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "le geste publie « en cours » : c'est ce que la page lit pour fermer la sortie (#308)",
+    garde: "revoquerEnUrgence — la ligne « revocation-en-cours »",
+    fichier: GESTES_PORTABILITE,
+    avant: '  conclure(contexte, "portabilite:revocation-en-cours");\n',
+    apres: "",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "un échec reçu après l'envoi publie « incertaine », jamais « refusée » (#308)",
+    garde: "revoquerEnUrgence — la ligne de l'issue",
+    fichier: GESTES_PORTABILITE,
+    avant: "portabilite:revocation-incertaine:${code}",
+    apres: "portabilite:revocation-refusee:${code}",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "le diagnostic d'une issue incertaine reste au relevé (#308)",
+    garde: "revoquerEnUrgence — le relevé de l'issue",
+    fichier: GESTES_PORTABILITE,
+    avant: "{ incertaine: true, code }",
+    apres: "{ code }",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "l'observateur ne dit pas « restauration en cours » d'une révocation en vol (#308)",
+    garde: "surLigneDePortabilite — `revocation-en-cours`",
+    fichier: OBSERVATEURS,
+    avant:
+      '    if (ligne.evenement === "revocation-en-cours") return dire("parcours-attente", "");\n',
+    apres: "",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "l'observateur dit « a peut-être eu lieu » d'une issue incertaine — l'APPEL de `incertaine` (#308)",
+    garde: "surLigneDePortabilite — `revocation-incertaine`",
+    fichier: OBSERVATEURS,
+    avant: '    if (ligne.evenement === "revocation-incertaine") return incertaine(ligne.code);\n',
+    apres: "",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "l'incertitude est retenue par la page (#308)",
+    garde: "incertaine — `revocationIncertaine`",
+    fichier: OBSERVATEURS,
+    avant: "    etat.revocationIncertaine = true;\n",
+    apres: "",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "l'alerte d'une issue incertaine ne dit pas « refusée » (#308)",
+    garde: "incertaine — le texte de l'alerte",
+    fichier: OBSERVATEURS,
+    avant: "    refuserSansCode(MESSAGES.revocationIncertaine);\n",
+    apres: "    refuser(code);\n",
+    epreuves: [EPREUVE_SORTIE],
+  },
+  {
+    nom: "une révocation qui aboutit lève l'incertitude (#308)",
+    garde: "surLigneDePortabilite — `revoque`",
+    fichier: OBSERVATEURS,
+    avant: "      etat.revocationIncertaine = false; // une révocation qui aboutit lève le doute\n",
+    apres: "",
+    epreuves: [EPREUVE_SORTIE],
   },
   {
     nom: "un code du chemin rend SA conduite, jamais la phrase générique",

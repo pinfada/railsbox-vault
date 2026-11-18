@@ -5,13 +5,16 @@
 // qui peut aboutir ensuite. Après une issue INCERTAINE, « Terminer sans révoquer » reste fermé : il
 // dirait « rien n'a été révoqué » sans que la page le sache.
 
+import { lireLigneDEtat } from "./parcours.mjs";
+
 /**
  * @param {{ ligneDePortabilite?: string | null, revocationIncertaine?: boolean }} etat
  * @returns {{ sansRevoquerFerme: boolean, retourFerme: boolean }}
  */
-export function sortieDeLEtape9(etat) {
-  void etat;
-  return { sansRevoquerFerme: false, retourFerme: false };
+export function sortieDeLEtape9({ ligneDePortabilite = null, revocationIncertaine = false }) {
+  // « En vol » se lit sur la ligne que le geste publie, la seule chose que la page observe d'un geste.
+  const enVol = lireLigneDEtat(ligneDePortabilite)?.evenement === "revocation-en-cours";
+  return { sansRevoquerFerme: enVol || revocationIncertaine === true, retourFerme: enVol };
 }
 
 /**

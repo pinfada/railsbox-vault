@@ -204,6 +204,19 @@ test("observateur : « en cours » d'une révocation ne dit pas « restauration 
   }
 });
 
+test("observateur : une révocation qui aboutit ensuite lève l'incertitude retenue", async () => {
+  const o = await monterLesObservateurs();
+  try {
+    o.ligne(`portabilite:revocation-incertaine:${CODES_REFUS_COQUILLE.workerMort}`);
+    assert.equal(o.etat.revocationIncertaine, true);
+    o.ligne("portabilite:revoque:1-retires:1-restant");
+    assert.equal(o.etat.revocationIncertaine, false);
+    assert.equal(o.etat.revocationFaite, true);
+  } finally {
+    o.fin();
+  }
+});
+
 test("observateur : une issue incertaine dit « a peut-être eu lieu » en alerte, jamais « refusée », code en console", async () => {
   const o = await monterLesObservateurs();
   try {
