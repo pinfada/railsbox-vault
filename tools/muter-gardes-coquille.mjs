@@ -70,6 +70,7 @@ const DEVERROUILLAGE = "public/runtime-worker-deverrouillage.mjs";
 const REVALIDATION = "src/coquille/revalidation-sous-le-handle.mjs";
 const OUVERTURE_DU_VOLUME = "src/vm/opfs-volume-ouverture.mjs";
 const EPREUVE_REVALIDATION = "tests/unit/coquille-revalidation-sous-le-handle.test.mjs";
+const EPREUVE_WORKER_DEVERROUILLAGE = "tests/unit/coquille-worker-deverrouillage.test.mjs";
 const EPREUVE_SOUS_LE_HANDLE = "tests/unit/vm-ouverture-sous-le-handle.test.mjs";
 
 /**
@@ -1344,7 +1345,7 @@ export const MUTATIONS = Object.freeze([
     avant:
       "    support: enLectureSeule(support()),\n    identifiantVolume: IDENTIFIANT_VOLUME,\n    kek,\n",
     apres: "    support: support(),\n    identifiantVolume: IDENTIFIANT_VOLUME,\n    kek,\n",
-    epreuves: [EPREUVE_REVALIDATION],
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
   {
     nom: "le Worker ouvre l'enveloppe en LECTURE SEULE avant le handle, chemin code (#311)",
@@ -1352,7 +1353,7 @@ export const MUTATIONS = Object.freeze([
     fichier: DEVERROUILLAGE,
     avant: "  return ouvrirParLeCode({\n    support: enLectureSeule(support()),\n",
     apres: "  return ouvrirParLeCode({\n    support: support(),\n",
-    epreuves: [EPREUVE_REVALIDATION],
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
   {
     nom: "le Worker passe la revalidation à l'ouvreur (#311)",
@@ -1362,7 +1363,7 @@ export const MUTATIONS = Object.freeze([
       "    sousLeHandle: () =>\n" +
       "      revaliderSousLeHandle({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME, ouverte }),\n",
     apres: "",
-    epreuves: [EPREUVE_REVALIDATION],
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
   {
     nom: "l'ouvreur appelle le crochet sous le handle (#311)",

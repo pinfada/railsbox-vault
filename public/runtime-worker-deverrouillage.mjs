@@ -47,6 +47,7 @@ import {
 import { hexEnOctets, octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
 import { creerMoyenDeRecuperation } from "/src/vm/moyen-de-recuperation.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { openOpfsSyncAccess } from "/src/vm/opfs-sync-access.mjs";
 
 /** L'identité que l'enveloppe authentifie, celle du COFFRE et du volume `application` (ADR 0039). */
 const IDENTIFIANT_VOLUME = IDENTIFIANT_DU_COFFRE;
@@ -80,11 +81,15 @@ let constaterLaPortabilite;
 let annoncerLaBarriere;
 let exigerUnVolumeAtteignable;
 let volume;
+let ouvrirLeHandle;
 
 /**
  * @param {{ interne: object, support: Function, repondre: Function, repondreCode: Function,
  *           repondreRefus: Function, constater: Function, annoncerLaBarriere: Function,
- *           exigerUnVolumeAtteignable: Function, volume: string }} contexte
+ *           exigerUnVolumeAtteignable: Function, volume: string,
+ *           ouvrirLeHandle?: (nom: string) => Promise<FileSystemSyncAccessHandle> }} contexte
+ *   `ouvrirLeHandle` est LA porte de tout handle exclusif de ce module : le vrai OPFS par défaut, un
+ *   double sous Node — c'est ce qui permet de charger CE module, tel qu'il est servi, dans une épreuve.
  */
 export function brancherLeDeverrouillage(contexte) {
   ({
@@ -98,6 +103,7 @@ export function brancherLeDeverrouillage(contexte) {
     exigerUnVolumeAtteignable,
     volume,
   } = contexte);
+  ouvrirLeHandle = contexte.ouvrirLeHandle ?? openOpfsSyncAccess;
 }
 
 /** Oublie le porteur du code de la session : la fermeture et la restauration le font. */
@@ -220,6 +226,7 @@ async function ouvrirLeVolume(ouverte) {
     cle: ouverte.dek,
     identifiantVolume: IDENTIFIANT_DU_VOLUME_COQUILLE,
     transactionnel: false,
+    openHandle: ouvrirLeHandle,
     sousLeHandle: () =>
       revaliderSousLeHandle({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME, ouverte }),
   });
