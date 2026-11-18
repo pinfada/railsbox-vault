@@ -8,6 +8,9 @@ import {
   compterLesRevocations,
   expect,
   jusquALEtape9,
+  PHRASE,
+  jusquAuTravail,
+  verrouillerEtRecharger,
   retenirLaRevocation,
   test,
   titre,
@@ -235,6 +238,24 @@ test("relecture échouée après une révocation CONFIRMÉE : le succès tient, 
   await expect(region).toContainText("Rouvrez votre coffre");
   await expect(region).not.toContainText("peut-être eu lieu");
   expect(await page.getByRole("alert").allTextContents()).not.toContain("Rien n'a été révoqué");
+});
+
+test("relecture échouée SANS révocation (déverrouillage ordinaire) : l'écran ne parle pas de révocation, il dit de rouvrir", async ({
+  page,
+}) => {
+  const retenue = await retenirLaRevocation(page);
+  await jusquAuTravail(page);
+  await bouton(page, "Continuer : Verrouiller et rouvrir").click();
+  await verrouillerEtRecharger(page);
+  await expect(titre(page, "Rouvrir votre coffre")).toBeVisible({ timeout: 180_000 });
+  // Le coffre va s'ouvrir par la phrase ; la relecture de l'inventaire qui suit ÉCHOUE. Aucune
+  // révocation n'a eu lieu : aucun texte n'en parle.
+  await retenue.echouerLInventaire("VAULT_X");
+  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+  await bouton(page, "Ouvrir mon coffre").click();
+  await expect(titre(page, "Votre coffre doit être relu")).toBeVisible({ timeout: 180_000 });
+  await expect(page.locator("#parcours")).not.toContainText(/révocation/i);
+  await expect(page.locator("#parcours")).toContainText("Rouvrez votre coffre");
 });
 
 test("issue incertaine → rouvrir → Annuler / Échap : aucune nouvelle confirmation, jamais « Rien n'a été révoqué »", async ({

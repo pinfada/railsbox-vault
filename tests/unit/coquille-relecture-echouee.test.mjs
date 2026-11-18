@@ -133,7 +133,7 @@ test("interface : une relecture qui échoue INVALIDE les moyens et le compte de 
   assert.equal(releve.nombreDeCodes > 0, true, "l'inventaire d'avant portait des codes");
   panne(true);
   await assert.rejects(interfaceDeDeverrouillage.rafraichirLInventaire());
-  assert.equal(releve.inventaireRelu, false);
+  assert.equal(releve.inventaire, "autre");
   assert.equal(releve.moyensProposes, null);
   assert.equal(releve.nombreDeCodes, null);
 });
@@ -144,7 +144,7 @@ test("interface : une relecture qui réussit ensuite rend l'inventaire relu", as
   await assert.rejects(interfaceDeDeverrouillage.rafraichirLInventaire());
   panne(false);
   await interfaceDeDeverrouillage.rafraichirLInventaire();
-  assert.equal(interfaceDeDeverrouillage.releve.inventaireRelu, true);
+  assert.equal(interfaceDeDeverrouillage.releve.inventaire, "relu");
   assert.ok(Array.isArray(interfaceDeDeverrouillage.releve.moyensProposes));
 });
 
@@ -168,17 +168,17 @@ const OUVERT_A_L_ETAPE_9 = {
 };
 
 test("parcours : une relecture échouée ne laisse PAS le constat d'avant garder le parcours", () => {
-  assert.equal(ecranCourant({ ...OUVERT_A_L_ETAPE_9, inventaireRelu: true }), "termine");
+  assert.equal(ecranCourant({ ...OUVERT_A_L_ETAPE_9, inventaire: "relu" }), "termine");
   assert.equal(
-    ecranCourant({ ...OUVERT_A_L_ETAPE_9, inventaireRelu: false }),
-    "relire",
+    ecranCourant({ ...OUVERT_A_L_ETAPE_9, inventaire: "apres-revocation" }),
+    "relire-apres-revocation",
     "constat et moyens périmés : l'écran dit de rouvrir, il ne s'en sert pas",
   );
 });
 
-test("parcours : l'écran « relire » dit la vérité et la reprise", () => {
-  assert.ok(ECRANS.relire, "l'écran existe");
-  const texte = `${ECRANS.relire.ceQuiVaSePasser} ${ECRANS.relire.attendu}`;
+test("parcours : l'écran « relire-apres-revocation » dit la vérité et la reprise", () => {
+  assert.ok(ECRANS["relire-apres-revocation"], "l'écran existe");
+  const texte = `${ECRANS["relire-apres-revocation"].ceQuiVaSePasser} ${ECRANS["relire-apres-revocation"].attendu}`;
   assert.match(texte, /révocation/i);
   assert.match(texte, /Rouvrez votre coffre|rechargez/i);
   assert.doesNotMatch(texte, /rien n'a été révoqué/i);
