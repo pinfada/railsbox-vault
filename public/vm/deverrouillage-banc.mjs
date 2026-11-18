@@ -363,10 +363,12 @@ async function lireOpfs() {
   let racine;
   try {
     racine = await navigator.storage.getDirectory();
-  } catch {
-    // WebKit 26.6+ REJETTE `getDirectory()` en contexte éphémère (#231) : il n'y a alors rien à
-    // fouiller, exactement comme quand la fonction manque. Rien n'a pu s'y déposer.
-    return "";
+  } catch (erreur) {
+    // WebKit 26.6+ REJETTE `getDirectory()` par un `UnknownError` en contexte éphémère (#231) : il n'y
+    // a alors rien à fouiller, comme quand la fonction manque. Tout AUTRE rejet est une panne de la
+    // fouille, et elle fait échouer l'épreuve : une fouille qui ne regarde rien ne prouve rien.
+    if (erreur?.name === "UnknownError") return "";
+    throw erreur;
   }
   for await (const [nom, poignee] of racine.entries()) {
     morceaux.push(nom);
