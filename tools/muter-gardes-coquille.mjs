@@ -81,6 +81,10 @@ const RACINE_OPFS = "public/spike/origin/racine-opfs.mjs";
 const TEMOINS_OPFS = "tests/support/temoins-opfs.mjs";
 const EPREUVE_TEMOINS = "tests/unit/temoins-opfs.test.mjs";
 const EPREUVE_INTERFACE_INVENTAIRE = "tests/unit/coquille-interface-inventaire-refuse.test.mjs";
+const REVALIDATION = "src/coquille/revalidation-sous-le-handle.mjs";
+const OUVERTURE_DU_VOLUME = "src/vm/opfs-volume-ouverture.mjs";
+const EPREUVE_REVALIDATION = "tests/unit/coquille-revalidation-sous-le-handle.test.mjs";
+const EPREUVE_SOUS_LE_HANDLE = "tests/unit/vm-ouverture-sous-le-handle.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -1165,9 +1169,9 @@ export const MUTATIONS = Object.freeze([
     nom: "le Worker n'inscrit la preuve qu'APRÈS l'ouverture du volume (#239)",
     garde: "deverrouiller — l'ordre ouvrir, constater, barrière",
     fichier: DEVERROUILLAGE,
-    avant: "    await ouvrirLeVolume(ouverte.dek);\n",
+    avant: "    await ouvrirLeVolume(ouverte);\n",
     apres:
-      "    interne.eprouves = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);\n    await ouvrirLeVolume(ouverte.dek);\n",
+      "    interne.eprouves = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);\n    await ouvrirLeVolume(ouverte);\n",
     epreuves: [EPREUVE_PREUVE],
   },
   {
@@ -1809,6 +1813,153 @@ export const MUTATIONS = Object.freeze([
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,
+  // --- #311, tranche C5 : la course entre onglets au déverrouillage ------------------------------
+  {
+    nom: "la revalidation exige le MÊME emplacement (#311)",
+    garde: "revaliderSousLeHandle — la comparaison de `identifiantEmplacement`",
+    fichier: REVALIDATION,
+    avant:
+      "    if (\n" +
+      "      sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||\n" +
+      "      !memesOctets(sous.dek, ouverte.dek)\n" +
+      "    ) {",
+    apres: "    if (!memesOctets(sous.dek, ouverte.dek)) {",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la revalidation exige la MÊME clé de volume (#311)",
+    garde: "revaliderSousLeHandle — la comparaison des octets de la DEK",
+    fichier: REVALIDATION,
+    avant:
+      "    if (\n" +
+      "      sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||\n" +
+      "      !memesOctets(sous.dek, ouverte.dek)\n" +
+      "    ) {",
+    apres: "    if (sous.identifiantEmplacement !== ouverte.identifiantEmplacement) {",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "une divergence est REFUSÉE, jamais acceptée en silence (#311)",
+    garde: "revaliderSousLeHandle — le `throw cleRefusee`",
+    fichier: REVALIDATION,
+    avant: "      throw cleRefusee({ volume: identifiantVolume });\n",
+    apres: "",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "l'ancre de version tient en passe 2 (#311)",
+    garde: "revaliderSousLeHandle — `versionMinimale` passée à l'ouverture",
+    fichier: REVALIDATION,
+    avant: "    versionMinimale: ouverte.versionMinimale,\n",
+    apres: "    versionMinimale: null,\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la clé de volume de la passe 2 est effacée (#311)",
+    garde: "revaliderSousLeHandle — le `fill(0)` du `finally`",
+    fichier: REVALIDATION,
+    avant: "    sous.dek.fill(0);\n",
+    apres: "",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la version publiée est celle de la passe 2, l'autoritaire (#311)",
+    garde: "revaliderSousLeHandle — `ouverte.version = sous.version`",
+    fichier: REVALIDATION,
+    avant: "    ouverte.version = sous.version;\n",
+    apres: "",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la passe 1 n'écrit RIEN : l'écriture est refusée (#311)",
+    garde: "enLectureSeule — le refus de `ecrire`",
+    fichier: REVALIDATION,
+    avant: "allouer: refuser, ecrire: refuser, barriere: refuser",
+    apres: "allouer: refuser, barriere: refuser",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la comparaison des clés ne s'arrête pas à la longueur commune (#311)",
+    garde: "memesOctets — l'écart de longueur",
+    fichier: REVALIDATION,
+    avant: "  let ecart = a.length ^ b.length;\n",
+    apres: "  let ecart = 0;\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "le Worker ouvre l'enveloppe en LECTURE SEULE avant le handle, chemin phrase et passkey (#311)",
+    garde: "ouvrirSousLaPage — `enLectureSeule(support())`",
+    fichier: DEVERROUILLAGE,
+    avant:
+      "    support: enLectureSeule(support()),\n    identifiantVolume: IDENTIFIANT_VOLUME,\n    kek,\n",
+    apres: "    support: support(),\n    identifiantVolume: IDENTIFIANT_VOLUME,\n    kek,\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "le Worker ouvre l'enveloppe en LECTURE SEULE avant le handle, chemin code (#311)",
+    garde: "ouvrirSousLeCode — `enLectureSeule(support())`",
+    fichier: DEVERROUILLAGE,
+    avant: "  return ouvrirParLeCode({\n    support: enLectureSeule(support()),\n",
+    apres: "  return ouvrirParLeCode({\n    support: support(),\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "le Worker passe la revalidation à l'ouvreur (#311)",
+    garde: "ouvrirLeVolume — `sousLeHandle`",
+    fichier: DEVERROUILLAGE,
+    avant:
+      "    sousLeHandle: () =>\n" +
+      "      revaliderSousLeHandle({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME, ouverte }),\n",
+    apres: "",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "l'ouvreur appelle le crochet sous le handle (#311)",
+    garde: "saisirLireEtAllouer — `await sousLeHandle?.()`",
+    fichier: OUVERTURE_DU_VOLUME,
+    avant: "    await sousLeHandle?.();\n",
+    apres: "",
+    epreuves: [EPREUVE_SOUS_LE_HANDLE],
+  },
+  {
+    nom: "un refus du crochet RENDS le handle (#311)",
+    garde: "saisirLireEtAllouer — le crochet est DANS le `try` qui abandonne le handle",
+    fichier: OUVERTURE_DU_VOLUME,
+    avant:
+      "    await sousLeHandle?.();\n" +
+      "  } catch (refus) {\n" +
+      "    throw abandonHandle(saisi.handle, name, refus);\n" +
+      "  }\n",
+    apres:
+      "  } catch (refus) {\n" +
+      "    throw abandonHandle(saisi.handle, name, refus);\n" +
+      "  }\n" +
+      "  await sousLeHandle?.();\n",
+    epreuves: [EPREUVE_SOUS_LE_HANDLE],
+  },
+  {
+    nom: "le crochet précède la naissance : aucun en-tête posé sur un refus (#311)",
+    garde: "saisirLireEtAllouer — le crochet avant `poserEnTeteOuRendre`",
+    fichier: OUVERTURE_DU_VOLUME,
+    avant:
+      "    await sousLeHandle?.();\n" +
+      "  } catch (refus) {\n" +
+      "    throw abandonHandle(saisi.handle, name, refus);\n" +
+      "  }\n" +
+      "  if (!saisi.naissance) return { ...saisi, voisinsRetires: Object.freeze([]) };\n" +
+      "  poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);\n",
+    apres:
+      "  } catch (refus) {\n" +
+      "    throw abandonHandle(saisi.handle, name, refus);\n" +
+      "  }\n" +
+      "  if (!saisi.naissance) {\n" +
+      "    await sousLeHandle?.();\n" +
+      "    return { ...saisi, voisinsRetires: Object.freeze([]) };\n" +
+      "  }\n" +
+      "  poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);\n" +
+      "  await sousLeHandle?.();\n",
+    epreuves: [EPREUVE_SOUS_LE_HANDLE],
+  },
 ]);
 
 function rapporter({ resultats }, json) {

@@ -130,11 +130,13 @@ async function ouvrirParLeCode(page, { code, version }) {
 }
 
 /** A révoque tout sauf lui-même, puis VERROUILLE : le Worker meurt, le handle est libre. */
-async function revoquerPuisVerrouiller(page) {
-  await page.click("#revoquer-en-urgence");
-  await expect(page.locator("#portabilite-etat")).toContainText("portabilite:revoque:1-retires", {
-    timeout: DELAI,
-  });
+async function revoquerPuisVerrouiller(page, { dejaRevoque = false } = {}) {
+  if (!dejaRevoque) {
+    await page.click("#revoquer-en-urgence");
+    await expect(page.locator("#portabilite-etat")).toContainText("portabilite:revoque:1-retires", {
+      timeout: DELAI,
+    });
+  }
   await page.evaluate(() => {
     globalThis.__documentDAvantLeVerrouillage = true;
   });
@@ -216,4 +218,50 @@ test("C5 : B retardé entre l'enveloppe et le handle est REFUSÉ quand A a révo
   await a.fill("#saisie-phrase", PHRASE);
   await a.click("#ouvrir-par-phrase");
   await attendreLEtat(a, ETATS_DU_VOLUME.ouvert);
+});
+
+test("C5 : le Worker de B TUÉ à la pause ne laisse aucun effet — ni écriture, ni handle", async ({
+  context,
+  browserName,
+}) => {
+  test.skip(browserName === "webkit", "pas d'OPFS synchrone dans un Worker");
+  test.setTimeout(300_000);
+  const { a, b, feuille } = await courseJusquALaPause(context, browserName);
+
+  // B meurt AVANT d'avoir pris le handle : son Worker est détruit avec son onglet.
+  await b.close();
+
+  // Sa passe 1 était en lecture seule : la révocation de A trouve l'enveloppe telle qu'elle l'a
+  // laissée, et avance d'UNE version — pas d'une de plus parce que B aurait écrit entre-temps.
+  await a.click("#revoquer-en-urgence");
+  await expect(a.locator("#portabilite-etat")).toContainText("portabilite:revoque:1-retires", {
+    timeout: DELAI,
+  });
+  expect((await releve(a)).portabilite.revocation.versionEnveloppe).toBe(
+    Number(feuille.version) + 1,
+  );
+
+  // Rien ne tient le volume que A : il se verrouille, puis la phrase rouvre.
+  await revoquerPuisVerrouiller(a, { dejaRevoque: true });
+  await a.fill("#saisie-phrase", PHRASE);
+  await a.click("#ouvrir-par-phrase");
+  await attendreLEtat(a, ETATS_DU_VOLUME.ouvert);
+});
+
+test("contrôle : sans pause, B est refusé tant que A tient le volume — le handle exclusif tient", async ({
+  context,
+  browserName,
+}) => {
+  test.skip(browserName === "webkit", "pas d'OPFS synchrone dans un Worker");
+  test.setTimeout(300_000);
+  const a = await context.newPage();
+  await ouvrirLaCoquille(a);
+  const feuille = await ouvrirEtImprimerUnCode(a);
+  const b = await context.newPage();
+  await ouvrirLaCoquille(b);
+  await ouvrirParLeCode(b, feuille);
+  await expect(b.locator("#deverrouillage-refus")).toContainText(STORAGE_ERROR_CODES.busy, {
+    timeout: DELAI,
+  });
+  expect((await releve(b)).etat).toBe(ETATS_DU_VOLUME.verrouille);
 });

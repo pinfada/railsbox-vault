@@ -548,14 +548,8 @@ export async function openOpfsVolume({
   assertVolumeLibre(name);
   if (size !== undefined) assertBlockGeometry(size);
 
-  const saisi = await saisirLireEtAllouer({
-    name,
-    size,
-    cle,
-    identifiantVolume,
-    openHandle,
-    sousLeHandle,
-  });
+  const lecture = { name, size, cle, identifiantVolume, openHandle, sousLeHandle };
+  const saisi = await saisirLireEtAllouer(lecture);
   const scellement = await scellementDeLaSession(saisi, cle, scellementsReportes);
   const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
   if (saisi.naissance) await scellerLeVolumeNeuf(backend, name);
