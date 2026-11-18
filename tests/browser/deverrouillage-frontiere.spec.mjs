@@ -2,12 +2,14 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
+import { CODES_DE_REFUS_DE_CAPACITE } from "../support/refus-de-capacite.mjs";
+
+import { fouilleOpfsAdmise } from "../support/temoins-opfs.mjs";
 
 import { decoderCode } from "../../src/vm/derivation/code-de-recuperation.mjs";
 import { DERIVATION_ERROR_CODES } from "../../src/vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { SHELL_PORT } from "../../src/spike/origin-topology.mjs";
-import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 
 // FRONTIÈRE du DÉVERROUILLAGE, sur les trois moteurs (#22, ADR 0021 ; `SEC-KEY-001`,
 // `SEC-ORIGIN-001`).
@@ -175,7 +177,7 @@ test("une phrase ouvre un volume réel ; une phrase fausse est refusée par l'en
   });
 
   if (!porte) {
-    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    expect(CODES_DE_REFUS_DE_CAPACITE).toContain(code);
     return;
   }
   expect(report.version).toBe(1);
@@ -489,7 +491,7 @@ test("le code ouvre un volume dont plus AUCUN autre moyen ne subsiste, et une ph
   });
 
   if (!porte) {
-    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    expect(CODES_DE_REFUS_DE_CAPACITE).toContain(code);
     return;
   }
   expect(report.code, "le code rendu doit faire vingt-huit symboles en sept groupes").toMatch(
@@ -545,7 +547,7 @@ test("un SECOND code de récupération ouvre le volume, et le premier aussi (#21
     nouvellePhrase: `${PHRASE}-la-seconde`,
   });
   if (!porte) {
-    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    expect(CODES_DE_REFUS_DE_CAPACITE).toContain(code);
     return;
   }
   expect(report.secondCode, "le second code a la même forme que le premier").toMatch(
@@ -671,7 +673,7 @@ test("la PAGE n'obtient aucun handle sur le fichier d'enveloppes", async ({ page
     "banc-deverrouillage.cles",
   );
   expect(sonde.ouvert, "la page a ouvert le fichier de clés en accès exclusif").toBe(false);
-  expect(sonde.code).toBe(STORAGE_ERROR_CODES.unsupported);
+  expect(CODES_DE_REFUS_DE_CAPACITE).toContain(sonde.code);
   if (porte) expect(sonde.getDirectory).toBe("function");
 });
 
@@ -693,6 +695,15 @@ test("AUCUN secret ne se dépose : tous les stockages de l'origine et le port so
     ),
     contentType: "application/json",
   });
+
+  // Une fouille OPFS IMPOSSIBLE n'est pas une fouille vide (#231, revue de la PR #305) : sur un moteur
+  // qui ouvre un volume (`porte`, constaté plus haut par une ouverture réelle), c'est une PANNE et
+  // l'épreuve échoue ; sinon la limite est écrite, et la fouille reste « non réalisée ».
+  const { problemes, limites } = fouilleOpfsAdmise({ porte, morceaux });
+  expect(problemes).toEqual([]);
+  for (const limite of limites) {
+    await testInfo.attach("limite-fouille-opfs", { body: limite, contentType: "text/plain" });
+  }
 
   // TÉMOIN de la fouille : l'appât a été déposé dans chaque stockage, et il doit être retrouvé.
   // Sans lui, une recherche qui ne trouve jamais rien pourrait n'être qu'une recherche cassée.
@@ -716,4 +727,30 @@ test("AUCUN secret ne se dépose : tous les stockages de l'origine et le port so
   expect(port.length, "le Worker n'a rien rendu : la fouille ne mesurerait rien").toBeGreaterThan(
     0,
   );
+});
+
+test("une fouille OPFS IMPOSSIBLE (UnknownError, transitoire) n'est jamais comptée comme vide", async ({
+  page,
+}, testInfo) => {
+  const { porte } = await contexte(page, testInfo);
+  await executerOuRefus(page, { scenario: "phrase", phrase: PHRASE });
+  // Le rejet arrive APRÈS le scénario : tout ce que la fouille aurait pu trouver est déjà déposé.
+  await page.evaluate(() => {
+    if (!globalThis.StorageManager) return;
+    StorageManager.prototype.getDirectory = () =>
+      Promise.reject(
+        new DOMException("The operation failed for an unknown transient reason.", "UnknownError"),
+      );
+  });
+  const morceaux = await page.evaluate(
+    (appat) => globalThis.bancDeverrouillage.sondeStockages({ appat }),
+    APPAT,
+  );
+  const opfs = morceaux.find(({ ou }) => ou === "opfs");
+  expect(opfs.impossible, "la fouille ne dit pas qu'elle n'a pas pu regarder").toBe("UnknownError");
+  expect(opfs.texte).toBe("");
+
+  const { problemes, limites } = fouilleOpfsAdmise({ porte, morceaux });
+  if (porte) expect(problemes.length, "un moteur qui ouvre un volume : une panne").toBe(1);
+  else expect(limites.length, "un moteur sans volume : une limite écrite").toBe(1);
 });

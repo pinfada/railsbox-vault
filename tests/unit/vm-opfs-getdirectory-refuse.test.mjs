@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { openOpfsSyncAccess, opfsConstateeAbsente } from "../../src/vm/opfs-sync-access.mjs";
+import { openOpfsSyncAccess } from "../../src/vm/opfs-sync-access.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "../../src/vm/storage-errors.mjs";
 
 // WebKit 27.2 (mesuré sous Playwright 1.64.0 et 1.65.0, le 18/11/2026 ; WebKit 26.6 sous 1.63.0) EXPOSE
@@ -10,13 +10,12 @@ import { STORAGE_ERROR_CODES, StorageError } from "../../src/vm/storage-errors.m
 // Sous 26.5 la fonction était absente. Le `typeof` ne suffit donc plus à dire « ce moteur offre
 // l'OPFS » : c'est l'appel qui le dit.
 //
-// Ce que ces épreuves tiennent : SEUL le rejet qui signe une absence de capacité est rangé `unsupported`
-// (état `indisponible`) — le cas mesuré (`UnknownError` de `getDirectory()`), et les deux noms que la
-// table de `opfs-error-mapping.mjs` y range déjà (`SecurityError`, `TypeMismatchError`). Tout autre
-// rejet garde son classement précis (quota, handle perdu, échec de support non classé) : un échec est
-// SIGNALÉ, jamais maquillé en « indisponible ». Le message mesuré annonce lui-même une cause
-// « transitoire » : le produit tient donc l'`UnknownError` pour une indisponibilité du contexte SANS
-// prétendre qu'elle est durable, et le dit.
+// Ce que ces épreuves tiennent : le rejet MESURÉ (`UnknownError` de `getDirectory()`) est rangé
+// `VAULT_STORAGE_INDETERMINE` — « inaccessible pour l'instant, cause non établie », réessayable —, et
+// NON `unsupported`, qui affirmerait une absence que le message du moteur (« transient reason ») ne
+// permet pas d'affirmer. Seuls les deux noms que la table de `opfs-error-mapping.mjs` range déjà
+// `unsupported` (`SecurityError`, `TypeMismatchError`) restent des absences. Tout autre rejet garde son
+// classement précis (quota, handle perdu, échec de support non classé) : un échec est SIGNALÉ.
 
 /** Installe `navigator.storage` et un Worker dédié factices, et rend la fonction qui les retire. */
 function installer(storage) {
@@ -53,65 +52,7 @@ function rejet(nom, message = "The operation failed for an unknown transient rea
   return erreur;
 }
 
-test("opfsConstateeAbsente : faux quand getDirectory aboutit", async () => {
-  const retirer = installer({ getDirectory: async () => ({}) });
-  try {
-    assert.equal(await opfsConstateeAbsente(), false);
-  } finally {
-    retirer();
-  }
-});
-
-test("opfsConstateeAbsente : vrai pour les rejets qui signent l'absence de capacité", async () => {
-  for (const nom of ["UnknownError", "SecurityError", "TypeMismatchError"]) {
-    const retirer = installer({
-      getDirectory: async () => {
-        throw rejet(nom);
-      },
-    });
-    try {
-      assert.equal(await opfsConstateeAbsente(), true, nom);
-    } finally {
-      retirer();
-    }
-  }
-});
-
-test("opfsConstateeAbsente : faux pour tout AUTRE rejet — quota, état invalide, erreur inconnue", async () => {
-  for (const nom of [
-    "QuotaExceededError",
-    "InvalidStateError",
-    "NotFoundError",
-    "AbortError",
-    "NotAllowedError",
-    "Error",
-    "TypeError",
-  ]) {
-    const retirer = installer({
-      getDirectory: async () => {
-        throw rejet(nom);
-      },
-    });
-    try {
-      assert.equal(await opfsConstateeAbsente(), false, nom);
-    } finally {
-      retirer();
-    }
-  }
-});
-
-test("opfsConstateeAbsente : vrai quand getDirectory est absent, et quand navigator.storage l'est", async () => {
-  for (const storage of [{}, undefined]) {
-    const retirer = installer(storage);
-    try {
-      assert.equal(await opfsConstateeAbsente(), true);
-    } finally {
-      retirer();
-    }
-  }
-});
-
-test("un getDirectory() qui rejette UnknownError rend UNSUPPORTED, et dit que la cause n'est pas établie", async () => {
+test("un getDirectory() qui rejette UnknownError rend INDETERMINE — inaccessible pour l'instant, cause non établie, jamais UNSUPPORTED", async () => {
   const retirer = installer({
     getDirectory: async () => {
       throw rejet("UnknownError");
@@ -122,13 +63,18 @@ test("un getDirectory() qui rejette UnknownError rend UNSUPPORTED, et dit que la
       () => openOpfsSyncAccess("volume"),
       (erreur) => {
         assert.ok(erreur instanceof StorageError);
-        assert.equal(erreur.code, STORAGE_ERROR_CODES.unsupported);
+        assert.equal(erreur.code, STORAGE_ERROR_CODES.indeterminate);
+        assert.notEqual(erreur.code, STORAGE_ERROR_CODES.unsupported);
         assert.equal(erreur.context.capability, "navigator.storage.getDirectory");
         assert.equal(erreur.context.cause, "UnknownError");
-        // Le nom du rejet est CONSERVÉ, et l'incertitude est DITE : le moteur parle d'une raison
-        // « transitoire », le produit ne prétend pas prouver une absence durable.
+        // Le nom du rejet est CONSERVÉ, l'incertitude est DITE, et aucune absence n'est affirmée.
         assert.match(erreur.message, /UnknownError/);
+        assert.match(erreur.message, /inaccessible pour l'instant/);
         assert.match(erreur.message, /cause non établie/);
+        assert.doesNotMatch(
+          erreur.message,
+          /n'offre pas|absent de ce moteur|changer de navigateur/,
+        );
         return true;
       },
     );

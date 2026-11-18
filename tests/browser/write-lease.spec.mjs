@@ -1,6 +1,6 @@
 import { expect, test } from "../support/test.mjs";
+import { CODES_DE_REFUS_DE_CAPACITE } from "../support/refus-de-capacite.mjs";
 
-import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { LEASE_STATES, LEASE_STATUS } from "../../src/vm/write-lease.mjs";
 
 // Preuve de niveau NAVIGATEUR du bail d'écriture unique (#8, `VAULT-PERSIST-002`). Plusieurs pages
@@ -55,7 +55,7 @@ test("le moteur porte OPFS dans un Worker, ou le bail échoue par une erreur typ
     expect(openCode).toBeNull();
     return;
   }
-  if (openCode !== null) expect(openCode).toBe(STORAGE_ERROR_CODES.unsupported);
+  if (openCode !== null) expect(CODES_DE_REFUS_DE_CAPACITE).toContain(openCode);
 });
 
 test("deux onglets simultanés : un seul acquiert le bail", async ({ context }) => {
