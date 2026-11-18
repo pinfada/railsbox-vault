@@ -116,6 +116,9 @@ const DEVERROUILLAGE_COQUILLE = [
   // Le PARCOURS GUIDÉ (#193, ADR 0040) : l'ordre attaqué et ce qu'il laisse dans la page, sur le même
   // chemin de produit (revue de la PR #213, constats 1, 2, 3 et 9).
   "**/coquille-parcours.spec.mjs",
+  // Un stockage INACCESSIBLE POUR L'INSTANT n'est pas un coffre ABSENT (#231, revue de la PR #305) :
+  // l'inventaire inconnu, « Réessayer », la reprise sans rechargement.
+  "**/coquille-stockage-indetermine.spec.mjs",
 ];
 
 /**

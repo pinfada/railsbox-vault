@@ -880,3 +880,57 @@ test("contre-recette de #244 : ouvrir avec le code de la feuille dont on disait 
     "code-annonce",
   );
 });
+
+// --- #231 (revue de la PR #305) : un inventaire INCONNU n'est pas un coffre absent ---------------------
+
+const TEXTE_DU_STOCKAGE_INACCESSIBLE =
+  "Le stockage du navigateur est inaccessible pour l'instant, cause non établie. " +
+  "Rien n'est proposé tant qu'il ne répond pas.";
+
+test("un stockage inaccessible n'est ni un coffre ABSENT (qui proposerait de le créer) ni un coffre refusé", () => {
+  const observe = coffreObserve({
+    etat: "indetermine",
+    texteDesMoyens: TEXTE_DU_STOCKAGE_INACCESSIBLE,
+    moyensProposes: [],
+    dernierRefus: "VAULT_STORAGE_INDETERMINE",
+  });
+  assert.equal(observe, COFFRE.inaccessible);
+  assert.notEqual(observe, COFFRE.absent);
+  assert.notEqual(observe, COFFRE.refuse);
+  // Le même texte sans le refus typé n'est PAS reconnu : la reconnaissance tient au code, pas aux mots.
+  assert.equal(
+    coffreObserve({
+      etat: "verrouille",
+      texteDesMoyens: TEXTE_DU_STOCKAGE_INACCESSIBLE,
+      moyensProposes: [],
+    }),
+    COFFRE.absent,
+  );
+});
+
+test("l'écran d'un stockage inaccessible ne propose NI création NI moyen : seulement « réessayer »", () => {
+  assert.equal(ecranCourant({ pointeur: 1, coffre: COFFRE.inaccessible }), "inaccessible");
+  const ecran = ECRANS.inaccessible;
+  assert.ok(ecran, "l'écran existe");
+  assert.deepEqual(ecran.blocs, ["reessayer"]);
+  for (const interdit of ["commencer", "phrase", "passkey", "code", "perdu", "ancre"]) {
+    assert.ok(!ecran.blocs.includes(interdit), interdit);
+  }
+  assert.match(ecran.titre, /stockage/i);
+  assert.doesNotMatch(`${ecran.titre} ${ecran.ceQuiVaSePasser}`, /Créer votre coffre/);
+  assert.ok(BLOCS.includes("reessayer"));
+  assert.ok(LIBELLES_DES_BLOCS.reessayer);
+});
+
+test("à la REPRISE, le même coffre redevient verrouillé : l'écran d'un coffre existant, jamais « créer »", () => {
+  const apres = coffreObserve({
+    etat: "verrouille",
+    texteDesMoyens: "Ce coffre s'ouvre par : phrase (version d'enveloppe 2).",
+    moyensProposes: ["phrase"],
+    dernierRefus: null,
+  });
+  assert.equal(apres, COFFRE.verrouille);
+  const ecran = ecranCourant({ pointeur: 1, coffre: apres, moyens: ["phrase"] });
+  assert.notEqual(ecran, "creer");
+  assert.notEqual(ecran, "inaccessible");
+});

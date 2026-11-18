@@ -40,7 +40,7 @@ let numero = 0;
  * `n` compte les appels depuis 1 : il rend une promesse, que l'épreuve tient en main si elle le veut.
  */
 async function monterLeWorker(comportement) {
-  const appels = { getDirectory: 0 };
+  const appels = { getDirectory: 0, racine: 0 };
   const ecouteurs = new Map();
   class FichierDouble {
     createSyncAccessHandle() {}
@@ -48,11 +48,21 @@ async function monterLeWorker(comportement) {
   const poser = (nom, valeur) =>
     Object.defineProperty(globalThis, nom, { value: valeur, configurable: true, writable: true });
   poser("FileSystemFileHandle", FichierDouble);
+  // Un Worker dédié, pour que l'ouverture d'un volume ATTEIGNE l'OPFS au lieu d'être refusée « hors
+  // Worker » avant d'y toucher : c'est ce qui distingue « ouverture possible » d'un autre refus.
+  poser(
+    "WorkerGlobalScope",
+    class {
+      static [Symbol.hasInstance]() {
+        return true;
+      }
+    },
+  );
   poser("navigator", {
     storage: {
       getDirectory() {
         appels.getDirectory += 1;
-        return comportement(appels.getDirectory);
+        return comportement(appels.getDirectory, appels);
       },
     },
   });
@@ -87,6 +97,20 @@ async function monterLeWorker(comportement) {
 
 const toujoursRejete = (nom) => () => Promise.reject(rejet(nom));
 
+/** Un `getDirectory()` qui ABOUTIT : la racine est un double dont l'accès est compté. */
+function racineDouble(appels) {
+  return Promise.resolve({
+    getDirectoryHandle() {
+      appels.racine += 1;
+      return Promise.reject(rejet("NotFoundError"));
+    },
+    getFileHandle() {
+      appels.racine += 1;
+      return Promise.reject(rejet("NotFoundError"));
+    },
+  });
+}
+
 function geste(worker, correlation) {
   worker.envoyer(TYPES_PRIVILEGIES.deverrouiller, correlation, {
     moyen: "phrase",
@@ -99,7 +123,7 @@ test("rien ne répond tant que la sonde n'a pas conclu, et elle est lancée une 
   const suspendue = new Promise((ok) => {
     ouvrir = ok;
   });
-  const worker = await monterLeWorker((n) => (n === 1 ? suspendue : Promise.resolve({})));
+  const worker = await monterLeWorker((n, appels) => (n === 1 ? suspendue : racineDouble(appels)));
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
   worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
   geste(worker, "d1");
@@ -145,53 +169,155 @@ test("UnknownError PERSISTANT : l'état est `indetermine` — jamais `verrouille
 });
 
 test("UnknownError TRANSITOIRE puis réussite : atteignable, rien de figé", async () => {
-  const worker = await monterLeWorker((n) =>
-    n <= 2 ? Promise.reject(rejet("UnknownError")) : Promise.resolve({}),
+  const worker = await monterLeWorker((n, appels) =>
+    n <= 2 ? Promise.reject(rejet("UnknownError")) : racineDouble(appels),
   );
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
   await attendre(400);
   assert.equal(worker.parCorrelation("e1")?.etat, "verrouille");
-  assert.equal(worker.appels.getDirectory, 3);
+  // Trois sondes, puis le constat d'exclusivité du Worker (qui ouvre le volume, donc l'OPFS).
+  assert.ok(worker.appels.getDirectory >= 3);
 });
 
-test("un geste présenté APRÈS l'indéterminé relance la sonde : si elle aboutit, `verrouille` sans rechargement", async () => {
-  const worker = await monterLeWorker((n) =>
-    n <= 3 ? Promise.reject(rejet("UnknownError")) : Promise.resolve({}),
+test("un geste présenté APRÈS l'indéterminé relance la sonde : si elle aboutit, `verrouille` ET le geste ATTEINT l'OPFS", async () => {
+  const worker = await monterLeWorker((n, appels) =>
+    n <= 3 ? Promise.reject(rejet("UnknownError")) : racineDouble(appels),
   );
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
   await attendre(400);
   assert.equal(worker.parCorrelation("e1")?.etat, "indetermine");
+  const sondes = worker.appels.getDirectory;
 
   geste(worker, "d1");
-  await attendre(250);
+  await attendre(300);
   const reponse = worker.parCorrelation("d1");
   assert.ok(reponse, "le geste reçoit une réponse");
-  // Le geste a été TENTÉ : le refus n'est plus celui de l'indétermination. (Le reste du chemin, sur
-  // un double sans vrai OPFS, échoue pour ses propres raisons : seule la levée est éprouvée ici.)
   assert.notEqual(reponse.code, STORAGE_ERROR_CODES.indeterminate, "la sonde l'a levé");
-  assert.equal(worker.appels.getDirectory, 4, "une seule nouvelle sonde, réussie du premier coup");
+  assert.notEqual(reponse.code, STORAGE_ERROR_CODES.unsupported, "ni refusé comme une absence");
+  // « Ouverture possible » se distingue de TOUT autre refus : le geste est allé jusqu'à l'OPFS —
+  // une sonde de plus, puis l'appel du geste lui-même. Un geste refusé par la capacité n'y touche pas.
+  assert.ok(worker.appels.getDirectory >= sondes + 2, "le geste a atteint getDirectory()");
 
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e2");
   await attendre(100);
   assert.equal(worker.parCorrelation("e2")?.etat, "verrouille");
 });
 
-test("un refus de capacité déjà TYPÉ (SecurityError) reste une absence : `indisponible`, UNSUPPORTED, sans réessai", async () => {
+test("tant que le stockage est indéterminé, un geste refusé N'ATTEINT PAS l'OPFS", async () => {
+  const worker = await monterLeWorker(toujoursRejete("UnknownError"));
+  geste(worker, "d1");
+  await attendre(900);
+  assert.equal(worker.parCorrelation("d1")?.code, STORAGE_ERROR_CODES.indeterminate);
+  assert.equal(worker.appels.racine, 0);
+  assert.ok(
+    worker.appels.getDirectory <= 6,
+    "seulement les deux sondes (la première, puis la relance)",
+  );
+});
+
+test("UnknownError ×3, puis QuotaExceededError, puis réussite : jamais UNSUPPORTED, et la reprise reste possible", async () => {
+  const worker = await monterLeWorker((n, appels) => {
+    if (n <= 3) return Promise.reject(rejet("UnknownError"));
+    if (n === 4) return Promise.reject(rejet("QuotaExceededError"));
+    return racineDouble(appels);
+  });
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
+  await attendre(400);
+  assert.equal(worker.parCorrelation("e1")?.etat, "indetermine");
+
+  // La sonde relancée rencontre une PANNE : le refus porte SON code précis, la reprise reste ouverte.
+  geste(worker, "d1");
+  await attendre(150);
+  const panne = worker.parCorrelation("d1");
+  assert.equal(panne?.code, STORAGE_ERROR_CODES.quotaExceeded);
+  assert.notEqual(panne?.code, STORAGE_ERROR_CODES.unsupported);
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e2");
+  await attendre(60);
+  assert.equal(worker.parCorrelation("e2")?.etat, "indetermine", "toujours en attente de reprise");
+
+  // …et le geste suivant RELANCE la sonde, qui aboutit : le coffre est ouvrable, sans rechargement.
+  geste(worker, "d2");
+  await attendre(300);
+  assert.notEqual(worker.parCorrelation("d2")?.code, STORAGE_ERROR_CODES.quotaExceeded);
+  assert.notEqual(worker.parCorrelation("d2")?.code, STORAGE_ERROR_CODES.unsupported);
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e3");
+  await attendre(60);
+  assert.equal(worker.parCorrelation("e3")?.etat, "verrouille");
+});
+
+test("un refus de capacité déjà TYPÉ (SecurityError) reste une absence : `indisponible`, UNSUPPORTED, sans réessai, jamais relancée", async () => {
   const worker = await monterLeWorker(toujoursRejete("SecurityError"));
   worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
   geste(worker, "d1");
   await attendre(150);
   assert.equal(worker.parCorrelation("e1")?.etat, "indisponible");
   assert.equal(worker.parCorrelation("d1")?.code, STORAGE_ERROR_CODES.unsupported);
-  assert.equal(worker.appels.getDirectory, 1);
+  geste(worker, "d2");
+  await attendre(100);
+  assert.equal(worker.parCorrelation("d2")?.code, STORAGE_ERROR_CODES.unsupported);
+  assert.equal(
+    worker.appels.getDirectory,
+    1,
+    "une absence établie est terminale : aucune sonde de plus",
+  );
 });
 
-test("une PANNE (autre rejet) n'est ni absente ni indéterminée : l'état reste `verrouille`, sans réessai", async () => {
-  for (const nom of ["QuotaExceededError", "InvalidStateError", "Error"]) {
-    const worker = await monterLeWorker(toujoursRejete(nom));
+test("une PANNE d'emblée (autre rejet) : état `indetermine`, refus à son code PRÉCIS — jamais UNSUPPORTED, réessayable", async () => {
+  const attendus = new Map([
+    ["QuotaExceededError", STORAGE_ERROR_CODES.quotaExceeded],
+    ["InvalidStateError", STORAGE_ERROR_CODES.handleLost],
+    ["Error", STORAGE_ERROR_CODES.supportFailure],
+  ]);
+  for (const [nom, code] of attendus) {
+    const worker = await monterLeWorker((n, appels) =>
+      n === 1 ? Promise.reject(rejet(nom)) : racineDouble(appels),
+    );
     worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
-    await attendre(100);
-    assert.equal(worker.parCorrelation("e1")?.etat, "verrouille", nom);
-    assert.equal(worker.appels.getDirectory, 1, nom);
+    geste(worker, "d1");
+    await attendre(150);
+    assert.equal(worker.parCorrelation("e1")?.etat, "indetermine", nom);
+    assert.equal(worker.parCorrelation("d1")?.code, code, nom);
+    assert.equal(
+      worker.appels.getDirectory,
+      1 + 1 + 0,
+      `${nom} : sans réessai interne, une relance par geste`,
+    );
   }
+});
+
+test("l'INVENTAIRE est INCONNU tant que le stockage est indéterminé : jamais « aucun coffre »", async () => {
+  const worker = await monterLeWorker(toujoursRejete("UnknownError"));
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
+  await attendre(700);
+  const inventaire = worker.parCorrelation("i1");
+  assert.ok(inventaire, "l'inventaire reçoit une réponse");
+  assert.equal(inventaire.inconnu, true, "il se dit INCONNU");
+  assert.equal(inventaire.refus?.code, STORAGE_ERROR_CODES.indeterminate);
+  assert.deepEqual(inventaire.emplacements, []);
+
+  // Même chose après une PANNE : l'inventaire n'a pas pu être lu, il n'est pas vide.
+  const enPanne = await monterLeWorker(toujoursRejete("QuotaExceededError"));
+  enPanne.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
+  await attendre(300);
+  assert.equal(enPanne.parCorrelation("i1")?.inconnu, true);
+  assert.equal(enPanne.parCorrelation("i1")?.refus?.code, STORAGE_ERROR_CODES.indeterminate);
+});
+
+test("une demande d'INVENTAIRE relance la sonde : à la reprise l'inventaire n'est plus inconnu, sans rechargement", async () => {
+  const worker = await monterLeWorker((n, appels) =>
+    n <= 3 ? Promise.reject(rejet("UnknownError")) : racineDouble(appels),
+  );
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i1");
+  await attendre(400);
+  assert.equal(worker.parCorrelation("i1")?.inconnu, true);
+
+  worker.envoyer(TYPES_PRIVILEGIES.inventaire, "i2");
+  await attendre(300);
+  const reprise = worker.parCorrelation("i2");
+  assert.ok(reprise, "l'inventaire redemandé reçoit une réponse");
+  assert.notEqual(reprise.inconnu, true, "la sonde réussie lève l'inconnu");
+  assert.notEqual(reprise.refus?.code, STORAGE_ERROR_CODES.indeterminate);
+  worker.envoyer(TYPES_PRIVILEGIES.etat, "e1");
+  await attendre(60);
+  assert.equal(worker.parCorrelation("e1")?.etat, "verrouille");
 });
