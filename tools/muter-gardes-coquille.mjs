@@ -67,6 +67,8 @@ const EPREUVE_PARCOURS_CONDUITES = "tests/unit/coquille-parcours-conduites.test.
 const PREUVE = "src/coquille/preuve-de-la-feuille.mjs";
 const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
 const DEVERROUILLAGE = "public/runtime-worker-deverrouillage.mjs";
+const OPFS_SYNC = "src/vm/opfs-sync-access.mjs";
+const EPREUVE_GETDIRECTORY = "tests/unit/vm-opfs-getdirectory-refuse.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -1259,6 +1261,37 @@ export const MUTATIONS = Object.freeze([
     avant: "  if (conduite !== undefined) return conduite;\n",
     apres: "",
     epreuves: [EPREUVE_PARCOURS_CONDUITES],
+  },
+  // #231 : WebKit 26.6+ expose `getDirectory` mais le REJETTE en contexte éphémère. La sonde du Worker
+  // de confiance et la traduction du rejet en absence de capacité sont deux gardes de la conduite
+  // `indisponible` (ADR 0029). Le branchement dans `public/runtime-worker.mjs` (`sondeDeLOpfs`) n'est
+  // éprouvable que par le navigateur — projets WebKit de `playwright.config.mjs` — et n'est pas muté ici.
+  {
+    nom: "un getDirectory() qui REJETTE n'est pas une OPFS atteignable",
+    garde: "opfsAtteignable — le `catch` qui rend faux (#231)",
+    fichier: OPFS_SYNC,
+    avant: "    return true;\n  } catch {\n    return false;\n  }\n",
+    apres: "    return true;\n  } catch {\n    return true;\n  }\n",
+    epreuves: [EPREUVE_GETDIRECTORY],
+  },
+  {
+    nom: "la sonde APPELLE getDirectory : la présence de la fonction ne dit pas l'OPFS (#231)",
+    garde: "opfsAtteignable — l'appel, et non `typeof`",
+    fichier: OPFS_SYNC,
+    avant: "    await globalThis.navigator.storage.getDirectory();\n",
+    apres:
+      '    if (typeof globalThis.navigator?.storage?.getDirectory !== "function") return false;\n',
+    epreuves: [EPREUVE_GETDIRECTORY],
+  },
+  {
+    nom: "le rejet de getDirectory() rend VAULT_STORAGE_UNSUPPORTED, jamais un échec non classé",
+    garde: "volumeDirectory — la traduction du rejet en absence de capacité (#231)",
+    fichier: OPFS_SYNC,
+    avant: "    throw unsupported(\n      `navigator.storage.getDirectory() est rejeté",
+    apres:
+      '    throw toStorageError(cause, { operation: "open-directory", volume: "-" });\n' +
+      "    throw unsupported(\n      `navigator.storage.getDirectory() est rejeté",
+    epreuves: [EPREUVE_GETDIRECTORY],
   },
 ]);
 
