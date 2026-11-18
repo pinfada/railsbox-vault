@@ -1534,9 +1534,7 @@ L'[ADR 0044](docs/decisions/0044-le-magasin-d-artefacts.md) range le rootfs et l
   réseau (gel de version au sens de TUF, accepté par l'amendement du 04/10 de l'ADR 0042 tant que
   les paquets ne sont pas signés). **Il n'y a aucune durée maximale avant la signature des paquets
   (jalon 6)** : une date d'expiration non signée ne protège de rien. La date de la dernière
-  vérification est **publiée** (`horsConnexion.rangeLe`) mais **son affichage à la personne n'est
-  pas encore livré** (il touche les textes du parcours du lot B2, et vient en dernier) ; elle ne
-  borne rien.
+  vérification est dite à la personne (« Hors connexion, version du <date>. ») ; elle ne borne rien.
 - **Un adversaire qui écrit dans l'OPFS ET contrôle l'origine** : il peut servir un descripteur dont
   la racine désigne ses propres tranches. Le magasin n'ajoute rien à la confiance faite à l'origine
   (ADR 0042) ; seule la signature du jalon 6 y répondra.

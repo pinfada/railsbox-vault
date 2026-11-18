@@ -100,7 +100,7 @@ job requis « Campagnes de mutation » :
   attente de chaque opération, annule le jeton pendant qu'elle est suspendue, et exige qu'aucun
   geste modificateur ne parte ensuite — un mutant par contrôle ;
 - **`hors-ligne`** (`tools/muter-gardes-hors-ligne.mjs`) : la DÉCISION de démarrer sans l'origine.
-  **64 gardes, 64 tuées** — « injoignable » = un `TypeError` (ni `Error`, ni 5xx, ni portail
+  **69 gardes, 69 tuées** — « injoignable » = un `TypeError` (ni `Error`, ni 5xx, ni portail
   captif), le sceau et tout ce qu'il couvre (magie, date, longueur, charge), la forme du contenu
   sous un sceau juste, la clé (non extractible, domaine, identifiant, version dans l'info HKDF)
   effacée après usage, l'ordre des refus avant tout boot, le rangement après acquisition complète

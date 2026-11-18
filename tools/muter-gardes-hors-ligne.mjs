@@ -36,6 +36,7 @@ const OPFS = "src/vm/magasin-opfs.mjs";
 const CLE = "src/vm/derivation/cle-du-descripteur-scelle.mjs";
 const BOOT = "src/vm/boot-de-reference.mjs";
 const MAJ = "src/coquille/mise-a-jour-applicative.mjs";
+const ACCUEIL = "src/coquille/accueil-de-la-mise-a-jour.mjs";
 
 const T = {
   scelle: "tests/unit/coquille-descripteur-scelle.test.mjs",
@@ -43,6 +44,7 @@ const T = {
   redirections: "tests/unit/coquille-descripteur-redirections.test.mjs",
   libv86: "tests/unit/vm-lecture-de-libv86-hors-connexion.test.mjs",
   annulation: "tests/unit/vm-magasin-annulation-a-chaque-attente.test.mjs",
+  accueil: "tests/unit/coquille-accueil-mise-a-jour.test.mjs",
   cle: "tests/unit/vm-cle-du-descripteur-scelle.test.mjs",
   demarrage: "tests/unit/coquille-demarrage-hors-connexion.test.mjs",
   preparation: "tests/unit/coquille-preparation-du-demarrage.test.mjs",
@@ -412,6 +414,47 @@ export const MUTATIONS = Object.freeze([
     avant: '    throw artefactAbsentHorsConnexion(\n      "libv86",',
     apres: '    throw new Error(\n      "libv86",',
     epreuves: [T.libv86],
+  },
+  // --- La personne lit « Hors connexion, version du <date> » (revue de #298, constat 5) ----------
+  {
+    nom: "la mention hors connexion n'est dite que d'une application démarrée",
+    garde: "mentionHorsConnexion — demarree",
+    fichier: ACCUEIL,
+    avant: '  if (rapport?.application?.demarree !== true) return "";\n  const date',
+    apres: "  const date",
+    epreuves: [T.accueil],
+  },
+  {
+    nom: "une date illisible n'est jamais affichée",
+    garde: "mentionHorsConnexion — date nulle",
+    fichier: ACCUEIL,
+    avant: '  return date === null ? "" : MESSAGES.horsConnexionVersionDu(date);\n',
+    apres: "  return MESSAGES.horsConnexionVersionDu(date);\n",
+    epreuves: [T.accueil],
+  },
+  {
+    nom: "une date négative n'est pas une date de vérification",
+    garde: "dateDeLaVersionGardee — rangeLe >= 0",
+    fichier: ACCUEIL,
+    avant: "Number.isSafeInteger(rangeLe) || rangeLe < 0",
+    apres: "Number.isSafeInteger(rangeLe)",
+    epreuves: [T.accueil],
+  },
+  {
+    nom: "une valeur qui n'est pas un entier (null, texte) n'est pas une date",
+    garde: "dateDeLaVersionGardee — entier sûr",
+    fichier: ACCUEIL,
+    avant: "!Number.isSafeInteger(rangeLe) || rangeLe < 0",
+    apres: "rangeLe < 0",
+    epreuves: [T.accueil],
+  },
+  {
+    nom: "une date hors de l'intervalle des dates est écartée, pas formatée",
+    garde: "dateDeLaVersionGardee — Number.isNaN",
+    fichier: ACCUEIL,
+    avant: "  if (Number.isNaN(date.getTime())) return null;\n",
+    apres: "",
+    epreuves: [T.accueil],
   },
   // --- Aucun octet n'atteint le guest sans empreinte épinglée (revue de #298, constat 2) ----------
   {

@@ -303,6 +303,7 @@ Messages qui peuvent s'afficher sur cet écran :
 - Le démarrage avance : le coffre a répondu N fois.
 - Le démarrage commence : le coffre n'a pas encore répondu.
 - L'application est démarrée.
+- Hors connexion, version du 7 novembre 2026.
 - L'application est affichée.
 - Reprise de l'installation en cours… Ne fermez pas l'onglet.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
@@ -394,6 +395,7 @@ Messages qui peuvent s'afficher sur cet écran :
   répondu N fois. (la phrase dit en plus l'étape en cours : « Étape en cours : préparation de
   l'application. » ou « Étape en cours : démarrage de l'application. »)
 - L'application est démarrée.
+- Hors connexion, version du 7 novembre 2026.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
   mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :
   comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Rien ne se fait sans vous :

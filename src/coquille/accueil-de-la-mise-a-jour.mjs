@@ -218,11 +218,42 @@ export function texteDeSauvegardePrete(etaitDemarree, taille = null) {
  *
  * @param {{ application?: object | null }} rapport
  */
-export function texteDeDemarrage(rapport) {
+export function texteDeDemarrage(rapport, options = {}) {
   const publiee = rapport?.application?.demarree === true ? rapport.application.miseAJour : null;
-  return publiee?.geste === true && typeof publiee.versionServie === "string"
-    ? MESSAGES.miseAJourFaite(publiee.versionServie)
-    : MESSAGES.applicationDemarree;
+  const base =
+    publiee?.geste === true && typeof publiee.versionServie === "string"
+      ? MESSAGES.miseAJourFaite(publiee.versionServie)
+      : MESSAGES.applicationDemarree;
+  const mention = mentionHorsConnexion(rapport, options);
+  return mention === "" ? base : `${base} ${mention}`;
+}
+
+/**
+ * La DATE de la dernière vérification de la version gardée, en toutes lettres, ou `null` si elle est
+ * illisible : une date qu'on ne sait pas lire n'est pas inventée. Le fuseau est celui de l'appareil,
+ * sauf à le fixer (épreuves). `rangeLe` vient de l'horloge de l'appareil : informative (ADR 0046).
+ *
+ * @param {unknown} rangeLe millisecondes Unix @param {{ fuseau?: string }} [options]
+ */
+export function dateDeLaVersionGardee(rangeLe, { fuseau } = {}) {
+  if (!Number.isSafeInteger(rangeLe) || rangeLe < 0) return null;
+  const date = new Date(rangeLe);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("fr-FR", {
+    dateStyle: "long",
+    ...(fuseau === undefined ? {} : { timeZone: fuseau }),
+  }).format(date);
+}
+
+/**
+ * « Hors connexion, version du <date>. » quand l'application vient de démarrer depuis la réserve
+ * (le compte rendu porte `horsConnexion`), sinon la chaîne vide : en ligne, la page ne parle pas de
+ * connexion.
+ */
+function mentionHorsConnexion(rapport, options) {
+  if (rapport?.application?.demarree !== true) return "";
+  const date = dateDeLaVersionGardee(rapport.application.horsConnexion?.rangeLe, options);
+  return date === null ? "" : MESSAGES.horsConnexionVersionDu(date);
 }
 
 /**

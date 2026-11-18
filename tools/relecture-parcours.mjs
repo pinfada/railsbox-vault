@@ -71,6 +71,7 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "signesDeVie",
     "premierSigneDeVie",
     "applicationDemarree",
+    "horsConnexionVersionDu",
     "applicationAffichee",
     "repriseEnCours",
     "miseAJourProposee",
@@ -104,6 +105,7 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "applicationEnAttente",
     "demarrageEnCours",
     "applicationDemarree",
+    "horsConnexionVersionDu",
     "miseAJourProposee",
     "miseAJourPlusTard",
     "miseAJourSansPlusTard",
@@ -284,6 +286,8 @@ function texteDuMessage(nom) {
   if (nom === "miseAJourSauvegardeAvantReprise" || nom === "versionDeLApplication") {
     return message("V");
   }
+  // La date de la dernière vérification de la version gardée, en toutes lettres.
+  if (nom === "horsConnexionVersionDu") return message("7 novembre 2026");
   if (nom === "saisieIncomplete") return message(N, 28);
   // Le disque par défaut, 512 Mio : la taille d'une sauvegarde est celle du disque (#269).
   if (nom === "sauvegardeAnnoncee" || nom === "sauvegardeEnregistree") {

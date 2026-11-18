@@ -189,3 +189,42 @@ test("contre-recette 2, 3, 5, 6 : la zone ne nomme aucun bouton absent, la duré
   }
   assert.match(DUREE_DE_PLUS_TARD, /^jusqu'à /);
 });
+
+// --- Hors connexion : la personne lit « hors connexion, version du <date> » (revue de #298, constat 5) ---
+
+const RANGE_LE = Date.UTC(2026, 10, 7, 15, 54, 38); // le 7 novembre 2026, 15 h 54 UTC
+
+test("démarré HORS CONNEXION, la ligne de réussite dit « Hors connexion, version du <date> »", () => {
+  const rapport = {
+    application: { demarree: true, horsConnexion: { rangeLe: RANGE_LE, version: "1.0.0" } },
+  };
+  assert.equal(
+    texteDeDemarrage(rapport, { fuseau: "UTC" }),
+    `${MESSAGES.applicationDemarree} Hors connexion, version du 7 novembre 2026.`,
+  );
+});
+
+test("la mention n'est dite que d'une application DÉMARRÉE : un refus ne prétend rien", () => {
+  const rapport = {
+    application: { demarree: false, horsConnexion: { rangeLe: RANGE_LE, version: "1.0.0" } },
+  };
+  assert.equal(texteDeDemarrage(rapport, { fuseau: "UTC" }), MESSAGES.applicationDemarree);
+});
+
+test("démarré en ligne (horsConnexion nul ou absent), la ligne de réussite ne parle pas de connexion", () => {
+  for (const horsConnexion of [null, undefined]) {
+    const texte = texteDeDemarrage({ application: { demarree: true, horsConnexion } });
+    assert.equal(texte, MESSAGES.applicationDemarree);
+    assert.doesNotMatch(texte, /connexion/i);
+  }
+});
+
+test("une date illisible n'invente rien : la mention est omise, jamais « Invalid Date » ni 1970", () => {
+  // -1 et null donneraient 1969/1970 ; 8,64e15 + 1 est un entier sûr HORS de l'intervalle des dates.
+  for (const rangeLe of [Number.NaN, -1, "hier", null, 2 ** 60, 8_640_000_000_000_001]) {
+    const rapport = {
+      application: { demarree: true, horsConnexion: { rangeLe, version: "1.0.0" } },
+    };
+    assert.equal(texteDeDemarrage(rapport), MESSAGES.applicationDemarree, String(rangeLe));
+  }
+});

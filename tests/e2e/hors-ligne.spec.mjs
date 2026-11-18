@@ -171,6 +171,7 @@ test("un coffre déjà démarré redémarre réseau coupé, depuis la réserve ;
   expect(await verdictDuDemarrage(page, BUDGET_DEMARRAGE_MS)).toBe("cycle:application-demarree");
   const premier = (await releve(page)).application;
   expect(premier.horsConnexion ?? null, "en ligne, aucune mention hors connexion").toBeNull();
+  await expect(page.locator("#parcours-reussite")).not.toContainText(/hors connexion/i);
   const range = await lireLeRange(page);
   expect(range, "le descripteur scellé est rangé après l'acquisition complète").not.toBeNull();
   expect(String.fromCharCode(...range.slice(0, 8)), "magie du format v1").toBe("VLTDSC01");
@@ -193,6 +194,10 @@ test("un coffre déjà démarré redémarre réseau coupé, depuis la réserve ;
     version: descripteur.application.version,
   });
   expect(Number.isInteger(horsLigne.horsConnexion.rangeLe)).toBe(true);
+  // La personne LIT la date : « Hors connexion, version du <date>. » (revue de #298, constat 5).
+  await expect(page.locator("#parcours-reussite")).toContainText(
+    /Hors connexion, version du .+\d{4}/,
+  );
   expect(echecs, "le descripteur n'a pas été atteint").toContain("/artifacts/application.json");
   const doImage = (chemin) =>
     chemin.startsWith("/artifacts/reference-image/") ||

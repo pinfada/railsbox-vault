@@ -120,9 +120,8 @@ avec un vrai serveur sur Chromium, Firefox et WebKit.
 Le descripteur rangé est traité comme un descripteur servi par `deciderLeDephasage` : une version
 **antérieure** à celle déjà migrée dans le volume est refusée (`APPLICATION_ANTERIEURE`), même à
 schéma égal (garde de l'ADR 0042). Sa date est publiée (`horsConnexion: { rangeLe, version }`) pour
-que la personne lise « hors connexion, version du <date> » (affichage : dernier commit du lot, après
-la fusion du lot B2). **Pas de durée maximale** avant la signature des paquets (jalon 6) : limite
-écrite (§ « Ce qui n'est pas protégé »).
+que la personne lise « Hors connexion, version du <date> » (§ 7). **Pas de durée maximale** avant la
+signature des paquets (jalon 6) : limite écrite (§ « Ce qui n'est pas protégé »).
 
 **Sans volume, pas de hors ligne** : si le coffre n'a pas de volume `application`, installer demande
 la graine, que le magasin ne garde pas, et la garde « pas antérieur à la version migrée » n'a rien à
@@ -222,10 +221,12 @@ réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
 ### 7. Ce que la personne voit
 
 La coquille publie `horsConnexion: { rangeLe, version }` dans le constat de la page et dans le
-compte rendu du démarrage (`null` quand l'origine a répondu) : **la donnée est publiée, son
-AFFICHAGE (« hors connexion, version du <date> ») n'est pas livré** — il touche les fichiers de
-textes du parcours du lot B2 et se fait en dernier, après la fusion de B2 (revue de #298, constat
-5). Les quatre codes de refus ont leur conduite en langage humain (`conduites-du-dephasage.mjs`),
+compte rendu du démarrage (`null` quand l'origine a répondu) : la ligne de réussite dit alors « Hors
+connexion, version du <date>. » (`texteDeDemarrage`, la date en toutes lettres, au fuseau de
+l'appareil) — la date de la dernière vérification, qui dit l'âge de la version sans le borner ; une
+date illisible est omise, jamais inventée. En ligne, la page ne parle pas de connexion. Le texte est
+au registre des messages du parcours et à la relecture (`docs/parcours/relecture-p2.md`, régénérée).
+Les quatre codes de refus ont leur conduite en langage humain (`conduites-du-dephasage.mjs`),
 enregistrés dans le registre des codes et la spécification (§ 10 de `docs/format-de-volume-v3.md`).
 
 ### 8. L'annulation est tenue APRÈS CHAQUE ATTENTE (amendement du 18/11, constat 4 de la revue de #298)
@@ -330,7 +331,7 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
   `vm-acquisition-des-petits-artefacts` et `vm-acquisition-disque-systeme` (hors connexion : fetch
   jamais appelé), `coquille-empreintes-du-boot`.
 - **Mutation** (rejouée le 18/11/2026) : la campagne `hors-ligne`
-  (`tools/muter-gardes-hors-ligne.mjs`) tient 64 gardes, 64 tuées ; la campagne `magasin` en tient
+  (`tools/muter-gardes-hors-ligne.mjs`) tient 69 gardes, 69 tuées ; la campagne `magasin` en tient
   32, 32 tuées (dont les restes de la revue de #292 et le jeton testé après chaque attente, § 8).
   Les deux sont dans le job requis « Campagnes de mutation ».
 - **Intégration navigateur, trois moteurs** (Chromium, Firefox et WebKit exécutés le 18/11/2026) :
@@ -350,7 +351,6 @@ signature des paquets (jalon 6, TUF 1.0.x : version monotone, `expires`) y répo
 - **Que `libv86` reste dans le cache HTTP** hors connexion en conditions réelles (éviction) : non
   mesuré ; le spike montre la lecture du cache après un `import()` sur les trois moteurs, pas sa
   durée de vie.
-- **L'AFFICHAGE** « hors connexion, version du <date> » : non livré (§ 7), après la fusion de B2.
 - **Un `move` déjà lancé** n'est pas annulable (§ 8) ; collisions de partiels entre onglets :
   écrites, non éprouvées avec deux vrais onglets.
 - Le **coût** des empreintes de cinq artefacts de plus au premier démarrage, et la taille du magasin
