@@ -41,11 +41,8 @@ updates:
       v86:
         patterns:
           - "v86"
-    ignore:
-      # Playwright 1.63.0 embarque WebKit 26.6 : 47 épreuves WebKit rouges, la coquille démarre en
-      # erreur (#231). Écart de cette seule version mineure ; la suivante sera proposée normalement.
-      - dependency-name: "@playwright/test"
-        versions: ["1.63.x"]
+    # L'exclusion de Playwright 1.63.x (#231) est levée : le produit constate l'OPFS par un appel et
+    # non par `typeof` (`docs/compatibility.md`, § WebKit 26.6 et suivants), et le verrou est à 1.65.0.
     commit-message:
       prefix: chore
     labels:

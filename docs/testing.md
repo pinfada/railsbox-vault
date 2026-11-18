@@ -123,6 +123,14 @@ et les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les 
 fabriqué » et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en
 bout en bout ; le retour arrière, en unitaire.
 
+La campagne `coquille` gagne **trois mutants** avec #231 (18/11/2026), tous tués, **132/132** pour
+la campagne : le `catch` de `opfsAtteignable` qui rend faux, l'appel remplacé par un `typeof`, et la
+traduction du rejet de `getDirectory()` en `VAULT_STORAGE_UNSUPPORTED` dans `volumeDirectory`
+(épreuve `tests/unit/vm-opfs-getdirectory-refuse.test.mjs`). **Non muté, et dit :** le branchement
+de la sonde dans `public/runtime-worker.mjs` (`sondeDeLOpfs`) — une campagne copie le dépôt et
+rejoue `node --test`, jamais un navigateur ; il n'est éprouvé que par les projets WebKit de
+`playwright.config.mjs` (121 verts sous Playwright 1.65.0, 76 rouges sans lui).
+
 Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve
 rejouée avant ET après le retrait d'une garde, restauration. Avant #196, rien ne les jouait TOUTES
@@ -2491,6 +2499,21 @@ ces épreuves, était verte, et `main` compte douze runs verts sur treize depuis
 causes sont à instruire sous #217 : la première appartient à la famille des navigations bloquées
 (#178, récupérées sous Firefox seulement), la seconde est une course de mesure, pas un défaut de
 l'annonce.
+
+**Suite du 18/11/2026 : une cause traitée, deux mesurées et non expliquées (#217).** Sous Playwright
+1.65.0 (la PR de #231), `coquille-deverrouillage.spec.mjs` attend désormais la mesure
+`annonceApresLeGesteMs` (`expect.poll` borné par `DELAI`) au lieu de la lire au premier changement
+d'état : la course de mesure, quatre occurrences en CI du 15 au 17/09, est écartée par construction,
+sans retirer l'exigence (la mesure doit exister). Quarante exécutions locales WebKit de cette
+épreuve : 40 vertes, une seule machine, sans charge, ce qui ne prouve rien sur un exécutant partagé
+— la preuve est la lecture du code (`surMesure("annonce")` suit `await peindre()`).
+
+Les deux autres signatures **ne sont pas expliquées** et ne sont pas traitées ici : la navigation
+sans `load` du second contexte (`tests/apparence/parcours.spec.mjs`, 15/09, une occurrence en CI) —
+0 échec sur 90 exécutions WebKit locales (cinq passes des dix-huit épreuves), le 18/11/2026 — ; et
+`coquille-frontiere.spec.mjs` « témoin positif » (`html[data-hostile]` resté `demarrage` après 60 s,
+18/11/2026 01:50 UTC, run 44216457749, verte à la relance). Cette dernière a été **reproduite en
+local** : voir le décompte ci-dessous. Aucun `retries` n'est ajouté, aucune épreuve n'est assouplie.
 
 #### Le support des scénarios : un profil de navigateur PERSISTANT
 

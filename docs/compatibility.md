@@ -10,16 +10,16 @@
 
 ## Matrice des cibles
 
-| Cible                 | Statut                      | Condition de promotion                          |
-| --------------------- | --------------------------- | ----------------------------------------------- |
-| Chromium ordinateur   | mesuré                      | scénario bout en bout du jalon 1                |
-| Firefox ordinateur    | mesuré                      | scénario bout en bout du jalon 1                |
-| WebKit Playwright     | refusé (OPFS absent)        | build WebKit exposant `navigator.storage`       |
-| Safari ordinateur     | candidat                    | sonde exécutée sur un vrai Safari, puis jalon 1 |
-| Navigateurs mobiles   | expérimental                | budgets mémoire, cycle Worker et récupération   |
-| Node 22               | supporté pour développement | contrôle obligatoire `Qualité et tests`         |
-| PostgreSQL dans la VM | candidat                    | persistance #7 et image de référence dédiée     |
-| SQLite dans la VM     | mesuré                      | scénario bout en bout du jalon 1                |
+| Cible                 | Statut                         | Condition de promotion                          |
+| --------------------- | ------------------------------ | ----------------------------------------------- |
+| Chromium ordinateur   | mesuré                         | scénario bout en bout du jalon 1                |
+| Firefox ordinateur    | mesuré                         | scénario bout en bout du jalon 1                |
+| WebKit Playwright     | refusé (OPFS absent ou rejeté) | build WebKit dont `getDirectory()` aboutit      |
+| Safari ordinateur     | candidat                       | sonde exécutée sur un vrai Safari, puis jalon 1 |
+| Navigateurs mobiles   | expérimental                   | budgets mémoire, cycle Worker et récupération   |
+| Node 22               | supporté pour développement    | contrôle obligatoire `Qualité et tests`         |
+| PostgreSQL dans la VM | candidat                       | persistance #7 et image de référence dédiée     |
+| SQLite dans la VM     | mesuré                         | scénario bout en bout du jalon 1                |
 
 La frontière d'origine décidée par l'ADR 0002 a été mesurée séparément sur les trois mêmes moteurs
 et n'y change aucun statut : elle tient partout. Voir « Frontière d'origine » plus bas.
@@ -409,8 +409,10 @@ la directive dit, et c'est ce qui montre que la sonde sait lire un opener quand 
   `ATTENTE_RESOLUTION` / durabilité `INCONNUE`. La sonde de compatibilité, elle, a sa propre borne
   (quatre secondes également) et range cette indétermination sous `denied`, avec le détail « demande
   laissée en attente d'une interaction utilisateur » : c'est le vocabulaire d'un contrat de sonde à
-  trois verdicts, qui ne connaît pas « indéterminé ». **Enfin, WebKit n'expose pas `persist()`** :
-  c'est une absence, jamais un refus, et le produit rend `unsupported`.
+  trois verdicts, qui ne connaît pas « indéterminé ». **Enfin, WebKit 26.5 n'exposait pas
+  `persist()`** : c'était une absence, jamais un refus, et le produit rendait `unsupported`. WebKit
+  27.2 l'expose et rend `false` : le produit rend `denied` (voir la section sur WebKit 26.6 et
+  suivants).
 
   La capacité reste facultative : Vault doit fonctionner sans persistance accordée et savoir la
   demander plus tard. Ce que ce relevé ne dit pas : ce qu'un Firefox FENÊTRÉ fait de l'invite quand
@@ -436,6 +438,56 @@ la directive dit, et c'est ce qui montre que la sonde sait lire un opener quand 
   n'est pas partagée — et l'[ADR 0010](decisions/0010-isolation-multi-origine.md) décide de ne pas
   poser l'isolation. La sonde continue de la poser parce qu'elle **mesure** ces primitives ; mesurer
   n'est pas dépendre.
+
+## WebKit 26.6 et suivants : l'OPFS est exposé, mais REJETÉ en contexte éphémère (#231)
+
+Relevé du **18/11/2026** : Playwright **1.65.0**, WebKit **27.2** (v2388), Linux x86_64, Node 22. La
+matrice « mesurée » plus haut date du 23/08/2026 (Playwright 1.62.1, WebKit 26.5) et n'est pas
+réécrite : elle décrit ce build-là. La montée de Playwright à 1.65.0 est la référence de la CI
+depuis la PR qui ferme #231.
+
+| Question                                                  | WebKit 26.5 (1.62.1) | WebKit 27.2 (1.65.0), contexte éphémère | WebKit 27.2, contexte persistant   |
+| --------------------------------------------------------- | -------------------- | --------------------------------------- | ---------------------------------- |
+| `typeof navigator.storage.getDirectory`                   | `undefined`          | `function`                              | `function`                         |
+| `await navigator.storage.getDirectory()` (page ET Worker) | —                    | **rejet `UnknownError`**                | aboutit                            |
+| `createSyncAccessHandle()` dans un Worker                 | —                    | —                                       | aboutit (`readwrite-unsafe` aussi) |
+| `navigator.storage.estimate()`                            | absent               | quota 1000 Mio                          | quota 1000 Mio                     |
+| `navigator.storage.persist()`                             | `TypeError` (absent) | `false`, sans attente                   | `false`, sans attente              |
+
+**Ce que le produit en tire** (note datée de
+l'[ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)) : un `typeof` ne dit plus si le
+moteur offre l'OPFS. Le Worker de confiance **appelle** `getDirectory()` au démarrage
+(`opfsAtteignable`) ; un rejet est une absence de capacité — état `indisponible`, geste refusé
+`VAULT_STORAGE_UNSUPPORTED` —, comme la fonction absente l'était sous 26.5. Avant ce correctif la
+coquille passait en `data-coquille="erreur"` sur WebKit ≥ 26.6 (76 épreuves WebKit rouges sous
+1.65.0, 47 sous 1.63.0). Un contexte persistant, lui, ouvre un volume : si Safari se comporte ainsi,
+le refus du volume sous WebKit est une propriété de la SESSION et non du moteur. **Cela n'a pas été
+mesuré sur un vrai Safari** (#40) ; l'assimilation « contexte éphémère de Playwright = navigation
+privée de Safari » est une hypothèse, pas un relevé.
+
+**La sonde de capacités ne suit pas encore.** Sous WebKit 27.2 éphémère, `opfsGetDirectory` et
+`opfsSyncAccessHandle` valent `error` (`UnknownError`), non `unsupported` : le verdict Vault de la
+sonde est `candidat` (« mesure non concluante », règle de `src/compat/`) et non `refusé`. Ce choix
+de prudence de la sonde — un nom d'erreur inconnu n'est pas classé — n'est pas modifié ici ; il est
+suivi par #306. Le produit, lui, décide : il traite ce rejet comme une absence.
+
+**Persistance** (note datée de l'[ADR 0006](decisions/0006-conduite-refus-persistance.md)) : WebKit
+27.2 expose `persist()` et rend `false` ; le produit range ce verdict `denied`, non plus
+`unsupported`. La table `tests/browser/persistance-attendue.mjs` suit, et l'affirmation « WebKit
+n'expose pas `persist()` » de « Lecture des verdicts notables » vaut pour WebKit 26.5 seulement.
+
+**Un `await` de premier niveau dans un Worker module perd les premiers messages — sur les TROIS
+moteurs.** Mesuré le 18/11/2026 (Chromium 158, Firefox 159, WebKit 27.2) : un Worker module dont le
+script attend (`await` d'une minuterie de 300 ms, ou de `getDirectory()`) avant de poser
+`self.onmessage` ne répond à AUCUN message envoyé par la page juste après sa construction (aucune
+réponse en 5 s) ; le même Worker sans `await` de premier niveau répond immédiatement. Ce n'est pas
+propre à WebKit — une première lecture de cette PR l'avait cru. La conséquence pour le produit : la
+sonde de l'OPFS du Worker de confiance (`public/runtime-worker.mjs`) est une promesse attendue par
+`exclusiviteConstatee`, jamais un `await` de module, sans quoi la poignée de main de la coquille
+reste muette (`data-coquille` figé sur `demarrage`, puis `worker-mort`).
+
+**Observé, non éprouvé :** `PublicKeyCredential` se déclare `function` sous WebKit 27.2 (objet sous
+26.5) ; la sonde le range `supported` dans les deux cas.
 
 ## WebKit Playwright n'est pas une qualification Safari
 
