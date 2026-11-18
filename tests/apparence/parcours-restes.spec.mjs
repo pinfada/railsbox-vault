@@ -14,6 +14,7 @@ import {
   titre,
   verrouillerEtRecharger,
 } from "./outils-d-apparence.mjs";
+import { exigerAucuneAlerteAvecTexte } from "../support/alertes.mjs";
 
 test("m7 : avant tout démarrage, la carte de l'étape 4 reste à la largeur des autres écrans", async ({
   page,
@@ -193,4 +194,30 @@ test("#302 : application démarrée, « Où suis-je ? » se lit par le menu « C
   await page.locator("#menu-du-coffre > summary").click();
   await ouSuisJe.click();
   await expect(page.getByRole("listitem")).toHaveCount(9);
+});
+
+test("#302 : le contrôle « aucune alerte » exige la région #parcours-refus, vide et en role=alert", async ({
+  page,
+}) => {
+  expect.configure({ timeout: 1_500 });
+  await jusquAuTravail(page);
+  await simulerLigneDuCycle(page, "cycle:demarrage-en-cours");
+  await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
+  // La région est cachée (panneau `visibility: hidden`) : le rôle ne la trouve pas, le contrôle la lit.
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await exigerAucuneAlerteAvecTexte(page);
+  // Mutants : la région retirée, son rôle retiré, son contenu écrit — chacun doit faire échouer le contrôle.
+  const mutants = {
+    "région retirée": () => document.getElementById("parcours-refus").remove(),
+    "role retiré": () => document.getElementById("parcours-refus").removeAttribute("role"),
+    "texte écrit": () => {
+      document.getElementById("parcours-refus").textContent = "Un refus";
+    },
+  };
+  for (const [nom, mutant] of Object.entries(mutants)) {
+    await page.reload();
+    await expect(page.locator("#parcours-refus")).toHaveCount(1);
+    await page.evaluate(mutant);
+    await expect(exigerAucuneAlerteAvecTexte(page), nom).rejects.toThrow();
+  }
 });
