@@ -29,7 +29,8 @@ Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 - vous êtes ici
 - à venir
 - passée sans rien révoquer
-- non jouée sur cet appareil : le coffre y est restauré
+- non jouée sur cet appareil
+- non jouée sur cet appareil : le coffre y a été restauré
 
 ### Écran : Préparation
 

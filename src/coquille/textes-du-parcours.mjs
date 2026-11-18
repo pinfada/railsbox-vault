@@ -677,5 +677,7 @@ export const STATUTS = Object.freeze({
   "a-venir": "à venir",
   // L'étape 9 facultative, passée par « Terminer sans révoquer » : elle n'a pas été jouée (#246).
   "sans-revoquer": "passée sans rien révoquer",
-  "non-jouee": "non jouée sur cet appareil : le coffre y est restauré",
+  // Avant la restauration, rien n'est promis : la sauvegarde n'est pas encore restaurée.
+  "non-jouee-ici": "non jouée sur cet appareil",
+  "non-jouee": "non jouée sur cet appareil : le coffre y a été restauré",
 });

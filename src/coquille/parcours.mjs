@@ -518,13 +518,14 @@ export function etapeSuivante(ecranId) {
  */
 export function ouSuisJe(ecranId, origine = ORIGINES_DU_COFFRE.creation, progression = {}) {
   // L'écran de restauration est celui d'un appareil qui n'a rien joué : les étapes 1 à 6 n'y ont pas
-  // eu lieu, même avant que la sauvegarde soit restaurée (#266 m3).
-  const restaure = origine === ORIGINES_DU_COFFRE.restauration || ecranId === "restaurer";
+  // eu lieu (#266 m3). Mais tant que la restauration n'a pas eu lieu, rien n'est dit « restauré ».
+  const restaure = origine === ORIGINES_DU_COFFRE.restauration;
+  const nonJouee = restaure ? "non-jouee" : ecranId === "restaurer" ? "non-jouee-ici" : null;
   const finie = progression.visiteTerminee === true;
   const courante = finie ? 0 : (ECRANS[ecranId]?.etape ?? 0);
   const atteinte = finie ? ETAPES.length + 1 : Math.max(progression.etapeAtteinte ?? 0, courante);
   return ETAPES.map(({ rang, titre }) => {
-    if (restaure && rang < 7) return { rang, titre, statut: "non-jouee" };
+    if (nonJouee !== null && rang < 7) return { rang, titre, statut: nonJouee };
     if (rang === courante) return { rang, titre, statut: "en-cours" };
     if (rang === 9 && ecranId === "termine-sans-revoquer") {
       return { rang, titre, statut: "sans-revoquer" };
