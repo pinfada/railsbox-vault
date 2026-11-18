@@ -441,35 +441,54 @@ la directive dit, et c'est ce qui montre que la sonde sait lire un opener quand 
 
 ## WebKit 26.6 et suivants : l'OPFS est exposé, mais REJETÉ en contexte éphémère (#231)
 
-Relevé du **18/11/2026** : Playwright **1.65.0**, WebKit **27.2** (v2388), Linux x86_64, Node 22 ;
-les suites WebKit passent à l'identique sous Playwright **1.64.0**, WebKit 27.2 (v2370), qui est le
-verrou de la CI (voir « Firefox 159 », plus bas). La matrice « mesurée » plus haut date du
-23/08/2026 (Playwright 1.62.1, WebKit 26.5) et n'est pas réécrite : elle décrit ce build-là.
+Relevés du **18/11/2026**, Linux x86_64, Node 22, contexte éphémère (`browser.newContext()`, le
+contexte par défaut de Playwright) :
 
-| Question                                                  | WebKit 26.5 (1.62.1) | WebKit 27.2 (1.65.0), contexte éphémère | WebKit 27.2, contexte persistant   |
-| --------------------------------------------------------- | -------------------- | --------------------------------------- | ---------------------------------- |
-| `typeof navigator.storage.getDirectory`                   | `undefined`          | `function`                              | `function`                         |
-| `await navigator.storage.getDirectory()` (page ET Worker) | —                    | **rejet `UnknownError`**                | aboutit                            |
-| `createSyncAccessHandle()` dans un Worker                 | —                    | —                                       | aboutit (`readwrite-unsafe` aussi) |
-| `navigator.storage.estimate()`                            | absent               | quota 1000 Mio                          | quota 1000 Mio                     |
-| `navigator.storage.persist()`                             | `TypeError` (absent) | `false`, sans attente                   | `false`, sans attente              |
+| Playwright | WebKit (build)  | `await navigator.storage.getDirectory()` | `persist()` |
+| ---------- | --------------- | ---------------------------------------- | ----------- |
+| 1.62.1     | 26.5 (2336)     | fonction **absente** (`undefined`)       | absent      |
+| **1.63.0** | **26.6 (2359)** | **rejet `UnknownError`**                 | `false`     |
+| 1.64.0     | 27.2 (2370)     | rejet `UnknownError`                     | `false`     |
+| 1.65.0     | 27.2 (2388)     | rejet `UnknownError`                     | `false`     |
+
+**Le rejet mesuré, mot pour mot :** nom `UnknownError`, message « The operation failed for an
+unknown transient reason (e.g. out of memory). », rendu par la page comme par un Worker dédié. Le
+message parle lui-même d'une raison **passagère** : le moteur ne dit pas si l'indisponibilité est
+durable, et le produit ne le prétend pas. Les suites WebKit passent sous Playwright **1.64.0**, qui
+est le verrou de la CI (voir « Firefox 159 », plus bas) ; la matrice « mesurée » plus haut date du
+23/08/2026 (Playwright 1.62.1, WebKit 26.5) et n'est pas réécrite.
+
+Détail sous WebKit 27.2 (1.65.0), contexte éphémère contre contexte persistant
+(`launchPersistentContext`) — **non mesuré sous 26.6** pour le contexte persistant :
+
+| Question                                                  | WebKit 27.2, éphémère    | WebKit 27.2, persistant            |
+| --------------------------------------------------------- | ------------------------ | ---------------------------------- |
+| `typeof navigator.storage.getDirectory`                   | `function`               | `function`                         |
+| `await navigator.storage.getDirectory()` (page ET Worker) | **rejet `UnknownError`** | aboutit                            |
+| `createSyncAccessHandle()` dans un Worker                 | —                        | aboutit (`readwrite-unsafe` aussi) |
+| `navigator.storage.estimate()`                            | quota 1000 Mio           | quota 1000 Mio                     |
 
 **Ce que le produit en tire** (note datée de
 l'[ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)) : un `typeof` ne dit plus si le
 moteur offre l'OPFS. Le Worker de confiance **appelle** `getDirectory()` au démarrage
-(`opfsAtteignable`) ; un rejet est une absence de capacité — état `indisponible`, geste refusé
-`VAULT_STORAGE_UNSUPPORTED` —, comme la fonction absente l'était sous 26.5. Avant ce correctif la
-coquille passait en `data-coquille="erreur"` sur WebKit ≥ 26.6 (76 épreuves WebKit rouges sous
-1.65.0, 47 sous 1.63.0). Un contexte persistant, lui, ouvre un volume : si Safari se comporte ainsi,
-le refus du volume sous WebKit est une propriété de la SESSION et non du moteur. **Cela n'a pas été
-mesuré sur un vrai Safari** (#40) ; l'assimilation « contexte éphémère de Playwright = navigation
-privée de Safari » est une hypothèse, pas un relevé.
+(`opfsConstateeAbsente`), **puis** répond : l'état, l'inventaire et chaque geste attendent la
+conclusion de la sonde. **Seul le rejet qui signe l'absence** pose l'état `indisponible` et le refus
+`VAULT_STORAGE_UNSUPPORTED` : l'`UnknownError` mesuré ci-dessus, et les deux noms que la table de
+`src/vm/opfs-error-mapping.mjs` range déjà sous `unsupported` (`SecurityError`,
+`TypeMismatchError`). **Tout autre rejet** — `QuotaExceededError`, `InvalidStateError`, une erreur
+inconnue — **n'est pas une indisponibilité** : il garde son classement précis et le coffre reste
+`verrouille`, de sorte que le vrai geste rende son échec. Avant ce correctif la coquille passait en
+`data-coquille="erreur"` sur WebKit ≥ 26.6 (47 épreuves rouges sous 1.63.0 en CI, 76 sous 1.65.0 en
+local). Un contexte persistant, lui, ouvre un volume : si Safari se comporte ainsi, le refus du
+volume sous WebKit est une propriété de la SESSION et non du moteur. **Cela n'a pas été mesuré sur
+un vrai Safari** (#40) ; l'assimilation « contexte éphémère de Playwright = navigation privée de
+Safari » est une hypothèse.
 
-**La sonde de capacités ne suit pas encore.** Sous WebKit 27.2 éphémère, `opfsGetDirectory` et
+**La sonde de capacités ne suit pas encore.** Sous WebKit ≥ 26.6 éphémère, `opfsGetDirectory` et
 `opfsSyncAccessHandle` valent `error` (`UnknownError`), non `unsupported` : le verdict Vault de la
 sonde est `candidat` (« mesure non concluante », règle de `src/compat/`) et non `refusé`. Ce choix
 de prudence de la sonde — un nom d'erreur inconnu n'est pas classé — n'est pas modifié ici ; il est
-suivi par #306. Le produit, lui, décide : il traite ce rejet comme une absence.
+suivi par #306. Le produit, lui, décide : il traite ce rejet précis comme une indisponibilité.
 
 **Persistance** (note datée de l'[ADR 0006](decisions/0006-conduite-refus-persistance.md)) : WebKit
 27.2 expose `persist()` et rend `false` ; le produit range ce verdict `denied`, non plus
@@ -482,9 +501,10 @@ script attend (`await` d'une minuterie de 300 ms, ou de `getDirectory()`) avant 
 `self.onmessage` ne répond à AUCUN message envoyé par la page juste après sa construction (aucune
 réponse en 5 s) ; le même Worker sans `await` de premier niveau répond immédiatement. Ce n'est pas
 propre à WebKit — une première lecture de cette PR l'avait cru. La conséquence pour le produit : la
-sonde de l'OPFS du Worker de confiance (`public/runtime-worker.mjs`) est une promesse attendue par
-`exclusiviteConstatee`, jamais un `await` de module, sans quoi la poignée de main de la coquille
-reste muette (`data-coquille` figé sur `demarrage`, puis `worker-mort`).
+sonde de l'OPFS du Worker de confiance (`public/runtime-worker.mjs`) est une promesse, attendue par
+chaque réponse qui en dépend (`surMessagePrivilegie`, `publierLEtat`), jamais un `await` de module,
+sans quoi la poignée de main de la coquille reste muette (`data-coquille` figé sur `demarrage`, puis
+`worker-mort`).
 
 **Observé, non éprouvé :** `PublicKeyCredential` se déclare `function` sous WebKit 27.2 (objet sous
 26.5) ; la sonde le range `supported` dans les deux cas.

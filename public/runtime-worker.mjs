@@ -54,7 +54,7 @@ import {
 } from "/src/coquille/contrat-de-messages.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "/src/coquille/identites-du-coffre.mjs";
 import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
-import { opfsAtteignable } from "/src/vm/opfs-sync-access.mjs";
+import { opfsConstateeAbsente } from "/src/vm/opfs-sync-access.mjs";
 import { brancherLeRelaisDuWorker } from "./relais-du-worker.mjs";
 import { brancherLaPortabilite } from "./portabilite-du-worker.mjs";
 import { battementDuWorker } from "./battement-du-worker.mjs";
@@ -139,15 +139,20 @@ const interne = {
 
 /**
  * WebKit 26.6+ expose `getDirectory` mais le REJETTE en contexte éphémère (#231) : `typeof` ne suffit
- * plus, il faut un appel. Il est ASYNCHRONE et SANS `await` au niveau du module — WebKit perd les
- * messages reçus pendant l'évaluation d'un module Worker à `await` de premier niveau (mesuré,
- * `docs/compatibility.md`), et la poignée de main de la coquille serait muette. La promesse est donc
- * attendue par `exclusiviteConstatee`, que la première réponse d'état attend déjà : l'état publié
- * reste juste dès sa première lecture.
+ * plus, il faut un appel. Il est ASYNCHRONE et SANS `await` au niveau du module — un `await` de
+ * premier niveau fait perdre ses premiers messages à un Worker module (mesuré sur les trois moteurs,
+ * `docs/compatibility.md`), et la poignée de main de la coquille serait muette.
+ *
+ * Cette promesse est donc ATTENDUE par tout ce qui en dépend, à deux endroits et pas un de moins :
+ * `surMessagePrivilegie` (l'inventaire et chaque geste, dont les refus lisent `PEUT_OUVRIR`) et
+ * `publierLEtat` (qui attend d'abord, lit l'état ensuite). Une demande reçue PENDANT la sonde reçoit
+ * la valeur d'APRÈS — jamais un `verrouille` que la sonde est sur le point de retirer. Seul un rejet
+ * qui SIGNE l'absence (`opfsConstateeAbsente`) pose `indisponible` ; toute autre panne laisse le vrai
+ * geste rendre son échec précis.
  */
 const sondeDeLOpfs = PEUT_OUVRIR
-  ? opfsAtteignable().then((atteignable) => {
-      if (atteignable) return;
+  ? opfsConstateeAbsente().then((absente) => {
+      if (!absente) return;
       PEUT_OUVRIR = false;
       interne.etat = ETATS_DU_VOLUME.indisponible;
     })
@@ -252,6 +257,8 @@ function refuserSurLeGlobal(code) {
 
 /** @param {MessageEvent} event */
 async function surMessagePrivilegie(event) {
+  // Rien de ce que ce canal rend ne dépend de la capacité tant que la sonde n'a pas conclu (#231).
+  await sondeDeLOpfs;
   const decode = decoderMessage(event.data);
   if (!decode.ok) return repondreCode(decode.code, null);
   const correlation = correlationDe(decode.message);
@@ -301,9 +308,12 @@ function correlee(correlation) {
  * (`main.mjs`, `demanderLEtat`). Le document applicatif n'apprend donc rien de l'exclusivité.
  */
 async function publierLEtat(correlation) {
+  // ATTENDRE d'abord, LIRE ensuite : un littéral qui lisait `interne.etat` avant son `await` publiait
+  // le `verrouille` d'avant la sonde (revue de la PR #305). `exclusiviteConstatee` attend la sonde.
+  const exclusivite = await exclusiviteConstatee;
   repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {
     ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),
-    exclusivite: await exclusiviteConstatee,
+    exclusivite,
     application: interne.application === null ? "arretee" : "demarree",
     // Ce qu'une révocation d'urgence a laissé et retiré : des noms et des nombres (#207).
     revocation: interne.revocation,

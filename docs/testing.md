@@ -123,14 +123,17 @@ et les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les 
 fabriqué » et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en
 bout en bout ; le retour arrière, en unitaire.
 
-La campagne `coquille` gagne **trois mutants** avec #231 (18/11/2026), tous tués, **132/132** pour
-la campagne : le `catch` de `opfsAtteignable` qui rend faux, l'appel remplacé par un `typeof`, et la
-traduction du rejet de `getDirectory()` en `VAULT_STORAGE_UNSUPPORTED` dans `volumeDirectory`
-(épreuve `tests/unit/vm-opfs-getdirectory-refuse.test.mjs`). **Non muté, et dit :** le branchement
-de la sonde dans `public/runtime-worker.mjs` (`sondeDeLOpfs`) — une campagne copie le dépôt et
-rejoue `node --test`, jamais un navigateur ; il n'est éprouvé que par les projets WebKit de
-`playwright.config.mjs` (121 verts sous Playwright 1.64.0 — le verrou — comme sous 1.65.0, 76 rouges
-sans lui).
+La campagne `coquille` gagne **onze mutants** avec #231 (18/11/2026), tous tués, **140/140** pour la
+campagne. Cinq portent sur `src/vm/opfs-sync-access.mjs` (le classement du rejet de `getDirectory()`
+: seul ce qui signe l'absence est « indisponible » ; l'appel plutôt que `typeof` ; la traduction
+limitée au nom mesuré), six sur le BRANCHEMENT de `public/runtime-worker.mjs`, que
+`tests/unit/coquille-worker-sonde-opfs.test.mjs` charge TEL QUEL — un résolveur de modules ramène
+les importations `/src/…` à `src/`, `navigator.storage` est un double dont `getDirectory()` est une
+promesse tenue en main : l'attente de la sonde par le canal et par la poignée d'état, l'ordre «
+attendre puis lire », le constat d'exclusivité, la conclusion, l'état et la capacité qu'elle pose.
+**Non muté, et dit :** les sondes du spike (`public/spike/origin/app-inter.mjs`) et la fouille du
+banc de déverrouillage, éprouvables par le seul navigateur (`apps-frontiere.spec.mjs`, « une PANNE
+de getDirectory() n'est pas rangée sous « indisponible » »).
 
 Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve

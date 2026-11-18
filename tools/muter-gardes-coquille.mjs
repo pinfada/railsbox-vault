@@ -70,6 +70,8 @@ const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
 const DEVERROUILLAGE = "public/runtime-worker-deverrouillage.mjs";
 const OPFS_SYNC = "src/vm/opfs-sync-access.mjs";
 const EPREUVE_GETDIRECTORY = "tests/unit/vm-opfs-getdirectory-refuse.test.mjs";
+const EPREUVE_WORKER_SONDE = "tests/unit/coquille-worker-sonde-opfs.test.mjs";
+const RUNTIME_WORKER = "public/runtime-worker.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -1263,36 +1265,112 @@ export const MUTATIONS = Object.freeze([
     apres: "",
     epreuves: [EPREUVE_PARCOURS_CONDUITES],
   },
-  // #231 : WebKit 26.6+ expose `getDirectory` mais le REJETTE en contexte éphémère. La sonde du Worker
-  // de confiance et la traduction du rejet en absence de capacité sont deux gardes de la conduite
-  // `indisponible` (ADR 0029). Le branchement dans `public/runtime-worker.mjs` (`sondeDeLOpfs`) n'est
-  // éprouvable que par le navigateur — projets WebKit de `playwright.config.mjs` — et n'est pas muté ici.
+  // #231 : WebKit 26.6+ expose `getDirectory` mais le REJETTE en contexte éphémère. Trois familles de
+  // gardes. (1) Le CLASSEMENT du rejet, dans `src/vm/opfs-sync-access.mjs` : seul le rejet qui signe
+  // l'absence est « indisponible », tout autre échec est signalé. (2) Le BRANCHEMENT de la sonde dans
+  // `public/runtime-worker.mjs`, chargé TEL QUEL par `coquille-worker-sonde-opfs.test.mjs` (une sonde
+  // suspendue, des demandes reçues pendant elle) : l'attente de la sonde par la poignée d'état et par le
+  // canal, l'ordre « attendre puis lire », l'état que la sonde pose. (3) Non muté, et dit : les sondes du
+  // spike (`public/spike/origin/app-inter.mjs`), éprouvables par le seul navigateur — voir
+  // `tests/browser/apps-frontiere.spec.mjs`.
   {
-    nom: "un getDirectory() qui REJETTE n'est pas une OPFS atteignable",
-    garde: "opfsAtteignable — le `catch` qui rend faux (#231)",
+    nom: "un rejet de getDirectory() n'est pas, en général, une absence d'OPFS",
+    garde: "opfsConstateeAbsente — le classement du rejet : seul ce qui signe l'absence (#231)",
     fichier: OPFS_SYNC,
-    avant: "    return true;\n  } catch {\n    return false;\n  }\n",
-    apres: "    return true;\n  } catch {\n    return true;\n  }\n",
+    avant: "    return rejetDeRacineSigneUneAbsence(cause);\n",
+    apres: "    return true;\n",
     epreuves: [EPREUVE_GETDIRECTORY],
   },
   {
-    nom: "la sonde APPELLE getDirectory : la présence de la fonction ne dit pas l'OPFS (#231)",
-    garde: "opfsAtteignable — l'appel, et non `typeof`",
+    nom: "l'UnknownError mesuré de getDirectory() est reconnu comme une absence",
+    garde: "rejetDeRacineSigneUneAbsence — le nom mesuré (#231)",
     fichier: OPFS_SYNC,
-    avant: "    await globalThis.navigator.storage.getDirectory();\n",
-    apres:
-      '    if (typeof globalThis.navigator?.storage?.getDirectory !== "function") return false;\n',
+    avant: 'const REJET_DE_RACINE_MESURE = "UnknownError";',
+    apres: 'const REJET_DE_RACINE_MESURE = "UnknownErrorXX";',
+    epreuves: [EPREUVE_GETDIRECTORY, EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la sonde APPELLE getDirectory : la présence de la fonction ne dit pas l'OPFS",
+    garde: "opfsConstateeAbsente — l'appel, et non `typeof` (#231)",
+    fichier: OPFS_SYNC,
+    avant: "    await storage.getDirectory();\n    return false;\n",
+    apres: "    return false;\n",
     epreuves: [EPREUVE_GETDIRECTORY],
   },
   {
-    nom: "le rejet de getDirectory() rend VAULT_STORAGE_UNSUPPORTED, jamais un échec non classé",
-    garde: "volumeDirectory — la traduction du rejet en absence de capacité (#231)",
+    nom: "une fonction getDirectory absente est une OPFS absente",
+    garde: "opfsConstateeAbsente — la garde `typeof` (#231)",
     fichier: OPFS_SYNC,
-    avant: "    throw unsupported(\n      `navigator.storage.getDirectory() est rejeté",
-    apres:
-      '    throw toStorageError(cause, { operation: "open-directory", volume: "-" });\n' +
-      "    throw unsupported(\n      `navigator.storage.getDirectory() est rejeté",
+    avant: '  if (typeof storage?.getDirectory !== "function") return true;\n  try {',
+    apres: '  if (typeof storage?.getDirectory !== "function") return false;\n  try {',
     epreuves: [EPREUVE_GETDIRECTORY],
+  },
+  {
+    nom: "le rejet de racine non mesuré garde son classement précis, jamais `unsupported`",
+    garde: "volumeDirectory — `throw cause` pour tout autre nom (#231)",
+    fichier: OPFS_SYNC,
+    avant: "    if (cause?.name !== REJET_DE_RACINE_MESURE) throw cause;\n",
+    apres: "",
+    epreuves: [EPREUVE_GETDIRECTORY],
+  },
+  {
+    nom: "le canal privilégié attend la sonde avant l'inventaire et avant tout geste",
+    garde: "surMessagePrivilegie — `await sondeDeLOpfs` (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "  await sondeDeLOpfs;\n  const decode",
+    apres: "  const decode",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la poignée d'état ATTEND la sonde puis LIT l'état — jamais l'inverse",
+    garde: "publierLEtat — l'ordre « attendre, lire » (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "  const exclusivite = await exclusiviteConstatee;\n" +
+      "  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n" +
+      "    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n" +
+      "    exclusivite,\n",
+    apres:
+      "  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n" +
+      "    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n" +
+      "    exclusivite: await exclusiviteConstatee,\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "le constat d'exclusivité dépend de la sonde, et la première réponse d'état avec lui",
+    garde: "exclusiviteConstatee — `sondeDeLOpfs.then` (#231)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "const exclusiviteConstatee = sondeDeLOpfs.then(() =>\n" +
+      "  constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR }),\n" +
+      ");\n",
+    apres:
+      "const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR });\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "seule une OPFS CONSTATÉE absente pose `indisponible` (et une OPFS atteignable non)",
+    garde: "sondeDeLOpfs — le test de la conclusion (#231)",
+    fichier: RUNTIME_WORKER,
+    avant: "      if (!absente) return;\n",
+    apres: "      if (absente) return;\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la sonde qui conclut `absente` pose l'état `indisponible`",
+    garde: "sondeDeLOpfs — l'état publié (#231)",
+    fichier: RUNTIME_WORKER,
+    avant: "      interne.etat = ETATS_DU_VOLUME.indisponible;\n    })\n  : Promise.resolve();",
+    apres: "    })\n  : Promise.resolve();",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la sonde qui conclut `absente` retire la capacité d'ouvrir : le geste est refusé typé",
+    garde: "sondeDeLOpfs — `PEUT_OUVRIR = false` (#231)",
+    fichier: RUNTIME_WORKER,
+    avant: "      PEUT_OUVRIR = false;\n      interne.etat = ETATS_DU_VOLUME.indisponible;\n",
+    apres: "      interne.etat = ETATS_DU_VOLUME.indisponible;\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,

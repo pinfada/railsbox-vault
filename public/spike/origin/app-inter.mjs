@@ -206,9 +206,14 @@ function indisponible(detail) {
 }
 
 /**
- * La racine de l'OPFS, ou son ABSENCE dite comme telle. WebKit 26.6+ expose `getDirectory` mais le
- * REJETTE en contexte éphémère (#231) : un rejet est une indisponibilité du moteur, pas une sonde
- * cassée — c'est le vocabulaire que le témoin attend déjà pour la fonction absente.
+ * La racine de l'OPFS, ou ce qui en tient lieu. Trois issues, et elles ne se confondent pas :
+ *
+ *  - la racine ;
+ *  - `indisponible` : l'API est absente, ou `getDirectory()` rejette `UnknownError` — le cas que WebKit
+ *    26.6+ oppose en contexte éphémère (#231), mesuré ; c'est un trou de mesure, dit comme tel ;
+ *  - `panne` : tout AUTRE rejet. Une panne n'est pas une indisponibilité, et elle n'est surtout pas
+ *    une `invisible` — dans une topologie isolée, une sonde qui échoue passerait pour la PREUVE de
+ *    l'isolation. `panne` n'est attendue nulle part : l'épreuve échoue.
  */
 async function racineDeLOpfs() {
   if (!navigator.storage?.getDirectory) {
@@ -217,7 +222,10 @@ async function racineDeLOpfs() {
   try {
     return { racine: await navigator.storage.getDirectory() };
   } catch (erreur) {
-    return { absent: indisponible(`navigator.storage.getDirectory rejeté (${erreur?.name})`) };
+    if (erreur?.name === "UnknownError") {
+      return { absent: indisponible("navigator.storage.getDirectory rejeté (UnknownError)") };
+    }
+    return { absent: { resultat: "panne", detail: decrire(erreur) } };
   }
 }
 
