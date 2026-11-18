@@ -1734,8 +1734,10 @@ que dans cette instance et après l'acquit du Worker, jamais d'après l'indice p
 affirmation négative après un envoi ; aucune donnée (moyens, nombre de codes, constat de feuille)
 n'est lisible hors des états où elle a été relue, et les portes ne prennent aucune source ; un
 succès dont la forme ne respecte pas le contrat du Worker (un seul emplacement conservé, comptes
-cohérents) laisse la révocation INCERTAINE ; un échec de lecture ne défait pas un succès acquitté et
-ne l'invente pas.
+cohérents) laisse la révocation INCERTAINE ; un exécuteur qui rappelle le magasin pendant une
+transition (même en avalant le refus) n'en laisse partir aucun lanceur d'enveloppe ; les ensembles
+de phases ne sont pas muables par un appelant ; un échec de lecture ne défait pas un succès acquitté
+et ne l'invente pas.
 
 **Ce que le modèle ne garantit pas** (limites écrites, ADR 0049) :
 

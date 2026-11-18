@@ -8,7 +8,7 @@
 // Les PORTES (`lirePublic`, `lireLeConstat`) ne prennent AUCUNE source : elles lisent l'instantané
 // de l'état, jamais un miroir (I5′, I6).
 
-import { PHASES_APRES_SUCCES, PHASES_CONNUES, exigerUnEtat } from "./phases-de-la-revocation.mjs";
+import { exigerUnEtat, phaseApresSucces, phaseConnue } from "./phases-de-la-revocation.mjs";
 
 /** Les écrans que l'ÉTAT impose : aucune donnée n'en choisit un (§ R3). */
 const ECRANS_IMPOSES = Object.freeze({
@@ -31,24 +31,24 @@ const ECRANS_IMPOSES = Object.freeze({
 const REGIONS = Object.freeze({ V: "revocation-en-cours", I: "revocation-incertaine" });
 
 /** Les phases où le constat de la feuille est CONNU : coffre ouvert et relu (I5′). */
-const PHASES_AVEC_CONSTAT = Object.freeze(new Set(["P", "C", "K"]));
+const AVEC_CONSTAT = Object.freeze(["P", "C", "K"]);
+const avecConstat = (phase) => AVEC_CONSTAT.includes(phase);
 
 /** Les phases SANS envoi dans cette instance (I4) : le seul fait négatif vérifiable. */
-const PHASES_SANS_ENVOI = Object.freeze(
-  new Set(["F0", "FL", "FC", "FE", "FM", "SL", "SE", "SM", "P", "C"]),
-);
+const SANS_ENVOI = Object.freeze(["F0", "FL", "FC", "FE", "FM", "SL", "SE", "SM", "P", "C"]);
+const sansEnvoi = (phase) => SANS_ENVOI.includes(phase);
 
 /** La vue : un objet gelé, tous champs présents, `null` quand l'état ne sait pas. */
 export function vueDe(etat) {
   exigerUnEtat(etat);
   const { phase, donnees, session } = etat;
-  const connue = PHASES_CONNUES.has(phase);
-  const avecConstat = PHASES_AVEC_CONSTAT.has(phase);
+  const connue = phaseConnue(phase);
+  const constat = avecConstat(phase);
   return Object.freeze({
     moyens: connue ? donnees.public.moyens : null,
     nombreDeCodes: connue ? donnees.public.nombreDeCodes : null,
-    feuilleEprouvee: avecConstat ? donnees.constat.feuilleEprouvee : null,
-    moyenDOuverture: avecConstat ? session.moyen : null,
+    feuilleEprouvee: constat ? donnees.constat.feuilleEprouvee : null,
+    moyenDOuverture: constat ? session.moyen : null,
     confirmation: phase === "C" ? Object.freeze({ ouverte: true }) : null,
     ecranImpose: ECRANS_IMPOSES[phase] ?? null,
     region: REGIONS[phase] ?? null,
@@ -85,9 +85,9 @@ export function affirmationsDe(etat) {
   exigerUnEtat(etat);
   const { phase } = etat;
   return Object.freeze({
-    revoque: PHASES_APRES_SUCCES.has(phase),
+    revoque: phaseApresSucces(phase),
     peutEtreRevoque: phase === "V" || phase === "I",
-    aucunGesteDansCetteSeance: PHASES_SANS_ENVOI.has(phase),
+    aucunGesteDansCetteSeance: sansEnvoi(phase),
   });
 }
 
@@ -95,19 +95,19 @@ export function affirmationsDe(etat) {
 export function connuDe(etat) {
   exigerUnEtat(etat);
   return Object.freeze({
-    public: PHASES_CONNUES.has(etat.phase),
-    constat: PHASES_AVEC_CONSTAT.has(etat.phase),
+    public: phaseConnue(etat.phase),
+    constat: avecConstat(etat.phase),
   });
 }
 
 /** PORTE des données publiques : moyens, nombre de codes, paramètres de dérivation. Aucune source. */
 export function lirePublic(etat) {
   exigerUnEtat(etat);
-  return PHASES_CONNUES.has(etat.phase) ? etat.donnees.public : null;
+  return phaseConnue(etat.phase) ? etat.donnees.public : null;
 }
 
 /** PORTE du constat de la feuille éprouvée : coffre ouvert et relu seulement. Aucune source. */
 export function lireLeConstat(etat) {
   exigerUnEtat(etat);
-  return PHASES_AVEC_CONSTAT.has(etat.phase) ? etat.donnees.constat : null;
+  return avecConstat(etat.phase) ? etat.donnees.constat : null;
 }

@@ -6,9 +6,9 @@
 import { TYPES_PRIVILEGIES } from "../../src/coquille/contrat-de-messages.mjs";
 import {
   LISTE_DES_PHASES,
-  PHASES_CONNUES,
-  PHASES_EN_LECTURE,
   creerEtat,
+  phaseConnue,
+  phaseEnLecture,
 } from "../../src/coquille/phases-de-la-revocation.mjs";
 import { normaliserLInventaire } from "../../src/coquille/reponse-de-la-revocation.mjs";
 import { TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
@@ -57,8 +57,8 @@ export function donneesDeLaPhase(phase, options = {}, lecture = 3) {
 /** Un état VALIDE de la phase demandée, par l'API publique. */
 export function etatDeLaPhase(phase, options = {}) {
   const { indice = false, occurrence = 5, moyen = "phrase", sequence = 7, jeu } = options;
-  const connue = PHASES_CONNUES.has(phase);
-  const enLecture = PHASES_EN_LECTURE.has(phase);
+  const connue = phaseConnue(phase);
+  const enLecture = phaseEnLecture(phase);
   return creerEtat({
     phase,
     lecture: enLecture ? sequence : null,

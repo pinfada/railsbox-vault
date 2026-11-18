@@ -16,11 +16,11 @@
 
 import {
   LISTE_DES_PHASES,
-  PHASES_CONNUES,
-  PHASES_EN_LECTURE,
-  PHASES_FERMEES,
   creerEtat,
   exigerUnEtat,
+  phaseConnue,
+  phaseEnLecture,
+  phaseFermee,
 } from "./phases-de-la-revocation.mjs";
 import { empreinteDeLEtat } from "./vue-de-la-revocation.mjs";
 
@@ -182,7 +182,7 @@ function annonceDeRefus(etat, type) {
   if (phase === "V") return "demande-refusee-en-cours";
   if (phase === "I") return "demande-refusee-a-verifier";
   if (phase === "K" && type === "demander-la-revocation") return "demande-refusee-deja-faite";
-  if (!PHASES_CONNUES.has(phase)) return "demande-refusee-donnees-inconnues";
+  if (!phaseConnue(phase)) return "demande-refusee-donnees-inconnues";
   return "geste-refuse";
 }
 
@@ -211,11 +211,11 @@ function champsSuivants(etat, evenement, cellule, type) {
   const sequence = alloue ? etat.sequence + 1 : etat.sequence;
   let lecture = null;
   if (alloue) lecture = sequence;
-  else if (vers === etat.phase && PHASES_EN_LECTURE.has(vers)) lecture = etat.lecture;
+  else if (vers === etat.phase && phaseEnLecture(vers)) lecture = etat.lecture;
   let donnees = null;
   if (type === "relecture-reussie") {
     donnees = Object.freeze({ ...evenement.donnees, lecture: evenement.lecture });
-  } else if (PHASES_CONNUES.has(vers) && PHASES_CONNUES.has(etat.phase)) {
+  } else if (phaseConnue(vers) && phaseConnue(etat.phase)) {
     donnees = etat.donnees;
   }
   const session =
@@ -250,7 +250,7 @@ function assemblerLesEffets(etat, suivant, evenement, cellule) {
     effets.push({ nom: "masquer" });
   }
   for (const nom of cellule.effets) effets.push(effetMetier(nom, suivant, evenement));
-  if (PHASES_FERMEES.has(suivant.phase) && suivant.phase !== etat.phase) {
+  if (phaseFermee(suivant.phase) && suivant.phase !== etat.phase) {
     effets.push({
       nom: "consigner",
       evenement: evenement.cause ?? type,

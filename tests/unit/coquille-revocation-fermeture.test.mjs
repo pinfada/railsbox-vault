@@ -16,6 +16,15 @@ import { test } from "node:test";
 import { amener, fabriquer, tourner } from "./support-magasin-revocation.mjs";
 
 /** Un magasin dont `masquer` et `oublier` sont pilotés par l'épreuve (qui tient le magasin). */
+function unefois(fonction) {
+  let faite = false;
+  return () => {
+    if (faite) return undefined;
+    faite = true;
+    return fonction();
+  };
+}
+
 function piloter() {
   const pilote = { masquer: () => true, oublier: () => {}, f: null };
   pilote.f = fabriquer({ masquer: () => pilote.masquer(), oublier: () => pilote.oublier() });
@@ -61,10 +70,10 @@ for (const [nomAttaque, attaque] of ATTAQUES) {
     test(`[I23″] « Oui » : masquer appelle ${nomAttaque} (${nomManiere}) puis rend vrai → zéro envoi, état fermé`, async () => {
       const p = piloter();
       await amener(p.f, "C");
-      p.masquer = () => {
+      p.masquer = unefois(() => {
         maniere(attaque, p.f.magasin);
         return true;
-      };
+      });
       p.f.magasin.appliquer({ type: "oui" });
       await tourner();
       assert.equal(p.f.noms("envoyer").length, 0, "une révocation est partie malgré la violation");
@@ -76,10 +85,10 @@ for (const [nomAttaque, attaque] of ATTAQUES) {
       test(`[I23″] modification depuis ${source} : masquer appelle ${nomAttaque} (${nomManiere}) puis rend vrai → zéro lancement, ${ferme}`, async () => {
         const p = piloter();
         await amener(p.f, source);
-        p.masquer = () => {
+        p.masquer = unefois(() => {
           maniere(attaque, p.f.magasin);
           return true;
-        };
+        });
         let lances = 0;
         p.f.magasin.modifier(() => {
           lances += 1;
@@ -94,7 +103,7 @@ for (const [nomAttaque, attaque] of ATTAQUES) {
     test(`[I23″] C → SM [oublier, lancer] : oublier appelle ${nomAttaque} (${nomManiere}) → zéro lancement, la modification renonce et relit`, async () => {
       const p = piloter();
       await amener(p.f, "C");
-      p.oublier = () => maniere(attaque, p.f.magasin);
+      p.oublier = unefois(() => maniere(attaque, p.f.magasin));
       let lances = 0;
       p.f.magasin.modifier(() => {
         lances += 1;
@@ -111,6 +120,10 @@ for (const [nomAttaque, attaque] of ATTAQUES) {
         p.f.magasin.etat().lecture,
         p.f.magasin.etat().sequence,
         "la relecture n'a pas été lancée",
+      );
+      assert.ok(
+        p.f.magasin.echecs().entrees.some((entree) => entree.effet === "lancer"),
+        "l'interruption n'est pas consignée",
       );
     });
   }

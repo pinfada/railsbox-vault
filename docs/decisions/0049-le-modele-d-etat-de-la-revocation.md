@@ -70,6 +70,24 @@ tout ce qui passe par `modifier`), `masquer()` est exécuté et VÉRIFIÉ avant 
 ; non établi, l'état cible n'est jamais affecté, le lanceur n'est pas appelé, et
 `masquage-impossible` ferme depuis l'état source en gardant la famille et la cause (I23″).
 
+**Fermeture et réentrance (revue de #315).** Tout appel PUBLIC (`terminer`, `appliquer`, `modifier`,
+`definirLIndice`, `demarrer`) fait depuis un exécuteur, pendant une transition, est **REFUSÉ**
+(`TypeError`) **et INTERROMPT la transition en cours**, même si l'exécuteur avale l'erreur : avant
+l'affectation, c'est un masquage non établi (bascule e22) ; après, le lanceur d'enveloppe suivant
+(`envoyer`, `lancer`) ne part pas — la modification renonce et relit, un envoi deviendrait un doute
+— et l'interruption est consignée. Avant CHAQUE lanceur, le magasin relit dans le même tour «
+instance vivante, aucune violation, état cible toujours courant ». `terminer()` hors transition est
+effectif et idempotent. Le choix est « **refusé** » plutôt que « différé » : un arrêt différé
+laisserait partir l'envoi, c'est le défaut reproduit par la revue (`masquer()` appelait `terminer()`
+puis rendait `true`).
+
+**Aucun ensemble exporté.** Les ensembles de phases ne sont jamais exportés :
+`Object.freeze(new Set(...))` n'empêche ni `add`, ni `delete`, ni `clear`, et un appelant faisait
+dire « révoqué » à la phase I pour toutes les instances. Seuls des **prédicats** (`phaseConnue`,
+`phaseEnLecture`, `phaseApresSucces`, `phaseFermee`) sont exportés, sur des tableaux gelés non
+exportés ; l'épreuve de pureté échoue devant tout `Set` ou `Map` exporté ou créé au niveau du
+module, et devant toute valeur exportée non gelée.
+
 **Les réponses du Worker.** Le canal ne garantit que la corrélation. `evenementDeLaReponse` classe
 l'issue de l'envoi (succès seulement si type, entiers sûrs et bornés, `nombreRestants === 1`,
 comptes cohérents : sinon « réponse malformée », donc incertaine) ; `normaliserLInventaire` produit
@@ -147,7 +165,11 @@ règle (`masquer`, `consigner`, `vue-a-rendre`) ne sont pas répétés ici : ils
   comparaisons de `donnees` et de `session.moyen` dans `occurrenceSuivante` (toute arête qui change
   l'instantané ou le moyen change aussi la phase) ; la garde `etat.lecture !== null` de la classe de
   lecture ; les cellules « lecture courante » des phases sans lecture ; la récupération défensive
-  d'une exception interne en V (inatteignable par l'API publique).
+  d'une exception interne en V (inatteignable par l'API publique) ; dans la fermeture, les
+  relectures « instance vivante » et « état cible courant » (la réentrance étant refusée,
+  `terminer()` ne peut pas s'exécuter pendant une transition et l'état ne peut pas changer : seule
+  la violation est observable) et la renonciation de `envoyer` (aucun exécuteur ne s'exécute entre
+  l'affectation de V et `envoyer`).
 
 ## Critères de C2 (ce que C1 NE fait PAS, et que C2 doit prouver — BLOQUANTS)
 

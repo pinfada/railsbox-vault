@@ -26,20 +26,25 @@ export const PHASES = Object.freeze({
 
 export const LISTE_DES_PHASES = Object.freeze(Object.values(PHASES));
 
-/** Les phases où l'inventaire est CONNU : `donnees` n'y est jamais nul, et seulement là (I5′). */
-export const PHASES_CONNUES = Object.freeze(new Set(["FC", "P", "C", "K"]));
+// Les ENSEMBLES de phases ne sont JAMAIS exportés : un `Set` gelé reste muable par `add`, `delete` et
+// `clear` (la revue de #315 a fait dire « révoqué » à la phase I). Seuls des PRÉDICATS sont exportés, sur
+// des tableaux gelés que personne d'autre ne tient.
+const CONNUES = Object.freeze(["FC", "P", "C", "K"]);
+const EN_LECTURE = Object.freeze(["FL", "SL", "RL"]);
+const APRES_SUCCES = Object.freeze(["RL", "RE", "RM", "K"]);
+const FERMEES = Object.freeze(["FE", "SE", "RE", "I"]);
 
-/** Les phases où UNE lecture est en vol : `lecture` n'y est jamais nul, et seulement là (I13). */
-export const PHASES_EN_LECTURE = Object.freeze(new Set(["FL", "SL", "RL"]));
+/** L'inventaire est CONNU : `donnees` n'est jamais nul, et seulement là (I5′). */
+export const phaseConnue = (phase) => CONNUES.includes(phase);
 
-/** Après un envoi de CETTE instance (I4) : rien n'en revient. */
-export const PHASES_APRES_ENVOI = Object.freeze(new Set(["V", "I", "RL", "RE", "RM", "K"]));
+/** UNE lecture est en vol : `lecture` n'est jamais nul, et seulement là (I13). */
+export const phaseEnLecture = (phase) => EN_LECTURE.includes(phase);
 
 /** Après un SUCCÈS acquitté par le Worker de cette instance (I3, I9′) : « révoqué » y est dicible. */
-export const PHASES_APRES_SUCCES = Object.freeze(new Set(["RL", "RE", "RM", "K"]));
+export const phaseApresSucces = (phase) => APRES_SUCCES.includes(phase);
 
-/** Les phases qui FERMENT : y arriver rend l'effet `consigner` (I20). */
-export const PHASES_FERMEES = Object.freeze(new Set(["FE", "SE", "RE", "I"]));
+/** La phase FERME : y arriver rend l'effet `consigner` (I20). */
+export const phaseFermee = (phase) => FERMEES.includes(phase);
 
 export const SESSION_VIDE = Object.freeze({ moyen: null });
 
@@ -74,7 +79,7 @@ function exigerLaSession(session) {
 
 /** `donnees` : un instantané NORMALISÉ, gelé, dont le constat dépend de la phase (N8, N9). */
 function exigerLesDonnees(phase, donnees) {
-  const connue = PHASES_CONNUES.has(phase);
+  const connue = phaseConnue(phase);
   if (!connue) {
     if (donnees !== null) throw new TypeError(`« donnees » doit être nul en ${phase} (I5′).`);
     return;
@@ -111,7 +116,7 @@ export function creerEtat({
   if (typeof indice !== "boolean") throw new TypeError("« indice » doit être un booléen.");
   exigerUnEntier("sequence", sequence, 0);
   exigerUnEntier("occurrence", occurrence, 0);
-  const enLecture = PHASES_EN_LECTURE.has(phase);
+  const enLecture = phaseEnLecture(phase);
   if (enLecture !== (lecture !== null)) {
     throw new TypeError(`« lecture » est non nul si, et seulement si, la phase lit (${phase}).`);
   }

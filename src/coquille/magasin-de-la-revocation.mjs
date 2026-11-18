@@ -54,19 +54,26 @@ const EXECUTEUR_DE = Object.freeze({
 });
 
 /** Ce que l'appelant EXTÉRIEUR peut appliquer. Les issues sont produites par le magasin seul (R-c). */
-const EVENEMENTS_PUBLICS = Object.freeze(
-  new Set([
-    "coffre-ouvert",
-    "demander-la-revocation",
-    "oui",
-    "annuler",
-    "verrouiller",
-    "changer-d-etape",
-    "terminer-sans-revoquer",
-    "revenir-a-l-application",
-    "worker-mort",
-  ]),
-);
+const EVENEMENTS_PUBLICS = Object.freeze([
+  "coffre-ouvert",
+  "demander-la-revocation",
+  "oui",
+  "annuler",
+  "verrouiller",
+  "changer-d-etape",
+  "terminer-sans-revoquer",
+  "revenir-a-l-application",
+  "worker-mort",
+]);
+
+/**
+ * Un lanceur d'enveloppe qui ne part PAS (la transition a été interrompue) est remplacé par l'issue la
+ * plus prudente : l'envoi devient un doute, la modification relit. Rien n'est jamais envoyé.
+ */
+const RENONCIATION = Object.freeze({
+  envoyer: "erreur-sans-code",
+  lancer: "modification-terminee",
+});
 
 const TAILLE_DU_JOURNAL = 64;
 
@@ -237,17 +244,41 @@ function executerUnEffet(ctx, effet) {
   } else appeler(ctx, effet.nom);
 }
 
-function executerLesEffets(ctx, effets, dejaMasque) {
+/**
+ * La transition est-elle INTACTE ? Instance vivante, aucun exécuteur n'a violé le verrou, et l'état cible
+ * est toujours l'état courant : sinon ni lanceur ni affectation (#315). Relu dans le même tour, avant
+ * CHAQUE lanceur d'enveloppe.
+ */
+function transitionIntacte(ctx, cible) {
+  return !ctx.termine && !ctx.violation && ctx.etat === cible;
+}
+
+/** Le lanceur ne part pas : l'issue prudente est mise en file, et l'interruption est consignée. */
+function renoncer(ctx, effet) {
+  if (ctx.termine) return;
+  journaliser(ctx, effet.nom, "transition interrompue : lanceur non lancé");
+  enfiler(ctx, { type: RENONCIATION[effet.nom] });
+}
+
+function executerLesEffets(ctx, effets, cible, dejaMasque) {
   for (const effet of effets) {
     if (effet.nom === "masquer" && dejaMasque) continue;
+    if (LANCEURS_D_ENVELOPPE.includes(effet.nom) && !transitionIntacte(ctx, cible)) {
+      renoncer(ctx, effet);
+      continue;
+    }
     executerUnEffet(ctx, effet);
   }
 }
 
-/** Le masquage est-il ÉTABLI ? Seul `true` vaut oui : faux, exception, non-booléen → non (I23″). */
+/**
+ * Le masquage est-il ÉTABLI ? Seul `true` vaut oui : faux, exception, non-booléen → non (I23″). Un
+ * exécuteur qui a violé le verrou pendant le pré-vol ne l'établit pas, même s'il rend `true`.
+ */
 function masquerVerifie(ctx) {
   try {
-    if (ctx.executeurs.masquer() === true) return true;
+    const rendu = ctx.executeurs.masquer();
+    if (rendu === true && !ctx.violation && !ctx.termine) return true;
     journaliser(ctx, "masquer", "masquage non établi");
   } catch (erreur) {
     journaliser(ctx, "masquer", erreur);
@@ -261,18 +292,19 @@ function basculer(ctx, evenement) {
   const resultat = transiter(ctx.etat, { type: "masquage-impossible", action });
   if (resultat.accepte) {
     ctx.etat = resultat.etat;
-    executerLesEffets(ctx, resultat.effets, true);
+    executerLesEffets(ctx, resultat.effets, resultat.etat, true);
   }
   return Object.freeze({ ...resultat, accepte: false });
 }
 
 function traiter(ctx, evenement) {
+  ctx.violation = false;
   const resultat = transiter(ctx.etat, evenement);
   if (!resultat.accepte) return resultat;
   const garde = resultat.effets.some((effet) => LANCEURS_D_ENVELOPPE.includes(effet.nom));
   if (garde && !masquerVerifie(ctx)) return basculer(ctx, evenement);
   ctx.etat = resultat.etat;
-  executerLesEffets(ctx, resultat.effets, garde);
+  executerLesEffets(ctx, resultat.effets, resultat.etat, garde);
   return resultat;
 }
 
@@ -282,10 +314,20 @@ function exigerVivant(ctx) {
   if (ctx.termine) throw new TypeError("l'instance est terminée.");
 }
 
+/**
+ * Tout appel PUBLIC pendant une transition est REFUSÉ, et INTERROMPT la transition en cours : un
+ * exécuteur qui avale le refus ne rend pas le lanceur d'enveloppe suivant légitime (#315).
+ */
+function refuserLaReentrance(ctx) {
+  if (!ctx.enApplication) return;
+  ctx.violation = true;
+  throw new TypeError("réentrance refusée.");
+}
+
 /** Une entrée EXTÉRIEURE : refuse la réentrance, traite, puis vide la file des issues. */
 function entrer(ctx, travail) {
   exigerVivant(ctx);
-  if (ctx.enApplication) throw new TypeError("réentrance refusée.");
+  refuserLaReentrance(ctx);
   ctx.enApplication = true;
   let rendu;
   try {
@@ -301,7 +343,7 @@ const resume = (resultat) =>
   Object.freeze({ accepte: resultat.accepte, annonce: resultat.annonce });
 
 function appliquerPublic(ctx, evenement) {
-  if (!EVENEMENTS_PUBLICS.has(evenement?.type)) {
+  if (!EVENEMENTS_PUBLICS.includes(evenement?.type)) {
     throw new TypeError(`événement non appelable de l'extérieur : ${String(evenement?.type)}.`);
   }
   return entrer(ctx, () => resume(traiter(ctx, evenement)));
@@ -335,6 +377,7 @@ export function creerLaRevocation({ executeurs, indice } = {}) {
     etat: etatInitial(indice),
     termine: false,
     enApplication: false,
+    violation: false,
     file: [],
     lanceur: null,
     rangIndice: 0,
@@ -353,6 +396,7 @@ export function creerLaRevocation({ executeurs, indice } = {}) {
     modifier: (lanceur) => modifierPublic(ctx, lanceur),
     definirLIndice: (valeur) => definirLIndice(ctx, valeur),
     terminer: () => {
+      refuserLaReentrance(ctx);
       ctx.termine = true;
     },
     echecs: () => Object.freeze({ entrees: Object.freeze([...ctx.journal]), perdus: ctx.perdus }),
