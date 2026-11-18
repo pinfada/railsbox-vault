@@ -49,6 +49,7 @@ import { fileURLToPath } from "node:url";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { E2E_ORIGIN_COQUILLE, E2E_ORIGIN_COQUILLE_B } from "../../playwright.e2e.config.mjs";
 import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { exigerAucuneAlerteAvecTexte } from "../support/alertes.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
@@ -242,11 +243,9 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     // ADR 0043 (Conséquences) : dès le début du démarrage, le panneau du coffre est `visibility: hidden`,
     // et une région d'alerte VIDE n'est plus dans l'arbre d'accessibilité — `getByRole('alert')` ne la
     // trouve plus (#302). L'exigence est la même : AUCUNE alerte n'a de texte. On la lit sur toutes les
-    // régions `role="alert"` du document, cachées ou non ; un refus, lui, paraîtrait en bandeau.
-    await expect(
-      a.locator('[role="alert"]:not(:empty)'),
-      "aucune alerte pendant le boot",
-    ).toHaveCount(0);
+    // régions `role="alert"` du document, cachées ou non, ET on exige que `#parcours-refus` existe, soit
+    // en `role="alert"` et vide (`tests/support/alertes.mjs`) ; un refus, lui, paraîtrait en bandeau.
+    await exigerAucuneAlerteAvecTexte(a, "aucune alerte pendant le boot");
     // Le message vit dans le panneau du coffre (ADR 0043) : on attend l'état publié par le cycle.
     await expect(a.locator("#cycle-etat")).toContainText("application-demarree", {
       timeout: BUDGET_DEMARRAGE_MS,
