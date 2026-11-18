@@ -273,9 +273,25 @@ export function voisinsDunVolume(nom) {
   ].map((suffixe) => `${nom}${suffixe}`);
 }
 
-/** Garde actuelle : la PRÉSENCE de la fonction — c'est ce que les épreuves rouges mesurent. */
+/**
+ * Ce moteur OFFRE-T-IL réellement la racine de l'OPFS ? La question se pose par un APPEL : depuis
+ * WebKit 26.6, `navigator.storage.getDirectory` est une fonction, et elle REJETTE (`UnknownError`)
+ * dans un contexte éphémère — la navigation privée en est le cas visé, mesuré sous le build de
+ * Playwright, pas sous Safari (#231, `docs/compatibility.md`). `typeof` seul disait « oui » à un
+ * moteur qui ne peut rien ouvrir.
+ *
+ * Un rejet est une ABSENCE de capacité, au même titre que la fonction absente : l'appelant en fait
+ * l'état `indisponible`, jamais une panne.
+ *
+ * @returns {Promise<boolean>}
+ */
 export async function opfsAtteignable() {
-  return typeof globalThis.navigator?.storage?.getDirectory === "function";
+  try {
+    await globalThis.navigator.storage.getDirectory();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function volumeDirectory({ create }) {
@@ -286,7 +302,17 @@ async function volumeDirectory({ create }) {
       { capability: "navigator.storage.getDirectory" },
     );
   }
-  const root = await storage.getDirectory();
+  let root;
+  try {
+    root = await storage.getDirectory();
+  } catch (cause) {
+    // Seul le REJET de `getDirectory()` est traduit ici : une erreur sur un handle déjà obtenu garde
+    // le classement de `toStorageError` (un nom inconnu n'est jamais rangé dans l'état voisin).
+    throw unsupported(
+      `navigator.storage.getDirectory() est rejeté par ce contexte (${cause?.name ?? "Error"}) : OPFS n'est pas disponible.`,
+      { capability: "navigator.storage.getDirectory" },
+    );
+  }
   return root.getDirectoryHandle(VOLUME_DIRECTORY, { create });
 }
 

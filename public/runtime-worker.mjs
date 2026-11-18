@@ -54,6 +54,7 @@ import {
 } from "/src/coquille/contrat-de-messages.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "/src/coquille/identites-du-coffre.mjs";
 import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
+import { opfsAtteignable } from "/src/vm/opfs-sync-access.mjs";
 import { brancherLeRelaisDuWorker } from "./relais-du-worker.mjs";
 import { brancherLaPortabilite } from "./portabilite-du-worker.mjs";
 import { battementDuWorker } from "./battement-du-worker.mjs";
@@ -105,7 +106,7 @@ const IDENTIFIANT_VOLUME = IDENTIFIANT_DU_COFFRE;
  * parce que ce n'est pas le geste qui a échoué. Confondre les deux ferait redemander à
  * l'utilisateur une phrase qui n'ouvrirait rien.
  */
-const PEUT_OUVRIR =
+let PEUT_OUVRIR =
   typeof navigator?.storage?.getDirectory === "function" &&
   typeof FileSystemFileHandle !== "undefined" &&
   typeof FileSystemFileHandle.prototype.createSyncAccessHandle === "function";
@@ -135,6 +136,22 @@ const interne = {
   /** Les emplacements dont le CODE a ouvert ce coffre, lus au secteur 1 de `coquille` (#239). */
   eprouves: [],
 };
+
+/**
+ * WebKit 26.6+ expose `getDirectory` mais le REJETTE en contexte éphémère (#231) : `typeof` ne suffit
+ * plus, il faut un appel. Il est ASYNCHRONE et SANS `await` au niveau du module — WebKit perd les
+ * messages reçus pendant l'évaluation d'un module Worker à `await` de premier niveau (mesuré,
+ * `docs/compatibility.md`), et la poignée de main de la coquille serait muette. La promesse est donc
+ * attendue par `exclusiviteConstatee`, que la première réponse d'état attend déjà : l'état publié
+ * reste juste dès sa première lecture.
+ */
+const sondeDeLOpfs = PEUT_OUVRIR
+  ? opfsAtteignable().then((atteignable) => {
+      if (atteignable) return;
+      PEUT_OUVRIR = false;
+      interne.etat = ETATS_DU_VOLUME.indisponible;
+    })
+  : Promise.resolve();
 
 /** Le port privilégié, transféré UNE fois par la coquille avant tout document applicatif. */
 let portPrivilegie = null;
@@ -419,7 +436,9 @@ function annoncerLaBarriere() {
  * cadre, puisque le cadre attend l'établissement du canal, qui attend une réponse d'état, qui attend
  * cette promesse. L'ordre de l'étape 2 est ainsi tenu par une DÉPENDANCE, non par une convention.
  */
-const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR });
+const exclusiviteConstatee = sondeDeLOpfs.then(() =>
+  constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR }),
+);
 
 /** Un geste LONG, exécuté en battant (`battement-du-worker.mjs`, #163 et #192). */
 const enBattant = battementDuWorker({
