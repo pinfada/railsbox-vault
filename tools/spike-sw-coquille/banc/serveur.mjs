@@ -7,7 +7,7 @@
 
 import { createReadStream, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 
 import { RACINE_DEPOT, CHEMIN_DU_SW, arbreDeBase, entetesDe, estEnPassage, reglesHeadersPubliees, typeDe } from "./reserve.mjs";
 
@@ -71,7 +71,7 @@ export class Origine {
     let chemin = brut === "/" ? "/index.html" : brut;
     if (this.tolerant) {
       try {
-        chemin = decodeURIComponent(chemin).toLowerCase().replace(/\/{2,}/g, "/").replace(/\/$/, "");
+        chemin = posix.normalize(decodeURIComponent(chemin)).toLowerCase().replace(/\/{2,}/g, "/").replace(/\/$/, "");
       } catch {
         /* chemin non décodable : tel quel */
       }

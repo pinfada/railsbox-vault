@@ -307,3 +307,24 @@ ajouter("G6", "TYPES MIME et destinations : sous /artifacts/ aucun type exécuta
   t.verifier(r.importArtifacts.erreur && r.workerArtifacts.erreur && !r.scriptArtifacts.exec, "import(), Worker et <script> sur /artifacts/ sont refusés (destination exécutable)");
   t.verifier(r.types["/spike/banc.mjs"][0].startsWith("text/javascript") && r.types["/vendor/argon2/argon2.wasm"][0] === "application/wasm" && Object.values(r.types).every(([, nosniff]) => nosniff === "nosniff"), "les fichiers listés sont rendus avec le type de leur extension et nosniff");
 });
+
+ajouter("G7", "SANS SW (mode qui l'interdit : `serviceWorkers: block`) : la page vient du réseau, le portail refuse (aucun-controleur) et ne crée aucun Worker — Q1, refus par défaut", async (t) => {
+  const origine = await t.origineDe(v1());
+  const contexte = await t.contexte({ serviceWorkers: "block" });
+  const page = await contexte.newPage();
+  await page.goto(ORIGINE_COQUILLE + "/spike/banc.html");
+  await jusqua(() => page.evaluate(() => document.documentElement.dataset.banc === "pret"));
+  const r = await page.evaluate(async () => {
+    let enregistrement;
+    try {
+      await window.banc.enregistrer();
+      enregistrement = "accepte";
+    } catch (e) {
+      enregistrement = e?.name ?? String(e).slice(0, 40);
+    }
+    return { enregistrement, controleur: navigator.serviceWorker?.controller ?? null, portail: await window.banc.ouvrirLePortail() };
+  });
+  t.mesure("sansSW", { enregistrement: r.enregistrement, controleur: r.controleur !== null, portail: r.portail });
+  t.verifier(r.portail.autorise === false && r.portail.code === "VAULT_COQUILLE_RESERVE_ABSENTE" && r.portail.crees === 0, `SW interdit (${r.enregistrement}) : RESERVE_ABSENTE, aucun Worker — le refus par défaut a UN seul chemin de code`);
+  void origine;
+});

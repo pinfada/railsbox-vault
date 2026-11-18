@@ -22,7 +22,7 @@ const moteurs = option("moteurs", "chromium,firefox,webkit").split(",").filter(B
 const filtre = option("epreuves", "*").split(",");
 const dossierSortie = resolve(option("sortie", join(ICI, "sorties")));
 
-const groupes = ["s", "a", "f", "g", "d", "r", "p", "l", "b"];
+const groupes = ["s", "a", "f", "g", "d", "r", "p", "l", "m", "b"];
 const toutes = [];
 for (const g of groupes) {
   try {
