@@ -129,7 +129,8 @@ traduction du rejet de `getDirectory()` en `VAULT_STORAGE_UNSUPPORTED` dans `vol
 (épreuve `tests/unit/vm-opfs-getdirectory-refuse.test.mjs`). **Non muté, et dit :** le branchement
 de la sonde dans `public/runtime-worker.mjs` (`sondeDeLOpfs`) — une campagne copie le dépôt et
 rejoue `node --test`, jamais un navigateur ; il n'est éprouvé que par les projets WebKit de
-`playwright.config.mjs` (121 verts sous Playwright 1.65.0, 76 rouges sans lui).
+`playwright.config.mjs` (121 verts sous Playwright 1.64.0 — le verrou — comme sous 1.65.0, 76 rouges
+sans lui).
 
 Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve
@@ -2532,7 +2533,7 @@ causes sont à instruire sous #217 : la première appartient à la famille des n
 l'annonce.
 
 **Suite du 18/11/2026 : une cause traitée, deux mesurées et non expliquées (#217).** Sous Playwright
-1.65.0 (la PR de #231), `coquille-deverrouillage.spec.mjs` attend désormais la mesure
+1.64.0 (la PR de #231), `coquille-deverrouillage.spec.mjs` attend désormais la mesure
 `annonceApresLeGesteMs` (`expect.poll` borné par `DELAI`) au lieu de la lire au premier changement
 d'état : la course de mesure, quatre occurrences en CI du 15 au 17/09, est écartée par construction,
 sans retirer l'exigence (la mesure doit exister). Quarante exécutions locales WebKit de cette

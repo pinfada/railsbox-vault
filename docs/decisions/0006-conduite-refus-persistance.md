@@ -179,8 +179,8 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
 
 ## Note du 18/11/2026 — WebKit rend désormais `denied`, non plus `unsupported` (#231)
 
-Cette note n'amende pas la décision. Elle date un relevé : sous Playwright 1.65.0 (WebKit 27.2),
-`navigator.storage.persist()` existe et rend `false` sans attente, en contexte éphémère comme
+Cette note n'amende pas la décision. Elle date un relevé : sous Playwright 1.64.0 et 1.65.0 (WebKit
+27.2), `navigator.storage.persist()` existe et rend `false` sans attente, en contexte éphémère comme
 persistant ; sous WebKit 26.5 il était absent. La couche budget (`demanderPersistance`) range déjà
 une réponse `false` sous `denied` et l'absence sous `unsupported` : le produit n'a pas changé, c'est
 le moteur. Les conduites de l'ADR (`denied` et `unsupported` rangés ensemble, `persistent` jamais
