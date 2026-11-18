@@ -122,7 +122,12 @@ let memo = null;
 export function obtenirConstructeur() {
   if (memo !== null) return memo;
 
-  const parDefaut = sonder(null);
+  // `VAULT_CONSTRUCTEUR_ISOLE=1` force le constructeur isolé, sans sonder celui du démon : pour
+  // rejouer sur un hôte sain le chemin que prend Docker ≥ 29.4.2, ou comparer les deux constructeurs.
+  const force = process.env.VAULT_CONSTRUCTEUR_ISOLE === "1";
+  const parDefaut = force
+    ? { ok: false, sortie: "(non sondé : constructeur isolé forcé)" }
+    : sonder(null);
   if (parDefaut.ok) {
     memo = { constructeur: null, argumentsDeBuild: (args) => argumentsDeBuild(null, args) };
     return memo;
