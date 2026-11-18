@@ -123,17 +123,23 @@ et les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les 
 fabriqué » et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en
 bout en bout ; le retour arrière, en unitaire.
 
-La campagne `coquille` gagne **onze mutants** avec #231 (18/11/2026), tous tués, **140/140** pour la
-campagne. Cinq portent sur `src/vm/opfs-sync-access.mjs` (le classement du rejet de `getDirectory()`
-: seul ce qui signe l'absence est « indisponible » ; l'appel plutôt que `typeof` ; la traduction
-limitée au nom mesuré), six sur le BRANCHEMENT de `public/runtime-worker.mjs`, que
+La campagne `coquille` gagne **trente mutants** avec #231 (18/11/2026, après la seconde revue de la
+PR #305), tous tués, **159/159** pour la campagne. Huit portent sur la SONDE du stockage
+(`src/vm/sonde-du-stockage.mjs` : la borne et le réessai, le délai, le classement `indetermine`
+jamais `absente`), deux sur la traduction en `VAULT_STORAGE_INDETERMINE` (`opfs-sync-access.mjs`),
+neuf sur le BRANCHEMENT de `public/runtime-worker.mjs`, que
 `tests/unit/coquille-worker-sonde-opfs.test.mjs` charge TEL QUEL — un résolveur de modules ramène
-les importations `/src/…` à `src/`, `navigator.storage` est un double dont `getDirectory()` est une
-promesse tenue en main : l'attente de la sonde par le canal et par la poignée d'état, l'ordre «
-attendre puis lire », le constat d'exclusivité, la conclusion, l'état et la capacité qu'elle pose.
-**Non muté, et dit :** les sondes du spike (`public/spike/origin/app-inter.mjs`) et la fouille du
-banc de déverrouillage, éprouvables par le seul navigateur (`apps-frontiere.spec.mjs`, « une PANNE
-de getDirectory() n'est pas rangée sous « indisponible » »).
+les importations `/src/…` à `src/`, `navigator.storage` est un double dont `getDirectory()` suit un
+script : l'attente de la sonde par le canal et par la poignée d'état, l'ordre « attendre puis lire
+», l'état `indetermine`, la relance par un geste, le refus typé, le retour à `verrouille` —, quatre
+sur la racine des témoins du spike et la fouille du banc (`public/spike/origin/racine-opfs.mjs` : un
+`UnknownError` n'est jamais `indisponible`, une fouille impossible se dit, une panne lève) et sept
+sur la comparaison des témoins (`tests/support/temoins-opfs.mjs` : la tolérance du seul contexte
+éphémère connu de l'épreuve, quand A n'a rien déposé). **Non muté, et dit :** le branchement DOM du
+spike (`app-inter.mjs`) et du banc, éprouvable par le seul navigateur — `apps-frontiere.spec.mjs`
+(injections `QuotaExceededError` et `UnknownError` avant et APRÈS le dépôt de A, sur les trois
+moteurs) et `deverrouillage-frontiere.spec.mjs` — ; et `PEUT_OUVRIR = true` à la levée de
+l'indétermination, que le double du Worker ne distingue pas d'un refus tiers.
 
 Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve

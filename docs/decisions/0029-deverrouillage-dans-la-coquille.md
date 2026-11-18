@@ -545,47 +545,16 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
 Aucun format, aucun vecteur, aucune empreinte ne bouge : `node tools/verifier-vecteurs.mjs` reste
 vert sans qu'un seul fichier de `tests/vectors/` ait été touché.
 
-## Note du 18/11/2026 — « l'OPFS manque » se constate par un APPEL, non par `typeof` (#231)
+## Note du 18/11/2026 — le DÉTECTEUR de l'absence d'OPFS est amendé par l'ADR 0046 (#231)
 
-Cette note n'amende pas la décision 6 : elle en précise le DÉTECTEUR. L'absence d'OPFS reste un ÉTAT
-(`indisponible`) et le geste reste refusé `VAULT_STORAGE_UNSUPPORTED` ; ce qui change, c'est ce qui
-déclenche l'absence, et l'ordre dans lequel le Worker répond.
-
-**Le fait** (`docs/compatibility.md`, § WebKit 26.6 et suivants). Depuis WebKit 26.6 (Playwright
-1.63.0), et sous 27.2 (1.64.0, 1.65.0), `navigator.storage.getDirectory` est une fonction mais son
-appel REJETTE dans un contexte éphémère, page comme Worker : nom `UnknownError`, message « The
-operation failed for an unknown transient reason (e.g. out of memory). ». Le Worker de confiance ne
-constatait l'absence que par `typeof` : il se croyait capable, l'inventaire levait
-`VAULT_STORAGE_SUPPORT_FAILURE` (un nom d'erreur inconnu n'est pas classé), et la coquille passait
-en `erreur`.
-
-**La décision.**
-
-1. Le Worker appelle `getDirectory()` une fois au démarrage (`opfsConstateeAbsente`), sans `await`
-   de module (un Worker module perd ses premiers messages, sur les trois moteurs). **Tout ce qui
-   dépend de la capacité attend cette sonde** : `surMessagePrivilegie` (inventaire, gestes, refus
-   qui lisent `PEUT_OUVRIR`) et `publierLEtat`, qui ATTEND puis LIT l'état. La première rédaction
-   lisait l'état avant son `await` : une demande reçue pendant la sonde publiait `verrouille` alors
-   que la sonde concluait `indisponible` (relevé par la revue de la PR #305, éprouvé par
-   `tests/unit/coquille-worker-sonde-opfs.test.mjs`, qui charge le Worker tel quel avec une sonde
-   suspendue).
-2. **Seul le rejet qui signe l'absence est « indisponible »** : l'`UnknownError` mesuré, et les deux
-   noms que la table de `opfs-error-mapping.mjs` range déjà `unsupported` (`SecurityError`,
-   `TypeMismatchError`). Tout autre rejet — quota, état invalide, erreur inconnue — garde son
-   classement précis : le coffre reste `verrouille` et le vrai geste rend son échec. La règle « un
-   nom inconnu n'est jamais rangé dans l'état voisin » vaut pour la racine comme pour un handle.
-3. **L'incertitude est dite.** Le message du moteur parle d'une raison « transitoire » : le produit
-   tient l'OPFS pour indisponible DANS CE CONTEXTE, cause non établie, et ne prétend pas prouver une
-   absence durable (`VAULT_STORAGE_UNSUPPORTED` porte `cause: "UnknownError"` et le dit dans son
-   message).
-
-**Pourquoi une note et non un ADR neuf.** Aucune conduite ne change : l'utilisateur voit le même
-état et le même refus qu'avant sur un moteur sans OPFS. Seul le prédicat s'élargit — à UN rejet
-nommé —, vers l'état prudent. Un ADR neuf serait justifié si le produit OUVRAIT un volume dans un
-contexte où il refusait, ou refusait là où il ouvrait.
-
-**Limites écrites.** Aucune mesure sur un vrai Safari (#40) : si Safari de bureau ouvre l'OPFS hors
-navigation privée, le refus du volume est une propriété de la session. Un `UnknownError` réellement
-passager (mémoire) serait lu comme une indisponibilité de la session : le moteur ne permet pas de
-distinguer les deux. Les sondes du spike (`public/spike/origin/app-inter.mjs`) rangent ce même rejet
-sous `indisponible` et tout AUTRE sous `panne`, qui fait échouer `apps-frontiere.spec.mjs`.
+Cette note n'amende pas la décision 6 dans son principe — l'absence reste un ÉTAT et le geste reste
+refusé, typé — ; elle en change le DÉTECTEUR, et l'ADR
+[0046](0046-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md) porte la décision. Résumé :
+`typeof getDirectory` ne suffit plus (WebKit ≥ 26.6 rejette `UnknownError` en contexte éphémère,
+rejet que le moteur dit « transitoire ») ; la sonde du Worker de confiance appelle `getDirectory()`,
+réessaie un nombre borné de fois, et un `UnknownError` persistant n'est PAS une absence : l'état est
+`indetermine`, le refus `VAULT_STORAGE_INDETERMINE`, réessayable et levé sans rechargement par un
+geste. Seules la fonction absente et les refus de capacité déjà typés (`SecurityError`,
+`TypeMismatchError`) posent `indisponible` / `VAULT_STORAGE_UNSUPPORTED`. Tout ce qui dépend de la
+capacité attend la sonde. Une première rédaction de cette note rangeait l'`UnknownError` sous
+`unsupported` : elle a été refusée en revue, et corrigée.

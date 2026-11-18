@@ -18,6 +18,7 @@
 // n'a simplement pas pu mettre à l'épreuve.
 
 import { ACTIFS_A, CANARY_NOM, CHEMIN_APP_A, SECRET_A } from "./apps-topologie.mjs";
+import { racineDeLOpfs } from "./racine-opfs.mjs";
 
 const parametres = new URL(location.href).searchParams;
 const application = parametres.get("app") ?? "a";
@@ -205,38 +206,12 @@ function indisponible(detail) {
   return { resultat: "indisponible", detail };
 }
 
-/**
- * La racine de l'OPFS, ou ce qui en tient lieu. Trois issues, et elles ne se confondent pas :
- *
- *  - la racine ;
- *  - `indisponible` : l'API est absente, ou `getDirectory()` rejette `UnknownError` — le cas que WebKit
- *    26.6+ oppose en contexte éphémère (#231), mesuré ; c'est un trou de mesure, dit comme tel ;
- *  - `panne` : tout AUTRE rejet. Une panne n'est pas une indisponibilité, et elle n'est surtout pas
- *    une `invisible` — dans une topologie isolée, une sonde qui échoue passerait pour la PREUVE de
- *    l'isolation. `panne` n'est attendue nulle part : l'épreuve échoue.
- */
-async function racineDeLOpfs() {
-  if (!navigator.storage?.getDirectory) {
-    return { absent: indisponible("navigator.storage.getDirectory absent") };
-  }
-  try {
-    return { racine: await navigator.storage.getDirectory() };
-  } catch (erreur) {
-    if (erreur?.name === "UnknownError") {
-      return { absent: indisponible("navigator.storage.getDirectory rejeté (UnknownError)") };
-    }
-    return { absent: { resultat: "panne", detail: decrire(erreur) } };
-  }
-}
-
 const SONDES = [
   {
     nom: "opfs-fichier-de-a",
     mecanisme: "OPFS",
     intention: "lire à la racine de l'OPFS le fichier déposé par A",
     async run() {
-      if (!navigator.storage?.getDirectory)
-        return indisponible("navigator.storage.getDirectory absent");
       const { racine, absent } = await racineDeLOpfs();
       if (absent) return absent;
       try {
@@ -252,8 +227,6 @@ const SONDES = [
     mecanisme: "OPFS",
     intention: "ignorer la convention de préfixe et ouvrir le répertoire « app-a »",
     async run() {
-      if (!navigator.storage?.getDirectory)
-        return indisponible("navigator.storage.getDirectory absent");
       const { racine, absent } = await racineDeLOpfs();
       if (absent) return absent;
       try {
@@ -270,8 +243,6 @@ const SONDES = [
     mecanisme: "OPFS",
     intention: "effacer le répertoire de A — lire n'est pas le pire",
     async run() {
-      if (!navigator.storage?.getDirectory)
-        return indisponible("navigator.storage.getDirectory absent");
       const { racine, absent } = await racineDeLOpfs();
       if (absent) return absent;
       try {

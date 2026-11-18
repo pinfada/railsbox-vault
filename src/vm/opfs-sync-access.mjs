@@ -11,6 +11,11 @@
 // porter `VAULT-PERSIST-001` : il faut le dire, pas le contourner.
 
 import { toStorageError } from "./opfs-error-mapping.mjs";
+import {
+  REJET_TRANSITOIRE_MESURE,
+  VERDICTS_DU_STOCKAGE,
+  classerLeRejetDeRacine,
+} from "./sonde-du-stockage.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
 
 /** Répertoire OPFS où vivent les volumes. Isolé pour ne pas heurter d'autres usages du stockage. */
@@ -273,51 +278,6 @@ export function voisinsDunVolume(nom) {
   ].map((suffixe) => `${nom}${suffixe}`);
 }
 
-/**
- * Le nom du seul rejet de `getDirectory()` que le dépôt a MESURÉ comme signe d'une OPFS inutilisable
- * dans ce contexte : `UnknownError`, rendu par WebKit 26.6 puis 27.2 (Playwright 1.63.0, 1.64.0 et
- * 1.65.0) dans un contexte éphémère — la navigation privée en est le cas visé, mesuré sous le build de
- * Playwright, pas sous Safari. Son message est « The operation failed for an unknown transient reason
- * (e.g. out of memory). » : le moteur parle lui-même d'une raison PASSAGÈRE, et ne dit pas si
- * l'indisponibilité est durable. Le produit s'en tient donc à ce qu'il sait — l'OPFS est inutilisable
- * dans ce contexte, cause non établie — et ne range aucun autre nom sous cette conduite.
- */
-const REJET_DE_RACINE_MESURE = "UnknownError";
-
-/** Ce rejet de `getDirectory()` signe-t-il une ABSENCE de capacité ? Lui seul, et les refus déjà typés. */
-function rejetDeRacineSigneUneAbsence(cause) {
-  if (cause?.name === REJET_DE_RACINE_MESURE) return true;
-  // `SecurityError` et `TypeMismatchError` sont rangés `unsupported` par la table de
-  // `opfs-error-mapping.mjs` : refus de capacité, jamais un repli.
-  return (
-    toStorageError(cause, { operation: "open-directory", volume: VOLUME_DIRECTORY }).code ===
-    STORAGE_ERROR_CODES.unsupported
-  );
-}
-
-/**
- * L'OPFS est-elle CONSTATÉE absente dans ce contexte ? La question se pose par un APPEL : depuis
- * WebKit 26.6, `navigator.storage.getDirectory` est une fonction, et elle REJETTE en contexte
- * éphémère (#231) — `typeof` seul disait « oui » à un moteur qui ne peut rien ouvrir.
- *
- * Vrai : la fonction manque, ou son rejet signe une absence (`UnknownError` mesuré, refus de
- * capacité déjà typés). Faux : elle aboutit, ou elle rejette pour une autre raison — quota, état
- * invalide, erreur inconnue : ce n'est PAS une indisponibilité constatée, et l'appelant laisse le
- * vrai geste rendre son échec précis. Elle ne lève jamais.
- *
- * @returns {Promise<boolean>}
- */
-export async function opfsConstateeAbsente() {
-  const storage = globalThis.navigator?.storage;
-  if (typeof storage?.getDirectory !== "function") return true;
-  try {
-    await storage.getDirectory();
-    return false;
-  } catch (cause) {
-    return rejetDeRacineSigneUneAbsence(cause);
-  }
-}
-
 async function volumeDirectory({ create }) {
   const storage = globalThis.navigator?.storage;
   if (typeof storage?.getDirectory !== "function") {
@@ -330,14 +290,17 @@ async function volumeDirectory({ create }) {
   try {
     root = await storage.getDirectory();
   } catch (cause) {
-    // Seul le rejet MESURÉ devient une absence de capacité. Tout autre rejet remonte tel quel, et
+    // Le rejet que le moteur dit TRANSITOIRE (`UnknownError`, WebKit ≥ 26.6 en contexte éphémère) ne
+    // prouve aucune absence : il devient `VAULT_STORAGE_INDETERMINE` — inaccessible pour l'instant,
+    // cause non établie, réessayable —, jamais `unsupported`. Tout autre rejet remonte tel quel, et
     // reçoit le classement précis de `toStorageError` chez l'appelant : un échec est SIGNALÉ.
-    if (cause?.name !== REJET_DE_RACINE_MESURE) throw cause;
-    throw unsupported(
-      `navigator.storage.getDirectory() a rejeté ${REJET_DE_RACINE_MESURE} : l'OPFS est tenue pour ` +
-        "indisponible dans ce contexte, cause non établie — le moteur parle d'une raison passagère " +
-        "(WebKit ≥ 26.6, contexte éphémère), ce n'est pas la preuve d'une absence durable.",
-      { capability: "navigator.storage.getDirectory", cause: REJET_DE_RACINE_MESURE },
+    if (classerLeRejetDeRacine(cause) !== VERDICTS_DU_STOCKAGE.indetermine) throw cause;
+    throw new StorageError(
+      STORAGE_ERROR_CODES.indeterminate,
+      `Le stockage du navigateur est inaccessible pour l'instant, cause non établie : ` +
+        `navigator.storage.getDirectory() a rejeté ${REJET_TRANSITOIRE_MESURE} — le moteur parle d'une ` +
+        "raison passagère. Rien n'a été tenté sur le volume ; le même geste, plus tard, peut aboutir.",
+      { capability: "navigator.storage.getDirectory", cause: REJET_TRANSITOIRE_MESURE },
     );
   }
   return root.getDirectoryHandle(VOLUME_DIRECTORY, { create });

@@ -747,7 +747,7 @@ test("une fouille OPFS IMPOSSIBLE (UnknownError, transitoire) n'est jamais compt
     APPAT,
   );
   const opfs = morceaux.find(({ ou }) => ou === "opfs");
-  expect(opfs.impossible, "la fouille ne dit pas qu'elle n'a pas pu regarder").toBe("UnknownError");
+  expect(opfs.impossible, "la fouille ne dit pas qu'elle n'a pas pu regarder").toBe("indetermine");
   expect(opfs.texte).toBe("");
 
   const { problemes, limites } = fouilleOpfsAdmise({ porte, morceaux });

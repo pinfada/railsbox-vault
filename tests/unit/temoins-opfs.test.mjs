@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { racineDeLOpfs } from "../../public/spike/origin/racine-opfs.mjs";
+import { fouilleImpossible, racineDeLOpfs } from "../../public/spike/origin/racine-opfs.mjs";
 import {
   ecarts,
   fouilleOpfsAdmise,
@@ -164,4 +164,19 @@ test("opfsNonMesures : une isolation « prouvée » par un témoin OPFS qui n'a 
     [],
   );
   assert.deepEqual(temoinsOpfsToleres([opfsIndetermine], { depots: tolere.depots }), []);
+});
+
+test("fouilleImpossible : l'API absente et l'indéterminé se DISENT, une panne LÈVE — jamais un texte vide muet", () => {
+  assert.deepEqual(fouilleImpossible({ resultat: "indisponible", detail: "x absent" }), {
+    texte: "",
+    impossible: "indisponible",
+  });
+  assert.deepEqual(fouilleImpossible({ resultat: "indetermine", detail: UNKNOWN }), {
+    texte: "",
+    impossible: "indetermine",
+  });
+  assert.throws(
+    () => fouilleImpossible({ resultat: "panne", detail: "QuotaExceededError: x" }),
+    /QuotaExceededError/,
+  );
 });

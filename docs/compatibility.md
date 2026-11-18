@@ -478,27 +478,40 @@ Détail sous WebKit 27.2 (1.65.0), contexte éphémère contre contexte persista
 | `createSyncAccessHandle()` dans un Worker                 | —                        | aboutit (`readwrite-unsafe` aussi) |
 | `navigator.storage.estimate()`                            | quota 1000 Mio           | quota 1000 Mio                     |
 
-**Ce que le produit en tire** (note datée de
-l'[ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)) : un `typeof` ne dit plus si le
-moteur offre l'OPFS. Le Worker de confiance **appelle** `getDirectory()` au démarrage
-(`opfsConstateeAbsente`), **puis** répond : l'état, l'inventaire et chaque geste attendent la
-conclusion de la sonde. **Seul le rejet qui signe l'absence** pose l'état `indisponible` et le refus
-`VAULT_STORAGE_UNSUPPORTED` : l'`UnknownError` mesuré ci-dessus, et les deux noms que la table de
-`src/vm/opfs-error-mapping.mjs` range déjà sous `unsupported` (`SecurityError`,
-`TypeMismatchError`). **Tout autre rejet** — `QuotaExceededError`, `InvalidStateError`, une erreur
-inconnue — **n'est pas une indisponibilité** : il garde son classement précis et le coffre reste
-`verrouille`, de sorte que le vrai geste rende son échec. Avant ce correctif la coquille passait en
-`data-coquille="erreur"` sur WebKit ≥ 26.6 (47 épreuves rouges sous 1.63.0 en CI, 76 sous 1.65.0 en
-local). Un contexte persistant, lui, ouvre un volume : si Safari se comporte ainsi, le refus du
-volume sous WebKit est une propriété de la SESSION et non du moteur. **Cela n'a pas été mesuré sur
-un vrai Safari** (#40) ; l'assimilation « contexte éphémère de Playwright = navigation privée de
-Safari » est une hypothèse.
+**Ce que le produit en tire** (ADR
+[0046](decisions/0046-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md), qui amende la
+décision 6 de l'[ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)) : un `typeof` ne dit
+plus si le moteur offre l'OPFS, et **un `UnknownError` n'est pas une absence** — le message du
+moteur parle d'une raison transitoire. Le Worker de confiance **appelle** `getDirectory()` au
+démarrage (`src/vm/sonde-du-stockage.mjs`), **réessaie trois fois, à 100 ms d'intervalle**, puis
+répond : l'état, l'inventaire et chaque geste attendent la conclusion de la sonde. Coût mesuré le
+18/11/2026 sous WebKit 26.6 et 27.2 en contexte éphémère : chaque appel rend en 0 à 1 ms, le rejet
+est constant (8 essais sur 8, étalés sur 800 ms) ; le coût est le seul délai, **200 ms** au
+démarrage.
+
+| Verdict de la sonde | Cause                                                     | État publié    | Refus d'un geste                |
+| ------------------- | --------------------------------------------------------- | -------------- | ------------------------------- |
+| `atteignable`       | `getDirectory()` aboutit, à n'importe lequel des essais   | `verrouille`   | —                               |
+| `absente`           | fonction manquante ; `SecurityError`, `TypeMismatchError` | `indisponible` | `VAULT_STORAGE_UNSUPPORTED`     |
+| **`indetermine`**   | `UnknownError` persistant après les essais                | `indetermine`  | **`VAULT_STORAGE_INDETERMINE`** |
+| `panne`             | tout autre rejet : quota, état invalide, erreur inconnue  | `verrouille`   | le code précis du vrai geste    |
+
+`VAULT_STORAGE_INDETERMINE` dit « le stockage du navigateur est inaccessible pour l'instant, cause
+non établie » : il **n'affirme aucune absence**, ne conseille pas d'emblée de changer de navigateur,
+et est **réessayable** — un geste présenté tant que l'état est `indetermine` relance la sonde, et si
+elle aboutit le coffre redevient `verrouille` sans rechargement. Avant ce correctif la coquille
+passait en `data-coquille="erreur"` sur WebKit ≥ 26.6 (47 épreuves rouges sous 1.63.0 en CI, 76 sous
+1.65.0 en local). Un contexte persistant, lui, ouvre un volume : si Safari se comporte ainsi, le
+refus du volume est une propriété de la SESSION et non du moteur. **Cela n'a pas été mesuré sur un
+vrai Safari** (#40) ; l'assimilation « contexte éphémère de Playwright = navigation privée de Safari
+» est une hypothèse, que le produit ne fait pas : il ne dit rien du contexte, seulement ce qu'il a
+vu.
 
 **La sonde de capacités ne suit pas encore.** Sous WebKit ≥ 26.6 éphémère, `opfsGetDirectory` et
 `opfsSyncAccessHandle` valent `error` (`UnknownError`), non `unsupported` : le verdict Vault de la
 sonde est `candidat` (« mesure non concluante », règle de `src/compat/`) et non `refusé`. Ce choix
 de prudence de la sonde — un nom d'erreur inconnu n'est pas classé — n'est pas modifié ici ; il est
-suivi par #306. Le produit, lui, décide : il traite ce rejet précis comme une indisponibilité.
+suivi par #306. Le produit, lui, ne tranche pas non plus : il dit « indéterminé ».
 
 **Persistance** (note datée de l'[ADR 0006](decisions/0006-conduite-refus-persistance.md)) : WebKit
 27.2 expose `persist()` et rend `false` ; le produit range ce verdict `denied`, non plus
