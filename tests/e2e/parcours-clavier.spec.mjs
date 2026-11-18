@@ -104,9 +104,19 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   await expect(aide).not.toHaveAttribute("open", "");
   const positionCadre = await a.locator("#cadre-applicatif").boundingBox();
   expect(positionCadre.y, "l'application est visible près du haut de la page").toBeLessThan(380);
-  await activer(a, a.getByText("Aide pour cette étape", { exact: true }));
+  // ADR 0043 (Conséquences) : application démarrée, menu « Coffre » fermé, le panneau — l'aide comprise —
+  // est hors de l'ordre de tabulation (#302). Au clavier, l'aide s'atteint PAR le menu, qui est dans la
+  // barre : même exigence qu'avant (atteindre l'aide et la basculer deux fois sans perdre la session
+  // Rails), un geste de plus. `tests/apparence/parcours-restes.spec.mjs` prouve les deux faces.
+  const menu = a.locator("#menu-du-coffre > summary");
+  const resumeDeLAide = a.getByText("Aide pour cette étape", { exact: true });
+  await activer(a, menu);
+  await expect(a.locator("#menu-du-coffre")).toHaveAttribute("open", "");
+  await activer(a, resumeDeLAide);
   await expect(a.locator("#parcours-attente-annoncee")).toBeVisible();
-  await activer(a, a.getByText("Aide pour cette étape", { exact: true }));
+  await activer(a, resumeDeLAide);
+  await activer(a, menu);
+  await expect(a.locator("#menu-du-coffre")).not.toHaveAttribute("open", "");
   // La même session Rails reste ouverte après les deux bascules de l'aide.
   await expect(libelle).toBeVisible();
   await saisir(a, libelle, "Une note écrite au clavier");

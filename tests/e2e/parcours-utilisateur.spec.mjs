@@ -239,7 +239,14 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(a.locator("#demarrer-application")).toBeHidden();
     await expect(a.locator("#demarrer-application")).toBeDisabled();
     await expect(a.locator("#parcours-progression")).toBeVisible();
-    await expect(alerte(a), "aucune alerte pendant le boot").toBeEmpty();
+    // ADR 0043 (Conséquences) : dès le début du démarrage, le panneau du coffre est `visibility: hidden`,
+    // et une région d'alerte VIDE n'est plus dans l'arbre d'accessibilité — `getByRole('alert')` ne la
+    // trouve plus (#302). L'exigence est la même : AUCUNE alerte n'a de texte. On la lit sur toutes les
+    // régions `role="alert"` du document, cachées ou non ; un refus, lui, paraîtrait en bandeau.
+    await expect(
+      a.locator('[role="alert"]:not(:empty)'),
+      "aucune alerte pendant le boot",
+    ).toHaveCount(0);
     // Le message vit dans le panneau du coffre (ADR 0043) : on attend l'état publié par le cycle.
     await expect(a.locator("#cycle-etat")).toContainText("application-demarree", {
       timeout: BUDGET_DEMARRAGE_MS,
