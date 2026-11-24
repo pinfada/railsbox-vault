@@ -66,39 +66,79 @@ function lireRepetable(argv, nom) {
 }
 
 /**
- * @param {{ arbre: string, host: string, port: number, retires: readonly string[] }} options
+ * @param {object} options
+ * @param {string} options.arbre
+ * @param {string} options.host
+ * @param {number} options.port
+ * @param {readonly string[]} options.retires
+ * @param {string} [options.artefacts] répertoire servi sous `/artifacts/**` pour ce que l'arbre ne porte pas
+ *   (l'image de référence : une OBLIGATION D'EXPLOITANT, jamais publiée — `tools/publier-arborescences.mjs`)
+ * @param {(chemin: string) => null | { statut: number, type?: string, corps?: string | Buffer, entetes?: Record<string, string> }} [options.surcharge]
+ *   la réponse d'un chemin, quand l'épreuve veut qu'une origine mente (500, portail captif, script de SW
+ *   modifié) : jamais utilisée en production, seulement par les épreuves qui démarrent ce serveur elles-mêmes
  */
 export async function demarrer(options) {
   const racine = resolve(options.arbre);
   const regles = analyserHeaders(await readFile(resolve(racine, FICHIER_HEADERS), "utf8"));
+  const artefacts = options.artefacts === undefined ? null : resolve(options.artefacts);
+  /** Chaque requête reçue : `{ methode, chemin }` — « zéro requête de boot » se mesure ici. */
+  const journal = [];
+  const sockets = new Set();
+
+  async function fichierDe(chemin) {
+    const candidat = resolve(racine, chemin.slice(1));
+    if (candidat === racine || candidat.startsWith(`${racine}${sep}`)) {
+      const metadonnees = await stat(candidat).catch(() => null);
+      if (metadonnees?.isFile()) return candidat;
+    }
+    if (artefacts !== null && chemin.startsWith("/artifacts/")) {
+      const depuisLesArtefacts = resolve(artefacts, chemin.slice("/artifacts/".length));
+      if (depuisLesArtefacts.startsWith(`${artefacts}${sep}`)) {
+        const metadonnees = await stat(depuisLesArtefacts).catch(() => null);
+        if (metadonnees?.isFile()) return depuisLesArtefacts;
+      }
+    }
+    return null;
+  }
 
   const serveur = createServer(async (requete, reponse) => {
     const url = new URL(requete.url ?? "/", "http://localhost");
     const chemin = url.pathname.endsWith("/") ? `${url.pathname}index.html` : url.pathname;
-    const candidat = resolve(racine, chemin.slice(1));
-    if (candidat !== racine && !candidat.startsWith(`${racine}${sep}`)) {
+    journal.push({ methode: requete.method, chemin: url.pathname });
+    if (/(^|\/)\.\.(\/|$)/.test(chemin)) {
       reponse.writeHead(403).end("Forbidden");
       return;
     }
-    try {
-      const metadonnees = await stat(candidat);
-      if (!metadonnees.isFile()) throw new Error("Not a file");
-      reponse.writeHead(200, {
-        "Content-Type": TYPES.get(extname(candidat)) ?? "application/octet-stream",
-        ...enTetesPour(regles, chemin, options.retires),
-      });
-      createReadStream(candidat).pipe(reponse);
-    } catch {
+    const imposee = options.surcharge?.(url.pathname) ?? null;
+    if (imposee !== null) {
+      reponse
+        .writeHead(imposee.statut, {
+          "Content-Type": imposee.type ?? "text/plain; charset=utf-8",
+          ...enTetesPour(regles, chemin, options.retires),
+          ...(imposee.entetes ?? {}),
+        })
+        .end(imposee.corps ?? "");
+      return;
+    }
+    const candidat = await fichierDe(chemin);
+    if (candidat === null) {
       // Le `_headers` de l'arbre annonce sa politique pour un CHEMIN ; ce serveur sert une
       // RÉPONSE, et une absence n'est jamais cachable (constat 1 de la revue de #123). Sans cela,
       // un 404 sous `/vendor/v86/artefacts/*` partirait avec un an d'`immutable`.
       reponse
-        .writeHead(404, {
-          "Content-Type": "text/plain; charset=utf-8",
-          ...enTetesDAbsence(),
-        })
+        .writeHead(404, { "Content-Type": "text/plain; charset=utf-8", ...enTetesDAbsence() })
         .end("Not found");
+      return;
     }
+    reponse.writeHead(200, {
+      "Content-Type": TYPES.get(extname(candidat)) ?? "application/octet-stream",
+      ...enTetesPour(regles, chemin, options.retires),
+    });
+    createReadStream(candidat).pipe(reponse);
+  });
+  serveur.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
   });
 
   // Un port déjà pris est le mode de panne le plus banal du témoin — un run précédent interrompu,
@@ -119,7 +159,13 @@ export async function demarrer(options) {
   });
   return {
     origine: `http://${options.host}:${options.port}`,
-    arreter: () => new Promise((tenu) => serveur.close(tenu)),
+    journal,
+    /** « Réseau coupé » : les connexions sont détruites et le port refuse (jamais `setOffline`). */
+    arreter: () =>
+      new Promise((tenu) => {
+        for (const socket of sockets) socket.destroy();
+        serveur.close(tenu);
+      }),
   };
 }
 
@@ -130,6 +176,7 @@ if (process.argv[1]?.endsWith("publier-servir.mjs")) {
     host: lireOption(argv, "host", "127.0.0.1"),
     port: Number(lireOption(argv, "port", "4193")),
     retires: lireRepetable(argv, "retirer"),
+    artefacts: lireOption(argv, "artefacts", undefined),
   });
   process.stdout.write(`Arbre publié servi sur ${origine}\n`);
 }

@@ -48,6 +48,7 @@ export const CAMPAGNES = Object.freeze([
   { nom: "paquet-applicatif", script: "tools/muter-gardes-paquet-applicatif.mjs" },
   { nom: "persistance", script: "tools/muter-gardes-persistance.mjs" },
   { nom: "recuperation", script: "tools/muter-gardes-recuperation.mjs" },
+  { nom: "reserve", script: "tools/muter-gardes-reserve.mjs" },
   { nom: "revocation-urgence", script: "tools/muter-gardes-revocation-urgence.mjs" },
   { nom: "verrouillage", script: "tools/muter-gardes-verrouillage.mjs" },
 ]);

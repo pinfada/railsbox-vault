@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "../support/test.mjs";
 import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
-import { adresseDe } from "../../src/v86-adresses.mjs";
 
 // FRONTIÈRE du DESCRIPTEUR SCELLÉ, sur les trois moteurs (#247, D1g ; ADR 0046).
 //
@@ -434,66 +433,5 @@ test("une boucle de 302 ou un 301 vers une autre origine n'ouvre pas le repli ; 
     expect(refusee.repli, "pas de réponse du tout : le repli").toBe(1);
   } finally {
     await Promise.all([origine.arreter(), ailleurs.arreter()]);
-  }
-});
-
-// --- libv86 hors connexion : la lecture du cache ne touche pas le réseau (revue de #298, constat 3) --
-//
-// `force-cache` va au réseau quand le cache est vide ; `only-if-cached` lit le cache ou échoue. Un
-// VRAI serveur compte les requêtes : celle de `libv86` ne doit pas exister quand le cache est vide.
-// MESURÉ (`tools/spike-liaison-libv86.mjs`) : Chromium et Firefox tiennent la promesse ; WebKit IGNORE
-// `only-if-cached` et va au réseau (une requête). Hors connexion réelle cette requête échoue et le
-// refus typé est le même ; mais « ne touche jamais le réseau » n'est établi que sur deux moteurs.
-// L'attente de WebKit est écrite telle quelle : le jour où il change, ce test le dit.
-
-const LIBV86 = adresseDe("libv86.mjs", "4".repeat(64));
-
-test("hors connexion, lire libv86 dans un cache vide n'envoie aucune requête (WebKit : une, limite mesurée)", async ({
-  page,
-  browserName,
-}) => {
-  const origine = await serveurLocal((req, res) => {
-    if (req.url !== LIBV86) return false;
-    res
-      .writeHead(200, {
-        "content-type": "text/javascript",
-        "cache-control": "public, max-age=31536000, immutable",
-      })
-      .end("export const V86 = 1;\n");
-  });
-  try {
-    await page.goto(`${origine.origine}/`);
-    const demandes = () => origine.compteur.adresses.filter((adresse) => adresse === LIBV86).length;
-    const rendu = await page.evaluate(async (adresse) => {
-      const { lireDuCacheHttp } = await import("/src/vm/acquisition-des-artefacts.mjs");
-      try {
-        await lireDuCacheHttp(adresse);
-        return { lu: true };
-      } catch (erreur) {
-        return { lu: false, code: erreur.code };
-      }
-    }, LIBV86);
-    const requetes = demandes();
-    if (browserName === "webkit") {
-      expect(requetes, "WebKit ignore only-if-cached (limite écrite, ADR 0046)").toBe(1);
-    } else {
-      expect(requetes, "un cache vide : aucune requête").toBe(0);
-      expect(rendu).toEqual({ lu: false, code: "VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT" });
-    }
-
-    // Le cache plein : après un `import()` (le premier démarrage en ligne), la lecture rend les octets
-    // du cache, sans requête de plus (Chromium, Firefox).
-    await page.evaluate((adresse) => import(adresse), LIBV86);
-    const apresImport = demandes();
-    const octets = await page.evaluate(async (adresse) => {
-      const { lireDuCacheHttp } = await import("/src/vm/acquisition-des-artefacts.mjs");
-      return new TextDecoder().decode(await lireDuCacheHttp(adresse));
-    }, LIBV86);
-    expect(octets).toContain("V86");
-    if (browserName !== "webkit") {
-      expect(demandes() - apresImport, "lu du cache").toBe(0);
-    }
-  } finally {
-    await origine.arreter();
   }
 });

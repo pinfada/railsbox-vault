@@ -1,8 +1,9 @@
 # ADR 0048 — Le Service Worker de la coquille sert la réserve hors connexion
 
-- Statut : **accepté pour la conception, NON EN VIGUEUR** — aucun Service Worker n'existe tant que
-  D1h-b (l'implémentation) n'est pas fusionnée. Jusque-là, la règle « aucun Service Worker sur
-  l'origine de confiance » de `SECURITY.md` (ADR 0030, décision 4) reste celle qui s'applique. La
+- Statut : **accepté, EN VIGUEUR depuis la fusion de D1h-b** (#299 ; voir l'amendement en fin de
+  document). La rédaction ci-dessous du statut est celle de D1h-a : « NON EN VIGUEUR — aucun Service
+  Worker n'existe tant que D1h-b n'est pas fusionnée. Jusque-là, la règle « aucun Service Worker sur
+  l'origine de confiance » de `SECURITY.md` (ADR 0030, décision 4) reste celle qui s'applique. » La
   fusion de cette PR suit la délégation en vigueur (mainteneur, 18/11/2026 au soir) : revue de
   sécurité complète **APPROUVÉE au SHA exact**, contrôles requis verts, limites écrites.
 - Date : 2026-11-18
@@ -854,3 +855,44 @@ défi).
 **Hors périmètre.** Signature des paquets (jalon 6), lecture par tranches (D2), mise à jour
 périodique d'une fenêtre ouverte, `Service-Worker-Allowed`, SW de module, SW applicatif,
 `importScripts`, `instantiateStreaming`, `v86.wasm` servi par le SW.
+
+## Amendement D1h-b (24/11/2026) — ce que l'implémentation a décidé, mesuré ou écarté
+
+D1h-b livre l'annexe A. Ce qui suit est ce que l'implémentation a **ajouté ou précisé** ; rien de la
+décision n'est rouvert.
+
+1. **Le contrôleur actif porte lui-même un plancher.** Si le contrôleur **actif** annonce un
+   plancher supérieur à la séquence de la page, la page est révoquée : `RESERVE_PERIMEE`
+   (`plancher`). Cas réel : une version en attente révoquante s'active après la fermeture de tous
+   les clients, puis sert une page de séquence plus ancienne. Mesuré par l'E2E (l'attente devenue
+   active passait le portail), éprouvé en unitaire.
+2. **Délai de grâce de 400 ms** (`delaiDeGraceMs`) après un `update()` résolu sans Worker installant
+   visible. **Mesuré sous Chromium** : `update()` résout _avant_ `updatefound`, et
+   `registration.waiting` n'est pas encore à jour quand `statechange` annonce `installed` ;
+   l'observateur identifie donc le Worker qui vient de passer `installed` **par lui-même**, et le
+   portail attend un instant l'apparition d'une version. Sans cela, le portail décidait avant de
+   voir une révocation déjà publiée (l'observateur permanent l'annonçait alors après coup, sans
+   refuser). Les délais de départ (§ 7 : 3 000, 5 000, 25 000 ms) sont **inchangés** ; ajoutés :
+   réparation 60 000 ms, poignée de main 8 000 ms, grâce 400 ms. Aucun n'a été abaissé.
+3. **`reparer` est implémenté et éprouvé** (n'était pas prototypé) : les entrées manquantes ou
+   altérées sont retéléchargées (`no-store`, `redirect: error`, sans identifiants), **vérifiées**,
+   puis écrites ; il n'active rien ; le portail le déclenche **une seule fois**, puis réessaie.
+4. **Séquence de publication.** `tools/publier.mjs` prend `--sequence <n>` et `--plancher <n>` ; par
+   défaut, la séquence est le **nombre de commits** de la référence (monotone sur `main`). Un dépôt
+   superficiel retombe sur 1, avec un avertissement pour une publication de production. Le module
+   `/coquille/reserve-publiee.mjs` (stub `null` dans le dépôt vivant) est **généré** et fait partie
+   de la liste épinglée.
+5. **Points d'implémentation.** La page ne crée le Worker de confiance **que** par le portail ; le
+   Worker annonce sa séquence par son **dernier import** (`reserve-annonce-du-worker.mjs`), donc
+   seulement une fois tout son graphe évalué ; la CSP et les en-têtes sont rejoués depuis la liste,
+   jamais copiés du réseau.
+6. **E2E : repli `serve.mjs --arbre` non retenu.** `tools/publier-servir.mjs` sert l'arbre publié
+   sous son `_headers`, avec les **deux rôles**, un répertoire `--artefacts` pour `/artifacts/**`
+   (l'image est une obligation d'exploitant, jamais publiée) et un crochet de **surcharge** pour
+   faire mentir une origine ; l'épreuve démarre et **arrête** ses origines pour de vrai.
+7. **Preuves** : unitaire (SW dans un `vm`, portail, générateur), 3 moteurs (`reserve-*`), E2E
+   Chromium, campagne `reserve` du lanceur (`tools/muter-gardes-reserve.mjs`).
+8. **Limites inchangées et écrites** : Safari réel, éviction réelle, navigation privée réelle,
+   hébergeur réel ; boot Rails Chromium seul ; l'origine applicative n'est pas dans la réserve ;
+   TOFU et origine hostile avant le jalon 6 ; `tests/browser/reserve-messages.spec.mjs` ignorée sous
+   Chromium (exception par projet, raison mesurée).

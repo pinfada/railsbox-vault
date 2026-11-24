@@ -284,6 +284,20 @@ test("RÉVOCATION CONNUE au portail : un Worker en attente au plancher supérieu
   assert.equal(p.reserve.revocation.connue(), true);
 });
 
+test("un contrôleur ACTIF dont le plancher dépasse la séquence de la page : cette page est révoquée → RESERVE_PERIMEE (plancher), sans Worker", async () => {
+  const controleur = new FauxSW({ reponses: reponsesSaines({ plancher: SEQUENCE + 1 }) });
+  const p = page({ controleur });
+  const issue = await p.ouvrir();
+  assert.equal(issue.code, C.reservePerimee);
+  assert.equal(issue.cause, "plancher");
+  assert.equal(p.fabrique.crees, 0);
+});
+
+test("un plancher ÉGAL à la séquence de la page n'est pas une révocation (seul le supérieur l'est)", async () => {
+  const controleur = new FauxSW({ reponses: reponsesSaines({ plancher: SEQUENCE }) });
+  assert.equal((await page({ controleur }).ouvrir()).autorise, true);
+});
+
 test("un script de RETRAIT en attente → RESERVE_PERIMEE (retrait)", async () => {
   const actif = new FauxSW({ reponses: reponsesSaines() });
   const reg = new FausseInscription({ active: actif });

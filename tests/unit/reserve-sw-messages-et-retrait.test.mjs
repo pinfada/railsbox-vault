@@ -85,6 +85,9 @@ test("seuls les clients de type fenêtre de PREMIER NIVEAU sont écoutés : un W
     { type: "sharedworker", frameType: "none" },
     { type: "window", frameType: "nested" },
     { type: "window", frameType: "auxiliary" },
+    // Combinaison IMPOSSIBLE dans un navigateur (seule une fenêtre est de premier niveau) : défense en
+    // profondeur, éprouvée par une source fabriquée — le type de la source est contrôlé pour lui-même.
+    { type: "worker", frameType: "top-level" },
     null,
     undefined,
   ]) {

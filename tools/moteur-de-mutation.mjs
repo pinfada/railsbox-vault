@@ -32,7 +32,16 @@ import { fileURLToPath } from "node:url";
 const RACINE = fileURLToPath(new URL("../", import.meta.url));
 
 /** Ce que la copie emporte : le code, les épreuves, les vecteurs, les outils qu'elles importent et les ADR dont une épreuve lit la table (#310). */
-const RECOPIES = ["src", "tests", "tools", "public", "package.json", "docs/decisions"];
+const RECOPIES = [
+  "src",
+  "tests",
+  "tools",
+  "public",
+  "package.json",
+  "docs/decisions",
+  "SECURITY.md",
+  "vendor/v86/MANIFEST.json",
+];
 
 /** Recopie le dépôt utile dans un répertoire temporaire, et rend son chemin. */
 function copierLeDepot(etiquette) {

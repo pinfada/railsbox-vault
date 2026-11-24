@@ -36,6 +36,9 @@ export function decider({
   if (identite.retrait === true) return refuser(C.reservePerimee, "retrait");
   if (controleurChange) return refuser(C.reserveDivergente, "controleur-change");
   if (identite.sequence !== sequencePage) return refuser(C.reserveDivergente, "sequence");
+  // Le contrôleur ACTIF porte lui-même un plancher supérieur à la séquence de la page : cette page est révoquée
+  // (une version dont l'activation a suivi une révocation, ADR 0048 § 9).
+  if (identite.plancher > sequencePage) return refuser(C.reservePerimee, "plancher");
   if (verification === null || verification === undefined) {
     return refuser(C.reserveAbsente, "silence-du-sw");
   }

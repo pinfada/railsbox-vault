@@ -344,6 +344,7 @@ test("le refus est ÉCRIT là où un relecteur le cherchera", async () => {
   assert.match(adr, /INADMISSIBLE|inadmissible/);
   const securite = await readFile(path.join(REPO_ROOT, "SECURITY.md"), "utf8");
   assert.match(securite, /Aucun Service Worker sur l'origine de confiance/);
+  assert.match(securite, /Aucun autre Service Worker que celui de la réserve/);
 });
 
 test("le DESCRIPTEUR d'application est déclaré dans l'arbre publié, et il ne peut pas en sortir", async () => {

@@ -42,7 +42,6 @@ const T = {
   scelle: "tests/unit/coquille-descripteur-scelle.test.mjs",
   hors: "tests/unit/coquille-hors-connexion.test.mjs",
   redirections: "tests/unit/coquille-descripteur-redirections.test.mjs",
-  libv86: "tests/unit/vm-lecture-de-libv86-hors-connexion.test.mjs",
   annulation: "tests/unit/vm-magasin-annulation-a-chaque-attente.test.mjs",
   accueil: "tests/unit/coquille-accueil-mise-a-jour.test.mjs",
   compat: "tests/unit/coquille-compatibilite-ancien-lecteur.test.mjs",
@@ -399,23 +398,6 @@ export const MUTATIONS = Object.freeze([
     avant: "  if (octets.byteLength !== pin.octets) {\n",
     apres: "  if (false) {\n",
     epreuves: [T.petits],
-  },
-  // --- libv86 hors connexion : le cache, jamais le réseau (revue de #298, constat 3) --------------
-  {
-    nom: "hors connexion, libv86 est lu en `only-if-cached` : `force-cache` irait au réseau sur un cache vide",
-    garde: "lireDuCacheHttp — only-if-cached",
-    fichier: ARTEFACTS,
-    avant: '{ cache: "only-if-cached", mode: "same-origin" }',
-    apres: '{ cache: "force-cache" }',
-    epreuves: [T.libv86],
-  },
-  {
-    nom: "un cache vide pour libv86 est le refus typé de l'artefact absent",
-    garde: "lireDuCacheHttp — le refus typé",
-    fichier: ARTEFACTS,
-    avant: '    throw artefactAbsentHorsConnexion(\n      "libv86",',
-    apres: '    throw new Error(\n      "libv86",',
-    epreuves: [T.libv86],
   },
   // --- La personne lit « Hors connexion, version du <date> » (revue de #298, constat 5) ----------
   {

@@ -250,6 +250,21 @@ démarrage (`tests/unit/serve-harnais-hors-ligne.test.mjs`). Avec lui, le scéna
 réelle : premier boot en ligne, redémarrage réseau coupé depuis la réserve sans un octet d'image par
 le réseau, descripteur altéré / HTTP 500 / portail captif sans repli.
 
+> **Amendement du 24/11/2026 (D1h-b, #299,
+> [ADR 0048](0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)).** Le texte
+> ci-dessus (« `libv86` n'est PAS lié », lecture en `only-if-cached`, démarrage hors connexion « qui
+> ne fonctionne pas encore », harnais `--harnais-e2e-hors-ligne`) est désormais **historique** : il
+> décrit l'état de #298, conservé tel quel. **Depuis D1h-b** : `libv86` est servi par la réserve du
+> Service Worker de la coquille, qui en relit et re-hache les octets à chaque service — la liaison
+> existe, **relative à la liste du SW** (ADR 0048 § 3) ; `lireDuCacheHttp` et le chemin
+> `only-if-cached` sont **supprimés** (hors connexion, `libv86` est lu et importé par la même voie
+> qu'en ligne, servie par la réserve) ; le harnais, la variable `VAULT_E2E_CODE_MAX_AGE`, la matrice
+> `code_en_cache` de `reprise.yml` et `tests/unit/serve-harnais-hors-ligne.test.mjs` sont
+> **retirés** ; l'E2E sert l'**arbre publié** sous les en-têtes de production. La confrontation au
+> manifeste v86 scellé (`verifierLeModuleV86`) est **conservée**, comme recoupement « réserve ↔
+> `v86.wasm` rangé ». Ce qui n'a pas changé : le descripteur scellé, le magasin OPFS et les refus
+> typés `HORS_LIGNE_*`.
+
 ### 7. Ce que la personne voit
 
 La coquille publie `horsConnexion: { rangeLe, version }` dans le constat de la page et dans le
