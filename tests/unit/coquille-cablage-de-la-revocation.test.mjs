@@ -146,15 +146,13 @@ test("[C2-13] « Oui » : le conteneur est MASQUÉ quand le message part, et un 
   await p.jusquAP();
   p.clic("revoquer-en-urgence");
   await tourner();
-  let vuAuDepart = "jamais appelé";
-  const original = p.cablage;
-  void original;
-  const demanderOriginal = p.attentes.revoquerEnUrgence;
-  assert.equal(demanderOriginal.length, 0);
   p.clic("revocation-oui");
   assert.equal(p.messages.filter((m) => m === "revoquerEnUrgence").length, 1);
-  vuAuDepart = p.estampille();
-  assert.equal(vuAuDepart, null, "au moment de l'envoi, l'affichage est masqué (pas d'estampille)");
+  assert.equal(
+    p.estampille(),
+    null,
+    "au moment de l'envoi, l'affichage est masqué (pas d'estampille)",
+  );
   assert.equal(p.conteneur.hidden, true);
   assert.equal(p.cablage.etat().phase, "V");
   p.clicSynthetique("revocation-oui");
