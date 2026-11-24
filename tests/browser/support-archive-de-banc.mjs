@@ -8,6 +8,7 @@
 
 import { createHash } from "node:crypto";
 
+import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 import { expect } from "../support/test.mjs";
 
 import {
@@ -21,7 +22,7 @@ const OCTETS_DU_DISQUE = 16 * 512;
 const GRAINE = Buffer.alloc(OCTETS_DU_DISQUE, 0x42);
 
 const DESCRIPTEUR = {
-  descripteurVersion: 2,
+  descripteurVersion: 3,
   application: { id: "portabilite-test", version: "1.0.0", schema: "20260101000002" },
   runtime: { version: "0.1.0" },
   rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },
@@ -39,6 +40,7 @@ const DESCRIPTEUR = {
     initrd: "i",
     bios: "seabios.bin",
     vgaBios: "vgabios.bin",
+    empreintes: EMPREINTES_DU_BOOT_D_EPREUVE,
   },
   prefixeDesArtefacts: "/artifacts/portabilite-test/",
 };
@@ -78,7 +80,19 @@ export async function fabriquerUneArchive(navigateur, chemin, baseURL) {
     });
     const telechargement = page.waitForEvent("download", { timeout: DELAI });
     await page.click("#sauvegarder-le-coffre");
-    const fichier = await telechargement;
+    let fichier;
+    try {
+      fichier = await telechargement;
+    } catch (cause) {
+      // Un échec de fabrication doit dire ce que la coquille affichait, pas seulement qu'il a expiré.
+      const lire = (selecteur) => page.locator(selecteur).textContent({ timeout: 2000 });
+      const etats = await Promise.all(
+        ["#cycle-etat", "#portabilite-etat", "#portabilite-refus", "#deverrouillage-refus"].map(
+          (selecteur) => lire(selecteur).catch(() => "(absent)"),
+        ),
+      );
+      throw new Error(`archive de banc non fabriquée : ${etats.join(" | ")}`, { cause });
+    }
     await expect(page.locator("#portabilite-etat")).toContainText("portabilite:sauvegarde-prete", {
       timeout: DELAI,
     });
