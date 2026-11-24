@@ -58,6 +58,7 @@ import { creerFrontiereApplicative } from "./coquille/frontiere-applicative.mjs"
 import { creerVerrouillageEtFinsDOnglet } from "./coquille/verrouillage-et-fins-d-onglet.mjs";
 import { creerCycle } from "./coquille/cycle-de-la-page.mjs";
 import { creerParcoursDeLaPage } from "./coquille/parcours-de-la-page.mjs";
+import { creerLaRevocationDeLaPage } from "./coquille/revocation-de-la-page.mjs";
 
 const parametres = new URL(location.href).searchParams;
 const noeudEtat = document.querySelector("#coquille-etat");
@@ -196,6 +197,10 @@ pont.frontiere = creerFrontiereApplicative({ rapport, publier, mesurer, emplacem
 // Étape 3 : le canal privilégié, avant tout document applicatif.
 pont.canal = creerCanalDeConfiance({ rapport, publier, pont });
 
+// La RÉVOCATION D'URGENCE (#265, ADR 0049) : l'état de ce document, le rendeur unique de ce que la page
+// affirme du coffre, les gestes. Elle précède l'interface et le parcours, qui lisent ses portes.
+pont.revocation = creerLaRevocationDeLaPage({ rapport, publier, pont });
+
 // Le verrouillage et les fins d'onglet, branchés dès que le Worker existe.
 pont.verrouillage = creerVerrouillageEtFinsDOnglet({ rapport, publier, terminer, pont });
 
@@ -212,8 +217,14 @@ pont.cycle = creerCycle({
 });
 
 // Le PARCOURS GUIDÉ (#193, ADR 0040) : il lit les relevés publiés et montre l'écran courant. Il est
-// monté AVANT le démarrage pour observer chaque relevé depuis le premier, et ne rejoint pas le pont :
-// aucun module ne l'appelle, et il n'appelle aucun geste.
-creerParcoursDeLaPage({ document, location, history, navigateur: navigator });
+// monté AVANT le démarrage pour observer chaque relevé depuis le premier. Il ne rejoint le pont que par
+// les quelques gestes que le magasin de la révocation lui demande (noter l'indice, terminer, revenir).
+pont.parcours = creerParcoursDeLaPage({
+  document,
+  location,
+  history,
+  navigateur: navigator,
+  revocation: pont.revocation,
+});
 
 pont.cycle.demarrer();

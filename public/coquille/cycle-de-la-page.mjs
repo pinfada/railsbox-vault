@@ -136,6 +136,9 @@ export function creerCycle({
       kekRetenue: mortDuWorker.kekRetenue,
     };
     pont.canal.rejeterTout(refusDeMort);
+    // La mort est un FAIT : la table la range partout (e7). Appliquée après le rejet des demandes en vol,
+    // pour que l'envoi d'une révocation en vol devienne un doute, jamais un refus.
+    pont.revocation.appliquer({ type: "worker-mort" });
     remonterLInterface();
     if (offrirLeGesteQuiRouvre) offrirLaReouverture();
     publier();
@@ -155,6 +158,7 @@ export function creerCycle({
       deriverPhrase: () => Promise.reject(refusDeMort()),
       deriverPasskey: () => Promise.reject(refusDeMort()),
       agent: navigator.userAgent,
+      portes: pont.revocation,
     });
   }
 
@@ -208,6 +212,7 @@ export function creerCycle({
       deriverPhrase: (appel) => siVivant(() => derivations.deriverPhrase(appel)),
       deriverPasskey: (appel) => siVivant(() => derivations.deriverPasskey(appel)),
       agent: navigator.userAgent,
+      portes: pont.revocation,
       surEtat: (reponse) => {
         rapport.etat = reponse.etat;
         rapport.barrieres = reponse.barrieres;
@@ -229,7 +234,10 @@ export function creerCycle({
         publier();
       },
     });
-    await interfaceDeDeverrouillage.rafraichirLInventaire();
+    pont.interface = interfaceDeDeverrouillage;
+    // La première lecture de l'inventaire est celle du MAGASIN : rien n'est publié avant qu'il l'ait acceptée.
+    pont.revocation.demarrer();
+    await pont.revocation.attendre((etat) => etat.phase !== "F0" && etat.phase !== "FL");
     await pont.canal.demanderLEtat();
     rapport.journal.push("interface-de-deverrouillage-montee");
     const gestes = brancherLesGestesDuCycle({
@@ -239,6 +247,8 @@ export function creerCycle({
       rapport,
       publier,
       ...pont.verrouillage.gestesDeVerrouillage(),
+      // La TABLE de la révocation tranche aussi (e14) : ni pendant l'envoi, ni pendant une modification.
+      accepteLeVerrouillage: () => pont.revocation.appliquer({ type: "verrouiller" }).accepte,
     });
     pont.verrouillage.definirGesteDeVerrouillage(gestes.verrouillerLeCoffre);
     miseAJour = brancherLeGesteDeMiseAJour({
@@ -248,15 +258,15 @@ export function creerCycle({
       publier,
       demarrer: gestes.demarrerLApplication,
     });
-    // Sauvegarder, restaurer, révoquer en urgence (#207, ADR 0039). Après une restauration ou une
-    // révocation, l'enveloppe a changé : l'interface redit ce que le coffre porte.
-    brancherLesGestesDePortabilite({
+    // Sauvegarder et restaurer (#207, ADR 0039). La restauration ÉCRIT l'enveloppe : elle passe par
+    // `modifier`, qui relit l'inventaire après l'issue. La révocation n'est plus un geste d'ici (#265).
+    pont.portabilite = brancherLesGestesDePortabilite({
       racine: document,
       demander: pont.canal.demanderAuWorker,
       rapport,
       publier,
-      apresRestauration: () => interfaceDeDeverrouillage.rafraichirLInventaire(),
-      apresRevocation: () => interfaceDeDeverrouillage.rafraichirLInventaire(),
+      modifier: pont.revocation.modifier,
+      lirePublic: pont.revocation.lirePublic,
     });
 
     inscrire("backendPuisVm", ISSUES_DETAPE.differee, "volume-verrouille");

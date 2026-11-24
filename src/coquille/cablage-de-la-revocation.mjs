@@ -176,6 +176,8 @@ export function creerLeCablage(liaison) {
     revocation,
     demarrer: () => dire(ctx, revocation.demarrer()),
     appliquer: (evenement) => dire(ctx, revocation.appliquer(evenement)),
+    /** L'ouverture est DITE au magasin, qui relit l'inventaire : une ouverture peut migrer la page. */
+    coffreOuvert: (moyen) => dire(ctx, revocation.appliquer({ type: "coffre-ouvert", moyen })),
     modifier: (lanceur) => dire(ctx, revocation.modifier(lanceur)),
     definirLIndice: (valeur) => revocation.definirLIndice(valeur),
     abonner: (abonne) => ctx.abonnes.add(abonne),

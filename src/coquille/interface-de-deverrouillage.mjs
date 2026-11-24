@@ -51,6 +51,7 @@ import {
   evaluerPhrase,
   LONGUEUR_MINIMALE_PHRASE,
 } from "./politique-de-phrase.mjs";
+import { modifierEtAttendre } from "./modification-d-enveloppe.mjs";
 import { etatDeLaSaisie } from "./saisie-du-code.mjs";
 import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../vm/enveloppe/enveloppe-errors.mjs";
@@ -114,6 +115,10 @@ export const CONDUITES = Object.freeze({
     "servi, ou WebAssembly est refusé par la politique de sécurité.",
 });
 
+/** Dit à qui tape avant que l'inventaire soit lu : aucune dérivation ne part sans paramètres. */
+const TEXTE_PAS_ENCORE_LU =
+  "Votre coffre n'a pas fini d'être lu : patientez un instant, puis recommencez.";
+
 /** Ce que le champ de la phrase dit d'un coffre qui EXISTE : sa règle ne vaut qu'à la création. */
 export const CONSEIL_DE_REOUVERTURE = "Saisissez la phrase utilisée lors de la création du coffre.";
 
@@ -159,8 +164,14 @@ export function ancreSaisie(texte) {
  * durée de la dérivation, connue depuis l'ADR 0021, mais l'écart entre le geste et l'ANNONCE. Une
  * annonce peinte après la dérivation ne serait pas une annonce.
  *
+ * `portes` est la SEULE source de ce que le coffre contient (#265, ADR 0049, C2-1′) : `lirePublic()`
+ * rend l'instantané normalisé de l'état (ou `null` quand la page ne sait pas), `identifiantDuVolume()`
+ * la constante du coffre, `coffreOuvert(moyen)` dit l'ouverture au magasin de la révocation. Ce que
+ * l'interface MONTRE de l'inventaire (`releve`, lignes d'état) n'est qu'un MIROIR, écrit par `refleter`
+ * quand le magasin a accepté une lecture : elle ne le relit jamais pour décider.
+ *
  * @param {{ document: Document, racine: Element, demander: Function, deriverPhrase: Function,
- *           deriverPasskey: Function, agent?: string, surEtat?: Function,
+ *           deriverPasskey: Function, agent?: string, portes: object, surEtat?: Function,
  *           surMesure?: Function }} appel
  */
 export function monterLInterface({
@@ -170,6 +181,7 @@ export function monterLInterface({
   deriverPhrase,
   deriverPasskey,
   agent = "",
+  portes,
   surEtat = () => {},
   surMesure = () => {},
 }) {
@@ -179,10 +191,9 @@ export function monterLInterface({
     demander,
     deriverPhrase,
     deriverPasskey,
+    portes,
     surEtat,
     surMesure,
-    inventaire: { present: false, versionEnveloppe: null, emplacements: [] },
-    propose: moyensProposes({ emplacements: [], versionEnveloppe: null }),
     /** Le RELEVÉ de l'interface : ce qu'elle a MONTRÉ, jamais ce qu'elle a lu. */
     releve: {
       moteur: moteurProbable(agent),
@@ -202,7 +213,7 @@ export function monterLInterface({
   relireLaSaisieDuCode(contexte);
   publier(contexte);
   return Object.freeze({
-    rafraichirLInventaire: () => rafraichirLInventaire(contexte),
+    refleter: (donnees, identifiantVolume) => refleter(contexte, donnees, identifiantVolume),
     releve: contexte.releve,
   });
 }
@@ -230,34 +241,51 @@ function brancherLesGestes(contexte) {
 }
 
 /**
- * Redemande l'INVENTAIRE au Worker, et redit ce que le coffre porte.
- *
- * Appelé au montage et après chaque geste qui change l'enveloppe : ce que la coquille propose suit
- * ce que le fichier contient, et non ce qu'elle a affiché la fois d'avant.
+ * L'inventaire de dérivation : ce que `deriverPhrase` et `deriverPasskey` lisent d'un coffre, fait de
+ * l'instantané NORMALISÉ de l'état — jamais d'un miroir. `null` tant que la page ne sait rien.
  */
-async function rafraichirLInventaire(contexte) {
+function inventaireDeDerivation(contexte) {
+  const donnees = contexte.portes.lirePublic();
+  if (donnees === null) return null;
+  return {
+    present: donnees.present,
+    refus: donnees.refus,
+    versionEnveloppe: donnees.versionEnveloppe,
+    identifiantVolume: contexte.portes.identifiantDuVolume(),
+    emplacements: donnees.parametres.map((e) => ({
+      typeKek: e.typeKek,
+      identifiantEmplacement: e.identifiantEmplacement,
+      parametresHex: e.parametresHex,
+    })),
+  };
+}
+
+/**
+ * Redit ce que le coffre porte — un MIROIR de diagnostic, écrit quand le magasin a ACCEPTÉ une lecture
+ * courante (effet `publier`). Il ne sert à aucune décision : `ouvrirPar` relit les portes.
+ */
+function refleter(contexte, donnees, identifiantVolume) {
   const { noeuds, releve } = contexte;
-  contexte.inventaire = await contexte.demander("inventaire", {});
+  const inventaire = inventaireDeDerivation(contexte);
+  void identifiantVolume;
   relireLaPhrase(contexte);
-  contexte.propose = moyensProposes(contexte.inventaire);
-  const propose = contexte.propose;
+  const propose = moyensProposes(inventaire);
   releve.moyensProposes = propose.moyens.map((moyen) => moyen.nom);
-  // Le COMPTE des feuilles, et non « il y en a » : l'écran du code l'annonce (#214). Il ne franchit
-  // aucune frontière — ce relevé est celui de la page de CONFIANCE, que le parcours relit.
+  // Le COMPTE des feuilles, et non « il y en a » : l'écran du code l'annonce (#214).
   releve.nombreDeCodes = propose.nombreDeCodes;
   releve.typesInconnus = propose.inconnus.map((inconnu) => inconnu.typeKek);
   // Un coffre ANTÉRIEUR ou une restauration COUPÉE (#207, ADR 0039) : le Worker le dit dès
   // l'inventaire, et l'interface le montre avant que quiconque ne tape une phrase.
-  const refus = contexte.inventaire.refus ?? null;
+  const refus = donnees.public.refus;
   if (refus !== null) {
     releve.dernierRefus = refus.code;
     dire(noeuds.moyens, "Ce coffre ne peut pas être ouvert par cette coquille.");
-    dire(noeuds.refus, conduiteDeRefus(refus.code, refus.message));
+    dire(noeuds.refus, conduiteDeRefus(refus.code, null));
     return publier(contexte);
   }
   dire(
     noeuds.moyens,
-    contexte.inventaire.present
+    inventaire.present
       ? `Ce coffre s'ouvre par : ${propose.moyens.map((moyen) => moyen.libelle).join(", ")} (version d'enveloppe ${propose.versionEnveloppe}).`
       : "Aucun coffre sur cet appareil. Le premier déverrouillage en CRÉE un, sous le moyen que vous présentez.",
   );
@@ -266,9 +294,7 @@ async function rafraichirLInventaire(contexte) {
   // n'a AUCUN moyen de récupération (ADR 0027, limite 6 ; ADR 0029, décision 4).
   dire(
     noeuds.sansRecuperation,
-    contexte.inventaire.present && propose.nombreDeCodes === 0
-      ? AVERTISSEMENT_SANS_RECUPERATION
-      : "",
+    inventaire.present && propose.nombreDeCodes === 0 ? AVERTISSEMENT_SANS_RECUPERATION : "",
   );
   publier(contexte);
 }
@@ -306,7 +332,9 @@ async function ouvrirPar(contexte, moyen, corps, avantEnvoi = null) {
   const lue = relireLAncre(contexte);
   if (!lue.valide) return dire(noeuds.refus, lue.aveu);
   // Rien n'est dérivé pour un coffre que l'inventaire a déjà refusé : aucune attente pour rien.
-  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);
+  const inventaire = inventaireDeDerivation(contexte);
+  if (inventaire === null) return dire(noeuds.refus, TEXTE_PAS_ENCORE_LU);
+  if (inventaire.refus) return montrerLeRefus(contexte, inventaire.refus);
   dire(noeuds.refus, "");
   surMesure("geste");
   const annonce = annonceDAttente({ moyen, moteur: contexte.moteur });
@@ -333,7 +361,9 @@ async function ouvrirPar(contexte, moyen, corps, avantEnvoi = null) {
     // Le moyen de la séance : la révocation le garde et retire les autres, et la page le dit (#244).
     releve.moyenDOuverture = moyen;
     surMesure("ouverture");
-    await rafraichirLInventaire(contexte);
+    // L'ouverture est DITE au magasin : il relit l'inventaire (une ouverture peut migrer la page
+    // d'enveloppe) et ne publie rien avant d'avoir accepté cette lecture.
+    contexte.portes.coffreOuvert(moyen);
     contexte.surEtat(reponse);
     dire(noeuds.etat, messageDOuverture(reponse));
   } catch (erreur) {
@@ -378,8 +408,9 @@ function montrerLeRefus(contexte, erreur) {
  * quelqu'un regarderait par-dessus l'épaule (ADR 0029, limite 1).
  */
 function relireLaPhrase(contexte) {
-  const { noeuds, inventaire } = contexte;
-  const creation = !inventaire.present;
+  const { noeuds } = contexte;
+  // Tant que la page ne sait pas, elle parle comme à une création : la règle la plus stricte.
+  const creation = contexte.portes.lirePublic()?.present !== true;
   noeuds.phrase.required = true;
   // `minLength` compte en UNITÉS UTF-16 (la plateforme DOM), `evaluerPhrase` en POINTS DE CODE (la
   // notion humaine, ADR implicite de `politique-de-phrase.mjs`) : un caractère astral (emoji,
@@ -415,7 +446,7 @@ async function ouvrirParLaPhrase(contexte) {
   // `CryptoKey` non extractible — exactement ce que la passkey lui envoie déjà (ADR 0029, déc. 5).
   await ouvrirPar(contexte, "phrase", { phrase }, (corps) =>
     deriverAvant(contexte, corps, () =>
-      contexte.deriverPhrase({ inventaire: contexte.inventaire, phrase }),
+      contexte.deriverPhrase({ inventaire: inventaireDeDerivation(contexte), phrase }),
     ),
   );
 }
@@ -450,10 +481,12 @@ async function ouvrirParLeCode(contexte) {
 async function ouvrirParLaPasskey(contexte) {
   const lue = relireLAncre(contexte);
   if (!lue.valide) return dire(contexte.noeuds.refus, lue.aveu);
-  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);
+  const inventaire = inventaireDeDerivation(contexte);
+  if (inventaire === null) return dire(contexte.noeuds.refus, TEXTE_PAS_ENCORE_LU);
+  if (inventaire.refus) return montrerLeRefus(contexte, inventaire.refus);
   dire(contexte.noeuds.refus, "");
   try {
-    const derive = await contexte.deriverPasskey({ inventaire: contexte.inventaire });
+    const derive = await contexte.deriverPasskey({ inventaire });
     await ouvrirPar(contexte, "webauthn-prf", derive);
   } catch (erreur) {
     montrerLeRefus(contexte, erreur);
@@ -469,22 +502,28 @@ async function ouvrirParLaPasskey(contexte) {
 async function creerLaFeuille(contexte) {
   const { noeuds, releve } = contexte;
   dire(noeuds.refus, "");
-  try {
-    const rendu = await contexte.demander("creerRecuperation", {});
-    const feuille = feuilleDeRecuperation({ code: rendu.code, version: rendu.versionEnveloppe });
-    dire(noeuds.feuilleCode, feuille.decoupe);
-    dire(noeuds.feuilleVersion, `Version d'enveloppe : ${feuille.version}`);
-    dire(noeuds.feuilleConsigne, feuille.consigne);
-    dire(
-      noeuds.versionANoter,
-      versionANoter({ version: feuille.version, geste: "Moyen de récupération créé" }),
-    );
-    releve.codeRendu = true;
-    publier(contexte);
-    await rafraichirLInventaire(contexte);
-  } catch (erreur) {
-    montrerLeRefus(contexte, erreur);
-  }
+  // Créer un moyen de récupération ÉCRIT l'enveloppe : le geste passe par `modifier` (C2-3) — pré-vol,
+  // confirmation de révocation oubliée, inventaire relu après l'issue, même si elle est un refus.
+  const lance = modifierEtAttendre(contexte.portes.modifier, () =>
+    contexte.demander("creerRecuperation", {}),
+  );
+  // Refusé (modification en cours, envoi en vol, affichage non protégé) : la porte a dit pourquoi.
+  if (!lance.accepte) return;
+  const { rendu, erreur } = await lance.issue;
+  if (erreur !== null) return montrerLeRefus(contexte, erreur);
+  const feuille = feuilleDeRecuperation({
+    code: rendu.code,
+    version: rendu.versionEnveloppe,
+  });
+  dire(noeuds.feuilleCode, feuille.decoupe);
+  dire(noeuds.feuilleVersion, `Version d'enveloppe : ${feuille.version}`);
+  dire(noeuds.feuilleConsigne, feuille.consigne);
+  dire(
+    noeuds.versionANoter,
+    versionANoter({ version: feuille.version, geste: "Moyen de récupération créé" }),
+  );
+  releve.codeRendu = true;
+  publier(contexte);
 }
 
 /** Rend la main au moteur pour qu'il PEIGNE l'annonce avant que la dérivation ne le bloque. */
