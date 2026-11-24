@@ -383,10 +383,8 @@ test("chaque geste PUBLIE son relevé avant de dire son état final (revue #208,
   const journal = [];
   const rapport = {};
   const reponses = {
-    inventaire: { present: false },
     sauvegarder: { taille: 3, archive: null, applicationArretee: false },
     restaurer: { versionEnveloppe: 2, etat: "verrouille" },
-    revoquerEnUrgence: { nombreRetires: 1, nombreRestants: 1, retires: {}, restants: {} },
   };
   const gestes = brancherLesGestesDePortabilite({
     racine: pageEnregistree(journal),
@@ -395,26 +393,31 @@ test("chaque geste PUBLIE son relevé avant de dire son état final (revue #208,
       return reponses[type];
     },
     rapport,
+    // Restaurer ÉCRIT l'enveloppe : il passe par `modifier` du magasin (#265, C2-3).
+    modifier: (lanceur) => {
+      lanceur().catch(() => {});
+      return { accepte: true, annonce: null };
+    },
+    lirePublic: () => null,
     publier: () => journal.push({ publie: JSON.parse(JSON.stringify(rapport.portabilite)) }),
     enregistrer: () => {},
   });
 
   await gestes.sauvegarder();
   await gestes.restaurer({ name: "archive" });
-  await gestes.revoquer();
   reponses.refuser = true;
   await gestes.restaurer({ name: "archive" });
 
-  const finals = /^portabilite:(sauvegarde-prete|restauree|revoque|restauration-refusee)/;
+  const finals = /^portabilite:(sauvegarde-prete|restauree|restauration-refusee)/;
   const etats = journal
     .map((entree, rang) => ({ ...entree, rang }))
     .filter((entree) => entree.dit === "portabilite-etat" && finals.test(entree.texte));
-  assert.equal(etats.length, 4);
+  assert.equal(etats.length, 3);
   const geste = { "sauvegarde-prete": "sauvegarde", restauree: "restauration" };
   for (const { texte, rang } of etats) {
     const precedent = journal[rang - 1];
     const nom = texte.split(":")[1].replace(/-refusee$/, "");
-    const cle = geste[nom] ?? (nom === "revoque" ? "revocation" : nom);
+    const cle = geste[nom] ?? nom;
     assert.ok(precedent.publie !== undefined, `« ${texte} » dit avant la publication`);
     assert.notEqual(precedent.publie[cle], null, `« ${texte} » : le relevé publié ne le porte pas`);
   }

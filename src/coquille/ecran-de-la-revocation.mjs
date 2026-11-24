@@ -20,7 +20,7 @@ const ECRAN_DE = Object.freeze({
   "modification-en-cours-apres-revocation": "etat-du-coffre",
   "revoquer-en-cours": "etat-du-coffre",
   "revocation-incertaine": "etat-du-coffre",
-  termine: "etat-du-coffre",
+  termine: "termine",
 });
 
 /** Ces deux écrans ne s'imposent qu'à l'étape 9 : ailleurs, la personne retrouve son application. */

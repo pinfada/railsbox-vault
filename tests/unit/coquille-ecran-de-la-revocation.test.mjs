@@ -125,9 +125,12 @@ test("[S3] l'écran IMPOSÉ par l'état l'emporte, indice vrai ou faux, sur 13 p
 });
 
 test("[S3] K et I n'imposent leur écran qu'à l'étape 9 (ou sans étape) ; ailleurs, l'application reste", () => {
-  for (const phase of ["K", "I"]) {
-    assert.equal(imposé(phase, 9), "etat-du-coffre");
-    assert.equal(imposé(phase, null), "etat-du-coffre");
+  for (const [phase, ecran] of [
+    ["K", "termine"],
+    ["I", "etat-du-coffre"],
+  ]) {
+    assert.equal(imposé(phase, 9), ecran);
+    assert.equal(imposé(phase, null), ecran);
     for (const pointeur of [1, 4, 5, 8])
       assert.equal(imposé(phase, pointeur), null, `${phase} / ${pointeur}`);
   }

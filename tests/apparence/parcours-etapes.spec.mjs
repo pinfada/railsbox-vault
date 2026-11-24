@@ -127,6 +127,10 @@ for (const theme of ["light", "dark"]) {
     await verifierAux(page, testInfo, "etape-9-revoquer", DEUX_LARGEURS);
 
     await bouton(page, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
+    // Deux temps (#265) : la confirmation se lit et se vérifie avant « Oui ».
+    await expect(page.getByRole("group", { name: "Confirmer la révocation" })).toBeVisible();
+    await verifierAux(page, testInfo, "etape-9-confirmation", DEUX_LARGEURS);
+    await bouton(page, "Oui, révoquer les autres moyens").click();
     await expect(titre(page, "Parcours terminé")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "termine", DEUX_LARGEURS);
 

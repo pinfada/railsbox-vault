@@ -8,6 +8,8 @@
 //
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
+import { ecran } from "./fabrique-d-ecran.mjs";
+import { ECRANS_DE_LA_REVOCATION } from "./ecrans-de-la-revocation.mjs";
 import { avertissementDeRevocation } from "./textes-de-la-revocation.mjs";
 import { enMegaoctets } from "./taille-en-clair.mjs";
 import {
@@ -195,13 +197,6 @@ const EPROUVER_LA_FEUILLE =
 const L_APPLICATION_S_EXECUTE_ICI =
   "L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré " +
   "dans votre coffre, sur cet appareil.";
-
-/** La fin de la visite : ce qu'elle dit ne parle jamais de la révocation (D4). */
-const FIN_DE_LA_VISITE = "Vous avez fait le tour de votre coffre.";
-const POUR_REVENIR =
-  "Pour vous servir de votre application, cliquez sur « Revenir à mon application ». Pour " +
-  "recommencer le parcours depuis le début, effacez les données du site dans les réglages du " +
-  "navigateur : supprimer les cookies ne suffit pas.";
 
 /**
  * Les écrans. Chacun porte son étape, un titre, ce qui va se passer, ce qui est attendu, l'attente
@@ -416,47 +411,8 @@ export const ECRANS = Object.freeze({
       "coffre », puis notez le nouveau numéro de feuille sur votre feuille.",
     blocs: ["sans-revoquer", "revocation", "retour"],
   }),
-  // La fin d'une visite dont la personne a choisi de ne rien révoquer (#246). Cet écran ne dit RIEN de la
-  // révocation : ce que la page peut en affirmer est dans la vue (`textes-de-la-revocation.mjs`, D4), et
-  // l'annonce du geste dit « aucun geste de révocation dans cette séance ».
-  "termine-sans-revoquer": ecran(9, {
-    titre: "Parcours terminé",
-    ceQuiVaSePasser: FIN_DE_LA_VISITE,
-    attendu: POUR_REVENIR,
-    blocs: ["retour"],
-  }),
-  // La fin atteinte par l'INDICE persisté seul, après un rechargement : la page ne sait rien de ce qui
-  // s'est passé avant, et la vue ne dit que « aucun geste de révocation dans cette séance » (D4, S3).
-  "termine-sans-attestation": ecran(9, {
-    titre: "Parcours terminé",
-    ceQuiVaSePasser: FIN_DE_LA_VISITE,
-    attendu: POUR_REVENIR,
-    blocs: ["fin", "retour"],
-  }),
-  // Ce que l'ÉTAT de la révocation impose : une lecture en échec, une modification, une demande en vol,
-  // un doute, la fin après un acquit. Le texte est écrit par la VUE, dans le conteneur d'affichage.
-  "etat-du-coffre": ecran(null, {
-    titre: "Votre coffre",
-    ceQuiVaSePasser:
-      "Ce que votre coffre est en train de faire, et ce que cette page en sait, est écrit ci-dessous.",
-    attendu: "Lisez le message ci-dessous : il dit quoi faire.",
-    blocs: ["impose", "retour"],
-  }),
+  ...ECRANS_DE_LA_REVOCATION,
 });
-
-/** @param {number | null} rang */
-function ecran(rang, { titre, ceQuiVaSePasser, attendu, casRares = null, attente = null, blocs }) {
-  return Object.freeze({
-    etape: rang,
-    titre,
-    ceQuiVaSePasser,
-    attendu,
-    // Les cas rares, repliés sous « Je n'ai plus ma feuille » (R1-bis, point 6).
-    casRares,
-    attente,
-    blocs: Object.freeze([...blocs]),
-  });
-}
 
 /**
  * Les libellés que la MISE EN FORME ajoute à la page (#194 ; revue de la PR #216, constat 6). Le repli
@@ -521,6 +477,7 @@ export const PRINCIPAL_DE_L_ECRAN = Object.freeze({
   recuperer: "ouvrir-par-code",
   revoquer: "parcours-sans-revoquer",
   "termine-sans-revoquer": "parcours-retour-application",
+  termine: "parcours-retour-application",
   "termine-sans-attestation": "parcours-retour-application",
 });
 

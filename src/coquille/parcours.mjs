@@ -461,6 +461,7 @@ export const ECRANS_AVEC_RETOUR = Object.freeze([
   "recuperer-preparer",
   "revoquer",
   "etat-du-coffre",
+  "termine",
   "termine-sans-attestation",
   "termine-sans-revoquer",
 ]);
