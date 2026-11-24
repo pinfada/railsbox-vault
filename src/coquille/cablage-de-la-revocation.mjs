@@ -24,8 +24,91 @@ import { creerLeRendeur } from "./rendeur-de-la-vue.mjs";
 import { texteDe } from "./textes-de-la-revocation.mjs";
 import { lireLeConstat, lirePublic } from "./vue-de-la-revocation.mjs";
 
-/** Le nom du volume que le Worker publie avec l'inventaire : un nom, pas une donnée sensible. */
-const sansIdentifiant = null;
+/** Les exécuteurs de C1 : des fonctions SANS récepteur, qui ne lisent jamais l'état de la page. */
+function creerLesExecuteurs(ctx) {
+  const { liaison, lectures, derniere } = ctx;
+  return {
+    envoyer: () =>
+      liaison.demander("revoquerEnUrgence", {}).then((rendu) => {
+        derniere.reponse = rendu;
+        return rendu;
+      }),
+    relire: (lecture) =>
+      liaison.demander("inventaire", {}).then((reponse) => {
+        lectures.set(lecture, {
+          taille: tailleDeSauvegardeDuMessage(reponse),
+          identifiantVolume:
+            typeof reponse?.identifiantVolume === "string" ? reponse.identifiantVolume : null,
+        });
+        return reponse;
+      }),
+    publier: (lecture, donnees) => publierLeMiroir(ctx, lecture, donnees),
+    noter: () => {
+      liaison.surRevocationAcquittee(derniere.reponse);
+      return Promise.resolve(liaison.noterLIndice());
+    },
+    oublier: () => {},
+    terminer: () => liaison.surTerminer(),
+    revenir: () => liaison.surRevenir(),
+    masquer: () => {
+      liaison.annonce.textContent = "";
+      return ctx.affichage.masquer();
+    },
+    consigner: ({ evenement, code }) => {
+      liaison.rapport.revocation = { evenement, code };
+      liaison.publierLeRapport();
+    },
+    vueARendre: () => ctx.rendeur.reveiller(),
+  };
+}
+
+/** L'effet `publier` : le SEUL écrivain des miroirs, appelé après l'acceptation d'une lecture courante. */
+function publierLeMiroir(ctx, lecture, donnees) {
+  const { liaison, lectures } = ctx;
+  const brute = lectures.get(lecture);
+  lectures.delete(lecture);
+  liaison.rapport.feuilleEprouvee = donnees.constat?.feuilleEprouvee === true;
+  liaison.rapport.tailleDeSauvegarde = brute?.taille ?? null;
+  ctx.identifiantVolume = brute?.identifiantVolume ?? ctx.identifiantVolume;
+  liaison.refleter(donnees, ctx.identifiantVolume);
+  liaison.publierLeRapport();
+}
+
+/** Dit ce que la table a répondu : l'annonce de l'événement, jamais une phrase écrite ici. */
+function dire(ctx, resultat) {
+  if (resultat.annonce === null || resultat.annonce === undefined) return resultat;
+  ctx.liaison.annonce.textContent = texteDe(resultat.annonce).corps;
+  return resultat;
+}
+
+/** Un geste de la vue : `appliquer` d'abord, sans rien lire du DOM de décision (C2-2). */
+function brancherLesGestes(ctx) {
+  const { conteneur } = ctx.liaison;
+  conteneur.addEventListener("click", (evenement) => {
+    const cible = evenement.target?.closest?.("[data-geste]");
+    if (cible === null || cible === undefined || !conteneur.contains(cible)) return;
+    dire(ctx, ctx.revocation.appliquer({ type: cible.getAttribute("data-geste") }));
+  });
+}
+
+function creerLeRendeurDeLaPage(ctx) {
+  const { liaison, affichage } = ctx;
+  return creerLeRendeur({
+    occurrence: () => ctx.revocation.occurrence(),
+    nouveauFragment: affichage.nouveauFragment,
+    rendre: (occurrence, fragment) => {
+      const projection = projeter(ctx.revocation.etat());
+      fragment.append(construireLaVue(liaison.doc, projection));
+      return { empreinte: projection.empreinte };
+    },
+    effets: affichage.effets,
+    armer: liaison.armer ?? ((ms, fonction) => setTimeout(fonction, ms)),
+    desarmer: liaison.desarmer ?? ((poignee) => clearTimeout(poignee)),
+    consigner: (code, detail) => {
+      liaison.rapport.rendeur = { dernier: code, detail: String(detail ?? "").slice(0, 120) };
+    },
+  });
+}
 
 /**
  * @param {object} liaison
@@ -45,129 +128,46 @@ const sansIdentifiant = null;
  * @param {() => void} liaison.surRevenir
  * @param {() => void} [liaison.apresPublication] la page remet les blocs d'écran en place
  */
-export function creerLeCablage({
-  doc,
-  conteneur,
-  regionDErreur,
-  annonce,
-  repereDeFocus,
-  demander,
-  rapport,
-  publierLeRapport,
-  indice,
-  noterLIndice,
-  refleter,
-  surRevocationAcquittee,
-  surTerminer,
-  surRevenir,
-  apresPublication = () => {},
-  armer = (ms, fonction) => setTimeout(fonction, ms),
-  desarmer = (poignee) => clearTimeout(poignee),
-}) {
-  /** Ce que le canal a rendu pour chaque lecture, tenu jusqu'à son acceptation ou son oubli. */
-  const lectures = new Map();
-  /** L'identifiant du volume : une constante du coffre, relevée avec l'inventaire accepté. */
-  let identifiantVolume = sansIdentifiant;
-  /** La dernière réponse de révocation ; lue par `noter`, qui n'est appelé qu'à l'acquit de CETTE demande. */
-  const derniere = { reponse: null };
-  let revocation = null;
-
-  const affichage = creerLAffichage({
-    doc,
-    conteneur,
-    regionDErreur,
-    repereDeFocus,
-    surPublication: apresPublication,
-  });
-
-  const rendeur = creerLeRendeur({
-    occurrence: () => revocation.occurrence(),
-    nouveauFragment: affichage.nouveauFragment,
-    rendre: (occurrence, fragment) => {
-      const projection = projeter(revocation.etat());
-      fragment.append(construireLaVue(doc, projection));
-      return { empreinte: projection.empreinte };
-    },
-    effets: affichage.effets,
-    armer,
-    desarmer,
-    consigner: (code, detail) => {
-      rapport.rendeur = { dernier: code, detail: String(detail ?? "").slice(0, 120) };
-    },
-  });
-
-  const executeurs = {
-    envoyer: () =>
-      demander("revoquerEnUrgence", {}).then((rendu) => {
-        derniere.reponse = rendu;
-        return rendu;
-      }),
-    relire: (lecture) =>
-      demander("inventaire", {}).then((reponse) => {
-        lectures.set(lecture, {
-          taille: tailleDeSauvegardeDuMessage(reponse),
-          identifiantVolume:
-            typeof reponse?.identifiantVolume === "string" ? reponse.identifiantVolume : null,
-        });
-        return reponse;
-      }),
-    publier: (lecture, donnees) => {
-      const brute = lectures.get(lecture);
-      lectures.delete(lecture);
-      rapport.feuilleEprouvee = donnees.constat?.feuilleEprouvee === true;
-      rapport.tailleDeSauvegarde = brute?.taille ?? null;
-      identifiantVolume = brute?.identifiantVolume ?? identifiantVolume;
-      refleter(donnees, identifiantVolume);
-      publierLeRapport();
-    },
-    noter: () => {
-      surRevocationAcquittee(derniere.reponse);
-      return Promise.resolve(noterLIndice());
-    },
-    oublier: () => {},
-    terminer: () => surTerminer(),
-    revenir: () => surRevenir(),
-    masquer: () => {
-      annonce.textContent = "";
-      return affichage.masquer();
-    },
-    consigner: ({ evenement, code }) => {
-      rapport.revocation = { evenement, code };
-      publierLeRapport();
-    },
-    vueARendre: () => rendeur.reveiller(),
+export function creerLeCablage(liaison) {
+  const ctx = {
+    liaison,
+    /** Ce que le canal a rendu pour chaque lecture, tenu jusqu'à son acceptation ou son oubli. */
+    lectures: new Map(),
+    /** L'identifiant du volume : une constante du coffre, relevée avec l'inventaire accepté. */
+    identifiantVolume: null,
+    /** La dernière réponse de révocation ; lue par `noter`, appelé à l'acquit de CETTE demande. */
+    derniere: { reponse: null },
+    revocation: null,
+    affichage: creerLAffichage({
+      doc: liaison.doc,
+      conteneur: liaison.conteneur,
+      regionDErreur: liaison.regionDErreur,
+      repereDeFocus: liaison.repereDeFocus,
+      surPublication: liaison.apresPublication ?? (() => {}),
+    }),
+    rendeur: null,
   };
-
-  revocation = creerLaRevocation({ executeurs, indice });
-
-  /** Dit ce que la table a répondu : l'annonce de l'événement, jamais une phrase écrite ici. */
-  function dire(resultat) {
-    if (resultat.annonce === null || resultat.annonce === undefined) return resultat;
-    annonce.textContent = texteDe(resultat.annonce).corps;
-    return resultat;
-  }
-
-  /** Un geste de la vue : `appliquer` d'abord, sans rien lire du DOM de décision (C2-2). */
-  conteneur.addEventListener("click", (evenement) => {
-    const cible = evenement.target?.closest?.("[data-geste]");
-    if (cible === null || cible === undefined || !conteneur.contains(cible)) return;
-    dire(revocation.appliquer({ type: cible.getAttribute("data-geste") }));
+  ctx.rendeur = creerLeRendeurDeLaPage(ctx);
+  ctx.revocation = creerLaRevocation({
+    executeurs: creerLesExecuteurs(ctx),
+    indice: liaison.indice,
   });
-
+  brancherLesGestes(ctx);
+  const { revocation } = ctx;
   return Object.freeze({
     revocation,
-    demarrer: () => dire(revocation.demarrer()),
-    appliquer: (evenement) => dire(revocation.appliquer(evenement)),
-    modifier: (lanceur) => dire(revocation.modifier(lanceur)),
+    demarrer: () => dire(ctx, revocation.demarrer()),
+    appliquer: (evenement) => dire(ctx, revocation.appliquer(evenement)),
+    modifier: (lanceur) => dire(ctx, revocation.modifier(lanceur)),
     definirLIndice: (valeur) => revocation.definirLIndice(valeur),
     etat: () => revocation.etat(),
     projection: () => revocation.projection(),
     lirePublic: () => lirePublic(revocation.etat()),
     lireLeConstat: () => lireLeConstat(revocation.etat()),
-    identifiantDuVolume: () => identifiantVolume,
+    identifiantDuVolume: () => ctx.identifiantVolume,
     terminer: () => revocation.terminer(),
     echecs: () => revocation.echecs(),
-    rendeur,
-    affichage,
+    rendeur: ctx.rendeur,
+    affichage: ctx.affichage,
   });
 }

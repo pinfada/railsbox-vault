@@ -53,6 +53,7 @@ import {
   texteSansCode,
   unGesteEstEnCours,
 } from "../../src/coquille/parcours.mjs";
+import { texteDe } from "../../src/coquille/textes-de-la-revocation.mjs";
 
 const lire = (chemin) => readFile(new URL(`../../${chemin}`, import.meta.url), "utf8");
 
@@ -88,12 +89,27 @@ test("les neuf étapes de la DoR, dans l'ordre, et chaque écran appartient à l
 test("les blocs de la page sont ceux du parcours, dans l'ordre du document, et chacun a ses libellés", async () => {
   const page = await lire("public/index.html");
   const dansLeDocument = [...page.matchAll(/data-bloc="([^"]+)"/g)].map((trouve) => trouve[1]);
-  assert.deepEqual(dansLeDocument, [...BLOCS]);
+  // Les blocs de la VUE (#265) ne sont pas dans le HTML : la construction les écrit, dans le conteneur.
+  const construction = await lire("src/coquille/construction-de-la-vue.mjs");
+  const dansLaVue = [
+    ...construction.matchAll(/(?:bloc\(\s*doc,\s*|"data-bloc":\s*)"([^"]+)"/g),
+  ].map((trouve) => trouve[1]);
+  assert.deepEqual(
+    [...new Set(dansLaVue)].sort(),
+    ["fin", "impose", "revocation", "sans-revoquer", "vue-codes"],
+    "la construction écrit exactement ces blocs",
+  );
+  assert.deepEqual(
+    BLOCS.filter((bloc) => !dansLaVue.includes(bloc)),
+    dansLeDocument,
+    "les blocs statiques, dans l'ordre du document",
+  );
   assert.deepEqual(Object.keys(LIBELLES_DES_BLOCS).sort(), [...BLOCS].sort());
   // Chaque nom cité entre guillemets est un texte du document, ou un nom que la page lui donne.
   const branchement =
     (await lire("public/coquille/parcours-de-la-page.mjs")) +
-    (await lire("public/coquille/observateurs-du-parcours.mjs"));
+    (await lire("public/coquille/observateurs-du-parcours.mjs")) +
+    construction;
   const pageSansBlancs = page.replace(/\s+/g, " ");
   for (const [bloc, libelles] of Object.entries(LIBELLES_DES_BLOCS)) {
     for (const libelle of libelles) {
@@ -133,12 +149,9 @@ test("l'écran de la feuille dit AVANT de la montrer qu'elle ne s'affiche qu'une
 
 test("l'écran de révocation dit que les sauvegardes déjà faites restent ouvrables", () => {
   assert.match(ECRANS.revoquer.ceQuiVaSePasser, /sauvegardes déjà faites restent ouvrables/);
-  assert.match(ECRANS.termine.ceQuiVaSePasser, /sauvegardes déjà faites restent ouvrables/);
-  assert.doesNotMatch(
-    ECRANS.termine.attendu,
-    /créez-en un nouveau/,
-    "aucun geste ne le permet ici",
-  );
+  const termine = texteDe("termine").corps;
+  assert.match(termine, /sauvegardes déjà faites restent ouvrables/);
+  assert.doesNotMatch(termine, /créez-en un nouveau/, "aucun geste ne le permet ici");
 });
 
 // --- La PROGRESSION (revue de la PR #213, constats 1 et 2 ; #239) ----------------------------------
@@ -453,7 +466,10 @@ test("un coffre ouvert et éprouvé suit l'étape montrée, de 4 à 9", () => {
   assert.equal(ecranCourant(ouvert({ pointeur: 7 })), "restaurer-ailleurs");
   assert.equal(ecranCourant(ouvert({ pointeur: 8 })), "recuperer-preparer");
   assert.equal(ecranCourant(ouvert({ pointeur: 9 })), "revoquer");
-  assert.equal(ecranCourant(ouvert({ pointeur: 9, revocationFaite: true })), "termine");
+  assert.equal(
+    ecranCourant(ouvert({ pointeur: 9, fin: "termine-sans-attestation" })),
+    "termine-sans-attestation",
+  );
 });
 
 test("#239 : après « Parcours terminé », l'étape 4 est l'ACCUEIL, avec les gestes du quotidien", () => {
@@ -488,16 +504,16 @@ test("#239 : les écrans 5 à 9 et « Parcours terminé » portent « Revenir à
     .sort();
   assert.deepEqual(avecRetour, [...ECRANS_AVEC_RETOUR].sort());
   for (const id of ECRANS_AVEC_RETOUR) {
-    assert.ok(ECRANS[id].etape >= 5, id);
+    // « etat-du-coffre » est l'écran que l'ÉTAT impose : il n'est l'étape d'aucune visite.
+    if (id !== "etat-du-coffre") assert.ok(ECRANS[id].etape >= 5, id);
     assert.equal(etapeApres(id, "retour", ECRANS[id].etape, 9), 4, id);
   }
   for (const id of ["travailler", "rouvrir", "recuperer", "code-verifier", "code-annonce"]) {
     assert.equal(etapeApres(id, "retour", 4, 9), null, id);
   }
   // #242 (12) : le numéro de feuille est nommé sans indication de position.
-  assert.match(ECRANS.termine.attendu, /nouveau numéro de feuille/);
-  assert.doesNotMatch(ECRANS.termine.attendu, /ci-dessus|ci-dessous/);
-  assert.doesNotMatch(ECRANS.termine.attendu, /ci-dessus/);
+  assert.match(texteDe("termine").corps, /nouveau numéro de feuille/);
+  assert.doesNotMatch(texteDe("termine").corps, /ci-dessus|ci-dessous/);
 });
 
 test("CONSTAT 9 : sous Firefox, l'étape 4 dit sa limite et n'offre pas « Démarrer »", () => {
@@ -800,13 +816,20 @@ test("QA de #244 : « J'ai oublié ma phrase » est une ouverture de ROUTINE, ja
 test("décision du 19/09 : l'étape 9 est FACULTATIVE, et sa conséquence est dite", () => {
   assert.equal(ecranCourant(ouvert({ pointeur: 9 })), "revoquer");
   assert.equal(ecranCourant(ouvert({ pointeur: 9, sansRevoquer: true })), "termine-sans-revoquer");
-  assert.equal(ecranCourant(ouvert({ pointeur: 9, revocationFaite: true })), "termine");
-  assert.deepEqual(ECRANS.revoquer.blocs, ["revocation", "sans-revoquer", "retour"]);
+  assert.equal(
+    ecranCourant(ouvert({ pointeur: 9, fin: "termine-sans-attestation" })),
+    "termine-sans-attestation",
+  );
+  assert.deepEqual(ECRANS.revoquer.blocs, ["sans-revoquer", "revocation", "retour"]);
   assert.match(ECRANS.revoquer.ceQuiVaSePasser, /facultative/);
   assert.match(ECRANS.revoquer.ceQuiVaSePasser, /écrit au-dessus du bouton/);
   assert.match(ECRANS.revoquer.attendu, /Terminer sans révoquer/);
   assert.match(ECRANS.accueil.ceQuiVaSePasser, /écrit au-dessus du bouton/);
-  assert.match(ECRANS["termine-sans-revoquer"].ceQuiVaSePasser, /l'ouvre toujours/);
+  // [D4] cet écran ne parle plus de la révocation : l'annonce du geste dit « dans cette séance ».
+  assert.doesNotMatch(
+    Object.values(ECRANS["termine-sans-revoquer"]).join(" "),
+    /révoqu|ouvre toujours/,
+  );
   assert.ok(ECRANS_AVEC_RETOUR.includes("termine-sans-revoquer"));
   // L'écran 3 ne promet plus ce que la révocation retirerait.
   assert.match(ECRANS["code-verifier"].ceQuiVaSePasser, /tant que vous ne l'avez pas révoquée/);

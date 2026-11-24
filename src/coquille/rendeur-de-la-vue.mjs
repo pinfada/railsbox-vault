@@ -23,151 +23,149 @@
  */
 export const DELAI_DU_RENDEUR_MS = 2000;
 
+/** Le journal est un diagnostic : sa défaillance ne bloque jamais le rendeur. */
+function noter(ctx, code, detail) {
+  try {
+    ctx.consigner(code, detail);
+  } catch {
+    // un journal qui lève n'empêche ni la libération ni le successeur
+  }
+}
+
+/** L'autorisation : l'identité d'objet ET l'occurrence courante, relues À CET INSTANT. */
+const autorise = (ctx, t, occ) => ctx.enVol === t && ctx.occurrence() === occ;
+
+function converger(ctx) {
+  if (ctx.enVol !== null) return;
+  if (ctx.occurrence() === ctx.derniereOccurrenceTraitee) return;
+  lancer(ctx);
+}
+
+function lancer(ctx) {
+  const occ = ctx.occurrence();
+  const t = { rang: (ctx.compteur += 1), occurrence: occ, fragment: null, delai: null };
+  ctx.enVol = t;
+  try {
+    t.fragment = ctx.nouveauFragment();
+    t.delai = ctx.armer(DELAI_DU_RENDEUR_MS, () => reglerGarde(ctx, t, { delai: true }));
+  } catch (erreur) {
+    // L'armement (ou le fragment) échoue APRÈS `enVol ← t` : la tentative est réglée en échec.
+    noter(ctx, "lancement-en-echec", erreur);
+    reglerGarde(ctx, t, { erreur });
+    return;
+  }
+  let promesse;
+  try {
+    promesse = Promise.resolve(ctx.rendre(occ, t.fragment));
+  } catch (erreur) {
+    promesse = Promise.reject(erreur);
+  }
+  promesse.then(
+    (valeur) => reglerGarde(ctx, t, { ok: valeur }),
+    (erreur) => reglerGarde(ctx, t, { erreur }),
+  );
+}
+
+/** Le GARDE-FOU : une erreur dans `regler` lui-même ne laisse jamais un rendeur bloqué. */
+function reglerGarde(ctx, t, resultat) {
+  try {
+    regler(ctx, t, resultat);
+  } catch (erreur) {
+    noter(ctx, "regler-inattendu", erreur);
+    liberer(ctx, t);
+  }
+}
+
+/** Idempotent, réservé au garde-fou : la libération est effective même si le journal lève. */
+function liberer(ctx, t) {
+  if (ctx.enVol !== t) return;
+  try {
+    echouer(ctx, t, t.occurrence);
+  } catch (erreur) {
+    noter(ctx, "repli-en-echec", erreur);
+  } finally {
+    clore(ctx, t.occurrence);
+  }
+}
+
+/** La libération UNIQUE, APRÈS tous les effets visibles, puis le successeur, même si tout a levé. */
+function clore(ctx, occ) {
+  ctx.enVol = null;
+  ctx.derniereOccurrenceTraitee = occ;
+  converger(ctx);
+}
+
+function regler(ctx, t, resultat) {
+  if (ctx.enVol !== t) {
+    noter(ctx, "tentative-perimee", t.rang);
+    return;
+  }
+  ctx.desarmer(t.delai);
+  const occ = t.occurrence;
+  try {
+    if (ctx.occurrence() !== occ) {
+      // JETER : aucun effet visible ; le successeur suit dans le `finally`.
+    } else if ("ok" in resultat) publier(ctx, t, occ, resultat.ok);
+    else echouer(ctx, t, occ);
+  } catch (erreur) {
+    noter(ctx, "regler-en-echec", erreur);
+    try {
+      echouer(ctx, t, occ);
+    } catch (repli) {
+      noter(ctx, "repli-en-echec", repli);
+    }
+  } finally {
+    clore(ctx, occ);
+  }
+}
+
+/** Bloc SYNCHRONE : l'estampille est l'UNIQUE acte qui rend le contenu visible, donc le dernier. */
+function publier(ctx, t, occ, valeur) {
+  const { effets } = ctx;
+  if (!autorise(ctx, t, occ)) return;
+  effets.remplacerLeContenu(t.fragment);
+  if (!autorise(ctx, t, occ)) return;
+  effets.retirerLaRegionDErreur();
+  if (!autorise(ctx, t, occ)) return;
+  effets.demasquer();
+  if (!autorise(ctx, t, occ)) return;
+  effets.estamper(occ, valeur);
+  ctx.occurrencePubliee = occ;
+}
+
+function echouer(ctx, t, occ) {
+  if (!autorise(ctx, t, occ)) return;
+  ctx.effets.masquer();
+  if (!autorise(ctx, t, occ)) return;
+  ctx.effets.montrerLaRegionDErreur(occ);
+}
+
 /**
  * @param {{ occurrence: () => number, nouveauFragment: () => object,
  *           rendre: (occurrence: number, fragment: object) => unknown,
  *           effets: { remplacerLeContenu: Function, retirerLaRegionDErreur: Function,
- *                     demasquer: Function, estamper: (occurrence: number, valeur: unknown) => void, masquer: Function,
- *                     montrerLaRegionDErreur: Function },
+ *                     demasquer: Function, estamper: (occurrence: number, valeur: unknown) => void,
+ *                     masquer: Function, montrerLaRegionDErreur: Function },
  *           armer: (ms: number, fonction: Function) => unknown, desarmer: (poignee: unknown) => void,
  *           consigner: (code: string, detail?: unknown) => void }} dependances
  */
-export function creerLeRendeur({
-  occurrence,
-  nouveauFragment,
-  rendre,
-  effets,
-  armer,
-  desarmer,
-  consigner,
-}) {
-  /** La tentative AUTORISÉE, ou `null`. */
-  let enVol = null;
-  let derniereOccurrenceTraitee = null;
-  let occurrencePubliee = null;
-  let compteur = 0;
-
-  /** Le journal est un diagnostic : sa défaillance ne bloque jamais le rendeur. */
-  function noter(code, detail) {
-    try {
-      consigner(code, detail);
-    } catch {
-      // un journal qui lève n'empêche ni la libération ni le successeur
-    }
-  }
-
-  /** L'autorisation : l'identité d'objet ET l'occurrence courante, relues À CET INSTANT. */
-  const autorise = (t, occ) => enVol === t && occurrence() === occ;
-
-  function converger() {
-    if (enVol !== null) return;
-    if (occurrence() === derniereOccurrenceTraitee) return;
-    lancer();
-  }
-
-  function lancer() {
-    const occ = occurrence();
-    const t = { rang: (compteur += 1), occurrence: occ, fragment: null, delai: null };
-    enVol = t;
-    try {
-      t.fragment = nouveauFragment();
-      t.delai = armer(DELAI_DU_RENDEUR_MS, () => reglerGarde(t, { delai: true }));
-    } catch (erreur) {
-      // L'armement (ou le fragment) échoue APRÈS `enVol ← t` : la tentative est réglée en échec.
-      noter("lancement-en-echec", erreur);
-      reglerGarde(t, { erreur });
-      return;
-    }
-    let promesse;
-    try {
-      promesse = Promise.resolve(rendre(occ, t.fragment));
-    } catch (erreur) {
-      promesse = Promise.reject(erreur);
-    }
-    promesse.then(
-      (valeur) => reglerGarde(t, { ok: valeur }),
-      (erreur) => reglerGarde(t, { erreur }),
-    );
-  }
-
-  /** Le GARDE-FOU : une erreur dans `regler` lui-même ne laisse jamais un rendeur bloqué. */
-  function reglerGarde(t, resultat) {
-    try {
-      regler(t, resultat);
-    } catch (erreur) {
-      noter("regler-inattendu", erreur);
-      liberer(t);
-    }
-  }
-
-  /** Idempotent, réservé au garde-fou : la libération est effective même si le journal lève. */
-  function liberer(t) {
-    if (enVol !== t) return;
-    try {
-      echouer(t, t.occurrence);
-    } catch (erreur) {
-      noter("repli-en-echec", erreur);
-    } finally {
-      enVol = null;
-      derniereOccurrenceTraitee = t.occurrence;
-      converger();
-    }
-  }
-
-  function regler(t, resultat) {
-    if (enVol !== t) {
-      noter("tentative-perimee", t.rang);
-      return;
-    }
-    desarmer(t.delai);
-    const occ = t.occurrence;
-    try {
-      if (occurrence() !== occ) {
-        // JETER : aucun effet visible ; le successeur suit dans le `finally`.
-      } else if ("ok" in resultat) publier(t, occ, resultat.ok);
-      else echouer(t, occ);
-    } catch (erreur) {
-      noter("regler-en-echec", erreur);
-      try {
-        echouer(t, occ);
-      } catch (repli) {
-        noter("repli-en-echec", repli);
-      }
-    } finally {
-      enVol = null;
-      derniereOccurrenceTraitee = occ;
-      converger();
-    }
-  }
-
-  /** Bloc SYNCHRONE : l'estampille est l'UNIQUE acte qui rend le contenu visible, donc le dernier. */
-  function publier(t, occ, valeur) {
-    if (!autorise(t, occ)) return;
-    effets.remplacerLeContenu(t.fragment);
-    if (!autorise(t, occ)) return;
-    effets.retirerLaRegionDErreur();
-    if (!autorise(t, occ)) return;
-    effets.demasquer();
-    if (!autorise(t, occ)) return;
-    effets.estamper(occ, valeur);
-    occurrencePubliee = occ;
-  }
-
-  function echouer(t, occ) {
-    if (!autorise(t, occ)) return;
-    effets.masquer();
-    if (!autorise(t, occ)) return;
-    effets.montrerLaRegionDErreur(occ);
-  }
-
+export function creerLeRendeur(dependances) {
+  const ctx = {
+    ...dependances,
+    /** La tentative AUTORISÉE, ou `null`. */
+    enVol: null,
+    derniereOccurrenceTraitee: null,
+    occurrencePubliee: null,
+    compteur: 0,
+  };
   return Object.freeze({
     /** Appelé par l'effet `vue-a-rendre` : fait converger. */
-    reveiller: converger,
+    reveiller: () => converger(ctx),
     diagnostic: () =>
       Object.freeze({
-        enVol: enVol !== null,
-        derniereOccurrenceTraitee,
-        occurrencePubliee,
+        enVol: ctx.enVol !== null,
+        derniereOccurrenceTraitee: ctx.derniereOccurrenceTraitee,
+        occurrencePubliee: ctx.occurrencePubliee,
       }),
   });
 }

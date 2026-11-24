@@ -111,7 +111,9 @@ test("aucun texte de `src/coquille/` hors des clés étiquetées ne contient les
   const dossier = new URL("../../src/coquille/", import.meta.url);
   const fautifs = [];
   for (const nom of readdirSync(dossier)) {
+    // Le catalogue DOCUMENTE les phrases qui n'existent pas : il les cite sans les dire.
     if (!nom.endsWith(".mjs") || nom === "textes-de-la-revocation.mjs") continue;
+    if (nom === "cles-de-la-revocation.mjs") continue;
     const source = readFileSync(new URL(nom, dossier), "utf8");
     if (
       /rien n'a été révoqué|tous vos moyens ouvrent toujours|chacun des moyens[^"]*l'ouvre toujours/i.test(

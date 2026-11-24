@@ -93,8 +93,6 @@
             <p id="parcours-cas-rares"></p>
           </details>
           <p id="parcours-limite"></p>
-          <!-- Le COMPTE des feuilles de récupération que ce coffre porte déjà (#214). -->
-          <p id="parcours-codes"></p>
           <p id="parcours-attente-annoncee"></p>
         </div>
         <p id="parcours-attente" role="status" aria-live="polite"></p>
@@ -107,25 +105,6 @@
         -->
         <p>
           <button id="rouvrir-la-coquille" type="button" hidden>Rouvrir le coffre</button>
-        </p>
-      </section>
-
-      <!--
-        L'AFFICHAGE du coffre (#265, ADR 0049 § C2) : tout ce que la page AFFIRME du coffre et de la
-        révocation — moyens, nombre de codes, constat de la feuille, confirmation, écrans imposés par
-        l'état, région d'annonce — est écrit ICI, et ici seulement, par un rendeur unique, à partir d'une
-        projection de l'état. Le conteneur est MASQUÉ PAR DÉFAUT par la feuille de style, sans script :
-        il ne devient visible que par l'estampille `data-vue`, posée en dernier. Tant qu'il ne l'est pas,
-        l'espace réservé ci-dessous, statique, est la seule chose montrée ; il n'affirme rien du coffre.
-        La région d'erreur est HORS du conteneur : elle dit que l'affichage n'a pas pu être actualisé, et
-        n'affirme jamais le contraire.
-      -->
-      <section id="affichage-du-coffre" aria-label="Ce que la page sait de votre coffre">
-        <div id="affichage" hidden></div>
-        <p id="affichage-attente">Préparation de l'affichage de votre coffre…</p>
-        <p id="affichage-erreur" role="status" aria-live="assertive" hidden>
-          L'affichage de votre coffre n'a pas pu être actualisé : ce qui s'affiche ici peut ne pas
-          être exact. Rechargez la page.
         </p>
       </section>
 
@@ -343,12 +322,13 @@
       </section>
 
       <!--
-        SAUVEGARDER, RESTAURER, RÉVOQUER EN URGENCE (#207, ADR 0039). Trois gestes du canal
-        privilégié ; aucun n'existe sur le port restreint. La sauvegarde est remise au navigateur par
+        SAUVEGARDER, RESTAURER (#207, ADR 0039) : deux gestes du canal privilégié ; aucun n'existe sur le
+        port restreint. La RÉVOCATION D'URGENCE n'est plus ici (#265, ADR 0049) : ses gestes, son
+        avertissement et sa confirmation sont écrits par la vue, dans le conteneur d'affichage ci-dessous. La sauvegarde est remise au navigateur par
         le lien ci-dessous — l'archive quitte l'origine par le système de fichiers de l'hôte, jamais
         vers le document applicatif. La restauration n'agit que sur un emplacement VIDE.
       -->
-      <section id="portabilite" aria-label="Sauvegarde et révocation">
+      <section id="portabilite" aria-label="Sauvegarde et restauration">
         <div data-bloc="sauvegarde" hidden>
           <p id="sauvegarde-annonce"></p>
           <p>
@@ -367,19 +347,27 @@
             </button>
           </p>
         </div>
-        <div data-bloc="revocation" hidden>
-          <p id="parcours-avertissement-revocation"></p>
-          <p>
-            <button id="revoquer-en-urgence" type="button" data-danger>
-              Révoquer tous les autres moyens d'ouvrir ce coffre
-            </button>
-          </p>
-        </div>
-        <!-- L'étape 9 est facultative : la visite se termine sans rien retirer (décision du 19/09). -->
-        <div data-bloc="sans-revoquer" hidden>
-          <p><button id="parcours-sans-revoquer" type="button">Terminer sans révoquer</button></p>
-        </div>
       </section>
+
+      <!--
+        L'AFFICHAGE du coffre (#265, ADR 0049 § C2) : tout ce que la page AFFIRME du coffre et de la
+        révocation — moyens, nombre de codes, constat de la feuille, confirmation, écrans imposés par
+        l'état, région d'annonce — est écrit ICI, et ici seulement, par un rendeur unique, à partir d'une
+        projection de l'état. Le conteneur est MASQUÉ PAR DÉFAUT par la feuille de style, sans script :
+        il ne devient visible que par l'estampille `data-vue`, posée en dernier. Tant qu'il ne l'est pas,
+        l'espace réservé ci-dessous, statique, est la seule chose montrée ; il n'affirme rien du coffre.
+        La région d'erreur est HORS du conteneur : elle dit que l'affichage n'a pas pu être actualisé, et
+        n'affirme jamais le contraire.
+      -->
+      <div id="affichage-du-coffre">
+        <div id="affichage" hidden></div>
+        <p id="affichage-attente">Préparation de l'affichage de votre coffre…</p>
+        <p id="affichage-annonce" role="status" aria-live="polite"></p>
+        <p id="affichage-erreur" role="status" aria-live="assertive" hidden>
+          L'affichage de votre coffre n'a pas pu être actualisé : ce qui s'affiche ici peut ne pas
+          être exact. Rechargez la page.
+        </p>
+      </div>
 
       <div data-bloc="continuer" hidden>
         <p><button id="parcours-continuer" type="button">Continuer</button></p>

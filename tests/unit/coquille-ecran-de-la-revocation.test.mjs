@@ -76,11 +76,10 @@ test("[C2-1′] un constat « non éprouvé » est lu tel quel", () => {
   assert.equal(observer("P", { jeu: { feuille: false } }).feuilleEprouvee, false);
 });
 
-test("[S3] la fin offerte : `termine` dans K seulement ; `termine-sans-attestation` dans P avec indice seulement", () => {
-  assert.equal(observer("K").fin, "termine");
+test("[S3] la fin offerte : `termine-sans-attestation` dans P avec indice seulement", () => {
+  assert.equal(observer("K").fin, null, "K est imposé par l'état, pas offert");
   assert.equal(observer("P", { indice: true }).fin, "termine-sans-attestation");
   for (const phase of LISTE_DES_PHASES) {
-    if (phase === "K") continue;
     if (phase === "P") continue;
     assert.equal(observer(phase, { indice: true }).fin, null, `${phase} × indice`);
   }
@@ -89,7 +88,6 @@ test("[S3] la fin offerte : `termine` dans K seulement ; `termine-sans-attestati
 
 test("[D4] l'indice seul n'ouvre jamais `termine` (l'écran qui dit « révoqué »)", () => {
   for (const phase of LISTE_DES_PHASES) {
-    if (phase === "K") continue; // `termine` y vient de l'acquit du Worker, jamais de l'indice
     assert.notEqual(observer(phase, { indice: true }).fin, "termine", phase);
     assert.notEqual(observer(phase, { indice: false }).fin, "termine", phase);
   }

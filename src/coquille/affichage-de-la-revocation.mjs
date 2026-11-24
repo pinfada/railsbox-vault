@@ -13,81 +13,67 @@
 // Le conteneur, l'espace réservé et la région d'erreur sont du HTML STATIQUE : le script ne fait que
 // retirer ou poser `hidden`, `data-vue`, `data-occurrence` et `data-erreur`.
 
-/**
- * @param {{ doc: Document, conteneur: Element | null, regionDErreur: Element | null,
- *           repereDeFocus?: Element | null, surPublication?: () => void }} appel
- */
-export function creerLAffichage({
-  doc,
-  conteneur,
-  regionDErreur,
-  repereDeFocus = null,
-  surPublication = () => {},
-}) {
-  /** Identifiant du nœud qui avait le focus DANS le conteneur, avant son remplacement. */
-  let focusAvant = null;
-
-  /** Le masquage est-il ÉTABLI ? Lu sur le DOM, jamais supposé. */
-  function masquageEtabli() {
-    try {
-      return (
-        conteneur.isConnected === true &&
-        !conteneur.hasAttribute("data-vue") &&
-        conteneur.hidden === true
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  function masquer() {
-    if (conteneur === null || conteneur === undefined) return false;
-    try {
-      conteneur.removeAttribute("data-vue");
-      conteneur.removeAttribute("data-occurrence");
-    } catch {
-      // le retrait a échoué : le contrôle ci-dessous le dit
-    }
-    try {
-      conteneur.hidden = true;
-    } catch {
-      // idem
-    }
-    if (masquageEtabli()) return true;
-    // Repli : une seconde écriture, indépendante de la première (l'attribut, pas la propriété).
-    try {
-      conteneur.setAttribute("hidden", "");
-    } catch {
-      // idem
-    }
-    if (masquageEtabli()) return true;
-    // Dernier recours : le nœud est détaché, aucune affirmation n'est visible. Le masquage n'est PAS établi.
-    try {
-      conteneur.remove();
-    } catch {
-      // un navigateur qui refuse jusqu'au détachement : L11″
-    }
+/** Le masquage est-il ÉTABLI ? Lu sur le DOM, jamais supposé. */
+function masquageEtabli(conteneur) {
+  try {
+    return (
+      conteneur.isConnected === true &&
+      !conteneur.hasAttribute("data-vue") &&
+      conteneur.hidden === true
+    );
+  } catch {
     return false;
   }
+}
 
-  function memoriserLeFocus() {
-    focusAvant = null;
-    const actif = doc.activeElement;
-    if (actif !== null && actif !== undefined && conteneur.contains(actif)) focusAvant = actif.id;
+/** Une écriture qui peut échouer sans que le contrôle qui suit en soit affecté. */
+function essayer(ecriture) {
+  try {
+    ecriture();
+  } catch {
+    // le contrôle de `masquageEtabli` le dit
   }
+}
 
-  /** R-9 : le focus rendu au même nœud (retrouvé par son identifiant), sinon au repère stable. */
-  function rendreLeFocus() {
-    if (focusAvant === null) return;
-    const identifiant = focusAvant;
-    focusAvant = null;
-    const meme = identifiant === "" ? null : conteneur.querySelector(`#${identifiant}`);
-    (meme ?? repereDeFocus)?.focus();
-  }
+function masquerLeConteneur(conteneur) {
+  if (conteneur === null || conteneur === undefined) return false;
+  essayer(() => {
+    conteneur.removeAttribute("data-vue");
+    conteneur.removeAttribute("data-occurrence");
+  });
+  essayer(() => {
+    conteneur.hidden = true;
+  });
+  if (masquageEtabli(conteneur)) return true;
+  // Repli : une seconde écriture, indépendante de la première (l'attribut, pas la propriété).
+  essayer(() => conteneur.setAttribute("hidden", ""));
+  if (masquageEtabli(conteneur)) return true;
+  // Dernier recours : le nœud est détaché, aucune affirmation n'est visible. Le masquage n'est PAS établi.
+  essayer(() => conteneur.remove());
+  return false;
+}
 
-  const effets = Object.freeze({
+/** R-9 : le focus rendu au même nœud (retrouvé par son identifiant), sinon au repère stable. */
+function rendreLeFocus(ctx) {
+  const { conteneur, repereDeFocus, focus } = ctx;
+  if (focus.avant === null) return;
+  const identifiant = focus.avant;
+  focus.avant = null;
+  const meme = identifiant === "" ? null : conteneur.querySelector(`#${identifiant}`);
+  (meme ?? conteneur.querySelector("[data-focus-initial]") ?? repereDeFocus)?.focus();
+}
+
+function memoriserLeFocus(ctx) {
+  const actif = ctx.doc.activeElement;
+  ctx.focus.avant =
+    actif !== null && actif !== undefined && ctx.conteneur.contains(actif) ? actif.id : null;
+}
+
+function lesEffets(ctx) {
+  const { conteneur, regionDErreur } = ctx;
+  return Object.freeze({
     remplacerLeContenu(fragment) {
-      memoriserLeFocus();
+      memoriserLeFocus(ctx);
       conteneur.replaceChildren(fragment);
     },
     retirerLaRegionDErreur() {
@@ -100,19 +86,39 @@ export function creerLAffichage({
     estamper(occurrence, valeur) {
       conteneur.setAttribute("data-occurrence", String(occurrence));
       conteneur.setAttribute("data-vue", String(valeur.empreinte));
-      surPublication();
-      rendreLeFocus();
+      ctx.surPublication();
+      rendreLeFocus(ctx);
     },
-    masquer: () => void masquer(),
+    masquer: () => void masquerLeConteneur(conteneur),
     montrerLaRegionDErreur(occurrence) {
       regionDErreur.setAttribute("data-erreur", String(occurrence));
       regionDErreur.hidden = false;
     },
   });
+}
 
+/**
+ * @param {{ doc: Document, conteneur: Element | null, regionDErreur: Element | null,
+ *           repereDeFocus?: Element | null, surPublication?: () => void }} appel
+ */
+export function creerLAffichage({
+  doc,
+  conteneur,
+  regionDErreur,
+  repereDeFocus = null,
+  surPublication = () => {},
+}) {
+  const ctx = {
+    doc,
+    conteneur,
+    regionDErreur,
+    repereDeFocus,
+    surPublication,
+    focus: { avant: null },
+  };
   return Object.freeze({
     nouveauFragment: () => doc.createDocumentFragment(),
-    masquer,
-    effets,
+    masquer: () => masquerLeConteneur(conteneur),
+    effets: lesEffets(ctx),
   });
 }

@@ -11,6 +11,7 @@
 // Les sections portent `data-bloc` : la page (le parcours) en montre ou en cache selon l'écran. Cela ne
 // change aucun CONTENU, seulement la visibilité de ce que la vue a déjà écrit.
 
+import { MESSAGES } from "./textes-du-parcours.mjs";
 import {
   avertissementDeRevocation,
   confirmationDeRevocation,
@@ -89,17 +90,11 @@ function ecritLaFin(doc, vue) {
 function ecritLeCompte(doc, vue) {
   const codes = vue.nombreDeCodes;
   if (codes === null || codes <= 0) return null;
-  const texte =
-    codes === 1
-      ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas l'ancien : " +
-        "les deux ouvriront ce coffre tant que vous n'en retirez aucun. Une sauvegarde faite avant ce " +
-        "nouveau code ne le connaît pas : refaites-en une à l'étape 6. Si vous avez retrouvé votre " +
-        "feuille, cliquez sur « Revenir : j'ai toujours ma feuille »."
-      : `Ce coffre porte déjà ${codes} codes de récupération. En afficher un nouveau n'efface aucun des ` +
-        "précédents : tous ouvrent ce coffre tant que vous n'en retirez aucun. Une sauvegarde faite " +
-        "avant ce nouveau code ne le connaît pas : refaites-en une à l'étape 6. Si vous avez retrouvé " +
-        "votre feuille, cliquez sur « Revenir : j'ai toujours ma feuille ».";
-  return bloc(doc, "vue-codes", noeud(doc, "p", { id: "parcours-codes", texte }));
+  return bloc(
+    doc,
+    "vue-codes",
+    noeud(doc, "p", { id: "parcours-codes", texte: MESSAGES.codesDejaRendus(codes) }),
+  );
 }
 
 function ecritLaConfirmation(doc, vue, projection) {

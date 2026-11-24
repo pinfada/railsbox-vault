@@ -103,8 +103,12 @@ export const BLOCS = Object.freeze([
   "espace-de-travail",
   "sauvegarde",
   "restauration",
-  "revocation",
+  // Les blocs de la VUE (#265) : écrits dans le conteneur d'affichage, dans l'ordre où la vue les écrit.
+  "impose",
+  "fin",
+  "vue-codes",
   "sans-revoquer",
+  "revocation",
   "continuer",
   "retour",
 ]);
@@ -341,7 +345,7 @@ export function etapeDeLURL(texte) {
  *
  * @param {{ pointeur: number | null, coffre: string, moyens?: string[], nombreDeCodes?: number,
  *           feuilleEprouvee?: boolean, progression?: object, sousEtatDuCode?: string,
- *           revocationFaite?: boolean, sansRevoquer?: boolean, phrasePerdue?: boolean,
+ *           fin?: string | null, sansRevoquer?: boolean, phrasePerdue?: boolean,
  *           nouveauCodeDemande?: boolean, refus?: string | null, moteur?: string }} observation
  * @returns {string} une clé de `ECRANS`
  */
@@ -353,7 +357,7 @@ export function ecranCourant({
   feuilleEprouvee = false,
   progression = PROGRESSION_INITIALE,
   sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce,
-  revocationFaite = false,
+  fin = null,
   sansRevoquer = false,
   phrasePerdue = false,
   nouveauCodeDemande = false,
@@ -374,8 +378,8 @@ export function ecranCourant({
       feuilleEprouvee,
       progression,
       sousEtatDuCode,
-      // Retenue par la progression, la révocation survit au rechargement (#223).
-      revocationFaite: revocationFaite || progression.revocationFaite === true,
+      // La fin offerte par l'ÉTAT (S3) ; l'indice persisté (#223) n'en choisit jamais d'autre (D4).
+      fin,
       sansRevoquer,
       nouveauCodeDemande,
       moteur,
@@ -414,7 +418,7 @@ function ecranOuvert({
   feuilleEprouvee,
   progression,
   sousEtatDuCode,
-  revocationFaite,
+  fin,
   sansRevoquer,
   nouveauCodeDemande,
   moteur,
@@ -437,7 +441,7 @@ function ecranOuvert({
     8: "recuperer-preparer",
     // L'étape 9 est FACULTATIVE (décision du 19/09/2026) : une visite ne détruit pas le moyen
     // d'ouverture quotidien de la personne.
-    9: revocationFaite ? "termine" : sansRevoquer ? "termine-sans-revoquer" : "revoquer",
+    9: fin ?? (sansRevoquer ? "termine-sans-revoquer" : "revoquer"),
   };
   const choisi = parEtape[pointeur] ?? (progression.visiteTerminee ? "accueil" : "travailler");
   if (moteur === "firefox" && (choisi === "travailler" || choisi === "accueil")) {
@@ -456,7 +460,8 @@ export const ECRANS_AVEC_RETOUR = Object.freeze([
   "restaurer-ailleurs",
   "recuperer-preparer",
   "revoquer",
-  "termine",
+  "etat-du-coffre",
+  "termine-sans-attestation",
   "termine-sans-revoquer",
 ]);
 

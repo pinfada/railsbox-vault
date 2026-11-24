@@ -51,7 +51,7 @@ export function observationDeLEtat({ etat }) {
     nombreDeCodes: donnees === null ? undefined : donnees.nombreDeCodes,
     feuilleEprouvee: constat?.feuilleEprouvee === true,
     refus: donnees?.refus?.code ?? null,
-    fin: etat.phase === "K" ? "termine" : vue.finDisponible,
+    fin: vue.finDisponible,
   };
 }
 
