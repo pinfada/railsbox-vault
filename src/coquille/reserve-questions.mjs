@@ -12,6 +12,13 @@ export const DELAIS_PAR_DEFAUT = Object.freeze({
   delaiInstallationInitialeMs: 25_000,
   /** Borne de la RÉPARATION (`reparer` retélécharge les entrées abîmées). */
   delaiReparationMs: 60_000,
+  /**
+   * Délai de GRÂCE après un `update()` résolu sans Worker installant visible : la navigation a pu lancer sa
+   * propre mise à jour, que `update()` rejoint avant que `updatefound` ne soit dit (mesuré sous Chromium :
+   * une version en attente révoquée n'était vue qu'après la décision). Sans lui, le portail décide trop tôt ;
+   * l'observateur permanent annonce alors après coup, sans interrompre la session (ADR 0048 § 8).
+   */
+  delaiDeGraceMs: 400,
   /** Borne de la poignée de main du Worker de confiance. */
   delaiAnnonceMs: 8_000,
 });

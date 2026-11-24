@@ -48,15 +48,18 @@ function estUneIdentite(reponse) {
   );
 }
 
-/** Identifie le Worker en attente : sa version, son plancher, ou — s'il se tait — « muet », jamais inventé. */
-function identifierLAttente(ctx) {
-  const enAttente = ctx.registration.waiting;
-  if (!enAttente) {
+/**
+ * Identifie un Worker en attente : sa version, son plancher, ou — s'il se tait — « muet », jamais inventé.
+ * Le Worker qui vient de passer `installed` est identifié PAR LUI-MÊME : sous Chromium,
+ * `registration.waiting` n'est pas encore à jour quand `statechange` est émis (mesuré).
+ */
+function identifierLAttente(ctx, worker = ctx.registration.waiting) {
+  if (!worker) {
     ctx.attente = null;
     recalculer(ctx);
     return Promise.resolve();
   }
-  ctx.identification = interroger(enAttente, "version", ctx.delaiReponseMs).then((reponse) => {
+  ctx.identification = interroger(worker, "version", ctx.delaiReponseMs).then((reponse) => {
     ctx.attente = estUneIdentite(reponse)
       ? {
           muet: false,
@@ -65,41 +68,46 @@ function identifierLAttente(ctx) {
           retrait: reponse.retrait === true,
         }
       : { muet: true };
+    ctx.enAttente = worker;
     recalculer(ctx);
   });
   return ctx.identification;
 }
 
-/** Suit un Worker installant : `installed` l'identifie, `redundant` avant `installed` est un rejet. */
+/**
+ * Suit un Worker installant : `installed` l'identifie, `redundant` avant `installed` est un rejet. Rend une
+ * promesse réglée quand le Worker n'est plus `installing` ET que ce travail est fait : un appelant qui
+ * l'attend voit donc l'identification en cours, quel que soit l'ordre des écouteurs (sous Chromium,
+ * `update()` résout AVANT `updatefound` : mesuré).
+ */
 function suivre(ctx, worker) {
-  if (!worker || ctx.suivis.has(worker)) return;
-  ctx.suivis.add(worker);
-  worker.addEventListener("statechange", () => {
+  if (!worker) return Promise.resolve();
+  if (ctx.reglages.has(worker)) return ctx.reglages.get(worker);
+  let regler = () => {};
+  const reglage = new Promise((resoudre) => {
+    regler = resoudre;
+  });
+  ctx.reglages.set(worker, reglage);
+  const surChangement = () => {
     if (worker.state === "installed") {
       ctx.installes.add(worker);
-      void identifierLAttente(ctx);
+      void identifierLAttente(ctx, worker);
     } else if (worker.state === "redundant") {
       if (!ctx.installes.has(worker)) {
         // Rejeté AVANT d'avoir été installé : une version différente est apparue et n'a pas pu s'installer.
         ctx.installationRejetee = true;
         ctx.maj = "rejetee";
-      } else if (ctx.registration.waiting === null) {
+      } else if (ctx.enAttente === worker) {
         ctx.attente = null;
+        ctx.enAttente = null;
       }
       recalculer(ctx);
     }
-  });
-}
-
-/** Une promesse qui se règle quand le Worker n'est plus `installing`. */
-function installationReglee(worker) {
-  return new Promise((resoudre) => {
-    const verifier = () => {
-      if (REGLE.has(worker.state)) resoudre("regle");
-    };
-    worker.addEventListener("statechange", verifier);
-    verifier();
-  });
+    if (REGLE.has(worker.state)) regler("regle");
+  };
+  worker.addEventListener("statechange", surChangement);
+  if (REGLE.has(worker.state)) surChangement();
+  return reglage;
 }
 
 /**
@@ -117,10 +125,14 @@ async function verifier(ctx, delaiMs) {
       () => "echec",
     );
   let issue = await Promise.race([miseAJour, apresUnDelai(delaiMs, "delai")]);
+  if (issue === "ok" && !ctx.registration.installing) {
+    // `update()` a pu rejoindre une mise à jour déjà lancée : `updatefound` peut suivre de quelques ms.
+    await Promise.race([ctx.nouvelleVersion, apresUnDelai(ctx.delaiDeGraceMs, null)]);
+  }
   if (issue === "ok" && ctx.registration.installing) {
     const restant = Math.max(0, delaiMs - (Date.now() - debut));
     const fin = await Promise.race([
-      installationReglee(ctx.registration.installing),
+      suivre(ctx, ctx.registration.installing),
       apresUnDelai(restant, "delai"),
     ]);
     if (fin === "delai") issue = "delai";
@@ -137,6 +149,7 @@ async function verifier(ctx, delaiMs) {
  * @param {(etat: import("./reserve-fraicheur.mjs").EtatDeFraicheur) => void} o.surEtat
  * @param {number} o.sequenceCourante
  * @param {number} o.delaiReponseMs
+ * @param {number} [o.delaiDeGraceMs]
  */
 export function creerLObservateur({
   registration,
@@ -144,6 +157,7 @@ export function creerLObservateur({
   surEtat,
   sequenceCourante,
   delaiReponseMs,
+  delaiDeGraceMs = 0,
 }) {
   const ctx = {
     registration,
@@ -154,12 +168,20 @@ export function creerLObservateur({
     maj: "non-tentee",
     /** @type {null | { muet?: boolean, sequence?: number, plancher?: number, retrait?: boolean }} */
     attente: null,
+    enAttente: null,
     identification: Promise.resolve(),
-    suivis: new WeakSet(),
+    reglages: new Map(),
     installes: new WeakSet(),
     installationRejetee: false,
+    delaiDeGraceMs,
+    nouvelleVersion: null,
+    surNouvelleVersion: () => {},
   };
+  ctx.nouvelleVersion = new Promise((resoudre) => {
+    ctx.surNouvelleVersion = resoudre;
+  });
   registration.addEventListener("updatefound", () => {
+    ctx.surNouvelleVersion();
     suivre(ctx, registration.installing);
     recalculer(ctx);
   });

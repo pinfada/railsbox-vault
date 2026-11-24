@@ -172,6 +172,7 @@ export const DELAIS = Object.freeze({
   delaiReponseMs: 40,
   delaiVerificationMs: 120,
   delaiAnnonceMs: 60,
+  delaiDeGraceMs: 10,
   delaiInstallationInitialeMs: 200,
 });
 

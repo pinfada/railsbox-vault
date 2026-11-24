@@ -40,6 +40,7 @@ async function observerEtDecider(ctx, conteneur, controleur) {
       surEtat: ctx.surEtat,
       sequenceCourante: sequencePage,
       delaiReponseMs: d.delaiReponseMs,
+      delaiDeGraceMs: d.delaiDeGraceMs,
     });
   }
   const [identite, verification, fraiche] = await Promise.all([

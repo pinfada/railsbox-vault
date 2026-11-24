@@ -20,9 +20,6 @@ import {
   visiter,
 } from "./support-reserve.mjs";
 
-const REQUETES_DE_BOOT = (requete) =>
-  requete.chemin.startsWith("/artifacts/") || /v86-[0-9a-f]{16}\.wasm$/.test(requete.chemin);
-
 let origine;
 let navigateur;
 test.beforeEach(async ({ browserName }) => {

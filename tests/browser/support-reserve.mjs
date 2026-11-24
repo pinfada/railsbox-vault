@@ -7,7 +7,7 @@
 // Firefox l'ignore quand un SW est installé, WebKit coupe aussi ce que le SW sert — ADR 0048 § 14).
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { chromium, firefox, webkit } from "@playwright/test";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -25,11 +25,14 @@ import {
 export const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const PORT_COQUILLE = 4193;
 /** Un port par moteur : les projets `reserve-*` tournent en parallèle, et une origine n'est jamais partagée. */
-export const portDe = (nomDuMoteur) =>
-  ({ chromium: 4193, firefox: 4195, webkit: 4197 })[nomDuMoteur];
+/** `fichier` : un rang par fichier de spec — Playwright les exécute en parallèle, chacun a donc ses ports. */
+export const portDe = (nomDuMoteur, fichier = 0) =>
+  ({ chromium: 4193, firefox: 4195, webkit: 4197 })[nomDuMoteur] + fichier * 10;
 export const PORT_APPLICATION = 4194;
 export const ORIGINE_COQUILLE = `http://127.0.0.1:${PORT_COQUILLE}`;
-const SORTIE = join(RACINE, "artifacts", "publication-reserve-navigateur");
+// Un arbre par PROCESSUS : les projets `reserve-*` tournent en parallèle, et la publication efface sa sortie.
+const SORTIE = join(RACINE, "artifacts", `publication-reserve-navigateur-${process.pid}`);
+process.on("exit", () => rmSync(SORTIE, { recursive: true, force: true }));
 
 const TYPES = {
   ".ico": "image/vnd.microsoft.icon",
