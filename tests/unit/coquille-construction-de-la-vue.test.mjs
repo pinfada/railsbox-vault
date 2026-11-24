@@ -6,52 +6,19 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { construireLaVue } from "../../src/coquille/construction-de-la-vue.mjs";
-import { creerEtat, etatInitial } from "../../src/coquille/phases-de-la-revocation.mjs";
+import { etatInitial } from "../../src/coquille/phases-de-la-revocation.mjs";
 import { projeter } from "../../src/coquille/projection-de-la-revocation.mjs";
-import { normaliserLInventaire } from "../../src/coquille/reponse-de-la-revocation.mjs";
-import { TYPES_PRIVILEGIES } from "../../src/coquille/contrat-de-messages.mjs";
+import { etatDeLaPhase } from "./support-revocation.mjs";
 import { documentFactice } from "./support-dom-factice.mjs";
 
-function donnees({ codes = 1, phrase = true, feuille = true, ouvert = true } = {}) {
-  const emplacements = [];
-  if (phrase) {
-    emplacements.push({
-      typeKek: "phrase",
-      identifiantEmplacement: "p",
-      parametres: "ab".repeat(32),
-    });
-  }
-  for (let i = 0; i < codes; i += 1) {
-    emplacements.push({ typeKek: "recuperation", identifiantEmplacement: `r${i}` });
-  }
-  const normalise = normaliserLInventaire(
-    {
-      type: TYPES_PRIVILEGIES.inventaireReponse,
-      present: true,
-      refus: null,
-      versionEnveloppe: 3,
-      emplacements,
-      feuilleEprouvee: feuille,
-    },
-    { ouvert },
-  );
-  assert.equal(normalise.ok, true, "inventaire de test valide");
-  return Object.freeze({ ...normalise.donnees, lecture: 1 });
-}
-
-const etat = (phase, extra = {}) =>
-  creerEtat({
-    phase,
-    lecture: ["FL", "SL", "RL"].includes(phase) ? 1 : null,
-    sequence: 1,
-    donnees: ["F0", "FL", "FE", "FM", "SL", "SE", "SM", "RL", "RE", "RM", "V", "I"].includes(phase)
-      ? null
-      : donnees({ ouvert: phase !== "FC" }),
-    session: Object.freeze({ moyen: "recuperation" }),
-    indice: false,
-    occurrence: 1,
-    ...extra,
+const etat = (phase, extra = {}) => {
+  const { codes, phrase, ...reste } = extra;
+  return etatDeLaPhase(phase, {
+    moyen: "recuperation",
+    jeu: { codes: codes ?? 1, phrase: phrase ?? true },
+    ...reste,
   });
+};
 
 function rendre(phase, extra) {
   const doc = documentFactice();
@@ -125,7 +92,7 @@ test("[C2-11] la confirmation n'existe que dans C, et porte le texte final au co
 
 test("[C2-11] le compte des feuilles vient de la vue : deux codes, l'avertissement le dit", () => {
   const doc = documentFactice();
-  const fragment = construireLaVue(doc, projeter(etat("P", { donnees: donnees({ codes: 2 }) })));
+  const fragment = construireLaVue(doc, projeter(etat("P", { codes: 2 })));
   const hote = doc.createElement("div");
   doc.body.append(hote);
   hote.append(fragment);
