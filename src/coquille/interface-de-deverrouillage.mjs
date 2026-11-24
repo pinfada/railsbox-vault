@@ -44,6 +44,7 @@ import {
   versionANoter,
 } from "./feuille-de-recuperation.mjs";
 import { REFUS_SANS_CODE } from "./conduites-du-parcours.mjs";
+import { messageDeRefus } from "./refus-de-coquille.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
 import {
   CODE_PHRASE_FAIBLE,
@@ -261,6 +262,18 @@ function inventaireDeDerivation(contexte) {
 }
 
 /**
+ * Le message d'un code de refus de la coquille : le magasin ne propage jamais le MESSAGE du Worker (N3),
+ * la page lit donc celui que sa propre table associe au code.
+ */
+function messageDuCode(code) {
+  try {
+    return messageDeRefus(code);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Redit ce que le coffre porte — un MIROIR de diagnostic, écrit quand le magasin a ACCEPTÉ une lecture
  * courante (effet `publier`). Il ne sert à aucune décision : `ouvrirPar` relit les portes.
  */
@@ -280,7 +293,7 @@ function refleter(contexte, donnees, identifiantVolume) {
   if (refus !== null) {
     releve.dernierRefus = refus.code;
     dire(noeuds.moyens, "Ce coffre ne peut pas être ouvert par cette coquille.");
-    dire(noeuds.refus, conduiteDeRefus(refus.code, null));
+    dire(noeuds.refus, conduiteDeRefus(refus.code, messageDuCode(refus.code)));
     return publier(contexte);
   }
   dire(

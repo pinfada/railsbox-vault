@@ -90,7 +90,7 @@ function brancherLesGestes(ctx) {
   const { conteneur } = ctx.liaison;
   conteneur.addEventListener("click", (evenement) => {
     const cible = evenement.target?.closest?.("[data-geste]");
-    if (cible === null || cible === undefined || !conteneur.contains(cible)) return;
+    if (cible === null || cible === undefined) return;
     dire(ctx, ctx.revocation.appliquer({ type: cible.getAttribute("data-geste") }));
   });
 }

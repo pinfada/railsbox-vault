@@ -202,3 +202,24 @@ test("[R-8] le repli : si `hidden` est sans effet mais le nœud reste attaché, 
   assert.ok(essais >= 1);
   assert.equal(p.conteneur.hasAttribute("hidden"), true);
 });
+
+test("[R-9] le focus perdu va au nœud marqué `data-focus-initial` du contenu neuf, avant le repère stable", () => {
+  const p = page();
+  publier(p, 1, "e1", "oui", "non");
+  p.conteneur.querySelector("#non").focus();
+  const fragment = fragmentDe(p.doc, "annuler", "valider");
+  fragment.childNodes[0].setAttribute("data-focus-initial", "");
+  p.affichage.effets.remplacerLeContenu(fragment);
+  p.affichage.effets.estamper(2, { empreinte: "e2" });
+  assert.equal(p.doc.activeElement.id, "annuler");
+});
+
+test("[R-9] un nouvel appel à `memoriserLeFocus` oublie le précédent : le focus n'est rendu qu'une fois", () => {
+  const p = page();
+  publier(p, 1, "e1", "oui");
+  p.conteneur.querySelector("#oui").focus();
+  publier(p, 2, "e2", "oui");
+  p.repereDeFocus.focus();
+  publier(p, 3, "e3", "oui");
+  assert.equal(p.doc.activeElement, p.repereDeFocus, "le focus hors du conteneur n'est pas repris");
+});

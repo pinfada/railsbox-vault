@@ -103,9 +103,9 @@ function regler(ctx, t, resultat) {
   ctx.desarmer(t.delai);
   const occ = t.occurrence;
   try {
-    if (ctx.occurrence() !== occ) {
-      // JETER : aucun effet visible ; le successeur suit dans le `finally`.
-    } else if ("ok" in resultat) publier(ctx, t, occ, resultat.ok);
+    // Un résultat dont l'occurrence a changé est JETÉ : `autorise` le refuse à chaque effet, et le
+    // successeur suit dans le `finally`.
+    if ("ok" in resultat) publier(ctx, t, occ, resultat.ok);
     else echouer(ctx, t, occ);
   } catch (erreur) {
     noter(ctx, "regler-en-echec", erreur);

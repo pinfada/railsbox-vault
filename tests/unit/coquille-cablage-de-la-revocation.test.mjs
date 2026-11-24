@@ -332,3 +332,78 @@ test("[abonnés] un abonné peut APPLIQUER un événement : il s'exécute hors d
   assert.equal(reentree, null, "aucune réentrance : l'abonné est appelé après la transition");
   assert.equal(p.cablage.etat().phase, "P", "« changer d'étape » a oublié la confirmation");
 });
+
+test("[annonce] l'annonce d'un geste est EFFACÉE à la transition suivante : elle ne survit pas à l'état qu'elle décrit", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  p.clic("revocation-annuler");
+  await tourner();
+  assert.match(p.doc.getElementById("affichage-annonce").textContent, /dans cette séance/);
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  assert.equal(p.doc.getElementById("affichage-annonce").textContent, "");
+});
+
+test("[miroirs] chaque publication accepte annonce le rapport ; une lecture périmée n'en publie aucun", async () => {
+  const p = monterLeCablage();
+  p.cablage.demarrer();
+  p.cablage.appliquer({ type: "coffre-ouvert", moyen: "phrase" });
+  p.attentes.inventaire[0].resoudre({ ...reponseDInventaire(), feuilleEprouvee: true });
+  await tourner();
+  assert.equal(p.journal.publications, 0, "rien n'est publié pour une lecture abandonnée");
+  p.attentes.inventaire[1].resoudre({ ...reponseDInventaire(), feuilleEprouvee: true });
+  await tourner();
+  assert.equal(p.journal.publications, 1);
+});
+
+test("[doute] un doute est consigné dans le relevé : l'événement et le code, pour un diagnostic", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  p.clic("revocation-oui");
+  p.attentes.revoquerEnUrgence[0].rejeter(Object.assign(new Error("x"), { code: "VAULT_TEST" }));
+  await tourner();
+  assert.deepEqual(p.rapport.revocation, { evenement: "refus-type", code: "VAULT_TEST" });
+});
+
+test("[e1] `coffreOuvert` dit l'ouverture au magasin : relecture, moyen de la séance dans la vue", async () => {
+  const p = monterLeCablage();
+  p.cablage.demarrer();
+  await p.repondreALInventaire({ feuilleEprouvee: false });
+  const resultat = p.cablage.coffreOuvert("recuperation");
+  assert.equal(resultat.accepte, true);
+  assert.equal(p.cablage.etat().phase, "SL");
+  await p.repondreALInventaire();
+  assert.equal(p.cablage.etat().session.moyen, "recuperation");
+  assert.match(
+    p.doc.getElementById("parcours-avertissement-revocation").textContent,
+    /code de votre feuille/,
+  );
+});
+
+test("[envoi] les comptes du succès arrivent à `surRevocationAcquittee` tels que le Worker les a rendus", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  p.clic("revocation-oui");
+  p.attentes.revoquerEnUrgence[0].resoudre(SUCCES);
+  await tourner();
+  assert.deepEqual(p.journal.succes, [SUCCES]);
+});
+
+test("[e5] un échec d'écriture de l'indice ne perd pas la révocation : K est atteint, l'indice n'est pas posé", async () => {
+  const p = monterLeCablage({ noterRejette: true });
+  await p.jusquAP();
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  p.clic("revocation-oui");
+  p.attentes.revoquerEnUrgence[0].resoudre(SUCCES);
+  await tourner();
+  await p.repondreALInventaire({ emplacements: reponseDInventaire({ codes: 0 }).emplacements });
+  assert.equal(p.cablage.etat().phase, "K");
+  assert.equal(p.cablage.etat().indice, false);
+});

@@ -67,16 +67,23 @@ test("[X-b] `demasquer` lève après `remplacer` : repli autorisé (masquer + er
   assert.equal(b.rendeur.diagnostic().occurrencePubliee, null, "rien n'a été publié");
 });
 
-test("[X-b] si l'occurrence a changé pendant l'échec, le successeur part", async () => {
-  const b = banc({ defaillances: { demasquer: lever("démasquage") } });
+test("[X-b] si l'occurrence a changé pendant l'échec, le successeur part et l'ancienne occurrence n'affiche rien", async () => {
+  let b;
+  b = banc({
+    defaillances: {
+      demasquer: () => {
+        b.occ += 1;
+        throw new Error("démasquage");
+      },
+    },
+  });
   b.rendeur.reveiller();
   b.taches[0].ok();
-  b.occ += 1;
   await vider();
-  assert.equal(
-    b.lancementsDe(2),
-    1,
-    "le successeur de l'occurrence courante part dans le même tour",
+  assert.equal(b.lancementsDe(2), 1, "le successeur de l'occurrence courante est lancé");
+  assert.ok(
+    !b.visible.some((ligne) => ligne === "erreur:1" || ligne === "masquer"),
+    "l'occurrence périmée ne masque rien et ne montre aucune erreur",
   );
 });
 
@@ -112,17 +119,37 @@ test("[X-d] reprise tardive, occurrence INCHANGÉE : la région d'erreur reste, 
 
 // --- X-e : notification pendant le règlement -------------------------------------------------------
 
-test("[X-e] une transition synchrone pendant la publication arrête le bloc AVANT l'estampille, puis le successeur part", async () => {
+const EFFETS_DU_BLOC = [
+  ["remplacer", ["remplacer:1"]],
+  ["retirer-erreur", ["remplacer:1", "retirer-erreur"]],
+  ["demasquer", ["remplacer:1", "retirer-erreur", "demasquer"]],
+];
+
+for (const [effet, attendu] of EFFETS_DU_BLOC) {
+  test(`[X-e] une transition synchrone pendant « ${effet} » arrête le bloc : aucun effet suivant, jamais d'estampille, successeur lancé`, async () => {
+    let b;
+    b = banc({ defaillances: { [effet]: () => b.avancer() } });
+    b.rendeur.reveiller();
+    b.taches[0].ok();
+    await vider();
+    assert.deepEqual(b.visible.slice(0, attendu.length), attendu);
+    assert.ok(
+      !b.visible.some((ligne) => ligne === "estampe:1"),
+      "aucune estampille de l'ancienne occurrence",
+    );
+    assert.equal(b.visible.length, attendu.length, "aucun effet après la transition");
+    assert.equal(b.lancementsDe(2), 1, "le successeur de l'occurrence courante est lancé");
+  });
+}
+
+test("[X-e] une transition pendant `masquer` (échec) empêche la région d'erreur de l'ancienne occurrence", async () => {
   let b;
-  b = banc({ defaillances: { demasquer: () => b.avancer() } });
+  b = banc({ defaillances: { masquer: () => b.avancer() } });
   b.rendeur.reveiller();
-  b.taches[0].ok();
+  b.expirer();
   await vider();
-  assert.ok(
-    !b.visible.some((ligne) => ligne.startsWith("estampe")),
-    "aucune estampille de l'ancienne occurrence",
-  );
-  assert.equal(b.lancementsDe(2), 1, "le successeur de l'occurrence courante est lancé");
+  assert.deepEqual(b.visible, ["masquer"], "ni région d'erreur, ni estampille");
+  assert.equal(b.lancementsDe(2), 1);
 });
 
 // --- X-f : aucun rejet n'empêche le successeur ----------------------------------------------------

@@ -195,3 +195,29 @@ test("l'état initial n'affirme rien : l'écran imposé est le chargement, aucun
   assert.equal(hote.querySelector("#affichage-impose").getAttribute("data-impose"), "chargement");
   assert.equal(ids(hote).includes("parcours-avertissement-revocation"), false);
 });
+
+test("[#214] aucun compte de codes n'est écrit pour zéro code, et le compte exact pour N", () => {
+  assert.equal(rendre("P", { codes: 0 }).hote.querySelector("#parcours-codes"), null);
+  assert.match(
+    rendre("P", { codes: 3 }).hote.querySelector("#parcours-codes").textContent,
+    /3 codes/,
+  );
+});
+
+test("[focus] « Annuler » est le focus initial de la confirmation : la sortie sûre", () => {
+  const { hote } = rendre("C");
+  assert.equal(hote.querySelector("#revocation-annuler").hasAttribute("data-focus-initial"), true);
+  assert.equal(hote.querySelector("#revocation-oui").hasAttribute("data-focus-initial"), false);
+});
+
+test("chaque bloc de la vue est un `data-bloc` que le parcours connaît", () => {
+  const connus = new Set(["impose", "fin", "vue-codes", "sans-revoquer", "revocation"]);
+  for (const phase of ["P", "C", "V", "K", "I", "SL"]) {
+    for (const element of rendre(phase, { indice: true }).hote.querySelectorAll("[data-bloc]")) {
+      assert.ok(
+        connus.has(element.getAttribute("data-bloc")),
+        `${phase} : ${element.getAttribute("data-bloc")}`,
+      );
+    }
+  }
+});

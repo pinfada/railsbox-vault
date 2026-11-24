@@ -36,7 +36,7 @@ function essayer(ecriture) {
 }
 
 function masquerLeConteneur(conteneur) {
-  if (conteneur === null || conteneur === undefined) return false;
+  // Une référence absente fait lever chaque écriture, que `essayer` avale : le contrôle rend `false`.
   essayer(() => {
     conteneur.removeAttribute("data-vue");
     conteneur.removeAttribute("data-occurrence");

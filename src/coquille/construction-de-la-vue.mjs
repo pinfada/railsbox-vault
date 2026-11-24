@@ -146,7 +146,6 @@ function ecritLesGestes(doc, vue, projection) {
       }),
     ).parentNode,
   );
-  if (vue.moyenDOuverture === null && vue.moyens === null) return [sortie];
   const revocation = bloc(doc, "revocation");
   revocation.append(
     noeud(doc, "p", {
