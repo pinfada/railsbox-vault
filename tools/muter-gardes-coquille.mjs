@@ -793,9 +793,13 @@ export const MUTATIONS = Object.freeze([
     garde: "restaurer — l'ordre des retraits de la réparation (revue #208, constat 3)",
     fichier: "public/portabilite-du-worker.mjs",
     avant:
-      "      await prim.retirer(VOLUME_DE_LA_COQUILLE);\n      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n",
+      "      for (const voisin of voisinsDunVolume(VOLUME_DE_LA_COQUILLE)) await prim.retirer(voisin);\n" +
+      "      await prim.viderLeVolume(verrou);\n" +
+      "      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n",
     apres:
-      "      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n      await prim.retirer(VOLUME_DE_LA_COQUILLE);\n",
+      "      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n" +
+      "      for (const voisin of voisinsDunVolume(VOLUME_DE_LA_COQUILLE)) await prim.retirer(voisin);\n" +
+      "      await prim.viderLeVolume(verrou);\n",
     epreuves: [EPREUVE_PORTABILITE_DU_WORKER],
   },
   {
