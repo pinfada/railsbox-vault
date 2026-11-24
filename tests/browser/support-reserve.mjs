@@ -101,6 +101,7 @@ export function fabriquerGeneration({
   retrait = false,
   prefixesAnciens = [],
   transformerLeScript = (texte) => texte,
+  sansEntete = {},
 } = {}) {
   const { fichiers: depart, regles } = baseDePublication();
   const fichiers = new Map(depart);
@@ -112,7 +113,15 @@ export function fabriquerGeneration({
   }
   const reserve = fabriquerLaReserve({
     fichiers,
-    entetesDe: (chemin) => enTetesPour(regles, chemin),
+    entetesDe: (chemin) => {
+      const entetes = { ...enTetesPour(regles, chemin) };
+      // Une fixture, jamais le produit : une page SANS un en-tête, pour mesurer ce que le SW seul garde.
+      for (const nom of sansEntete[chemin] ?? []) {
+        for (const cle of Object.keys(entetes))
+          if (cle.toLowerCase() === nom.toLowerCase()) delete entetes[cle];
+      }
+      return entetes;
+    },
     sequence,
     plancher,
     prefixesAnciens,
@@ -142,6 +151,8 @@ export class Origine {
     this.sockets = new Set();
     this.serveur = null;
     this.dossierArtefacts = dossierArtefacts;
+    /** URL de script SW supplémentaires (migration d'URL) : chemin → octets. */
+    this.scripts = new Map();
   }
   publier(generation) {
     this.generation = generation;
@@ -199,10 +210,12 @@ export class Origine {
       return;
     }
     const { generation } = this;
-    if (brut === CHEMIN_DU_SW) {
+    const alias = this.scripts.get(brut);
+    if (alias !== undefined || brut === CHEMIN_DU_SW) {
+      const script = alias ?? generation.script;
       reponse
         .writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", ...entetes })
-        .end(generation.script);
+        .end(script);
       return;
     }
     if (this.dossierArtefacts && brut.startsWith("/artifacts/") && !brut.includes("..")) {
@@ -302,6 +315,7 @@ export async function ouvrirUnNavigateur(nomDuMoteur, { profil = null, options =
     contexte = await navigateur.newContext(options);
   }
   await contexte.addInitScript(SONDE_DES_WORKERS);
+  await contexte.addInitScript(SONDE_DES_CHANGEMENTS);
   return {
     contexte,
     async page() {
@@ -325,3 +339,45 @@ export async function visiter(page, origine, chemin = "/index.html") {
 
 /** `true` si ce projet est WebKit : le build Playwright n'a pas d'OPFS (déverrouillage non prouvable). */
 export const estWebkit = (nomDuMoteur) => nomDuMoteur === "webkit";
+
+/** Un fichier de l'arbre publié avec un ajout en fin : un AUTRE contenu, valide, sans rien casser. */
+export function avecUnAjout(chemin, ajout) {
+  return Buffer.concat([baseDePublication().fichiers.get(chemin), Buffer.from(ajout)]);
+}
+
+/** Compte les `controllerchange` de la page, dès le premier instant. */
+export const SONDE_DES_CHANGEMENTS = () => {
+  window.__controllerchange = 0;
+  navigator.serviceWorker?.addEventListener("controllerchange", () => {
+    window.__controllerchange += 1;
+  });
+};
+
+/** Ce que la page sait de son inscription et de ses caches. */
+export const etatDeLInscription = (page) =>
+  page.evaluate(async () => {
+    const inscription = await navigator.serviceWorker.getRegistration("/");
+    return {
+      actif: inscription?.active?.state ?? null,
+      attente: inscription?.waiting?.state ?? null,
+      installant: inscription?.installing?.state ?? null,
+      script: inscription?.active?.scriptURL ?? inscription?.waiting?.scriptURL ?? null,
+      caches: (await caches.keys()).sort(),
+      changements: window.__controllerchange ?? null,
+    };
+  });
+
+/** Demande une mise à jour de l'inscription (le navigateur ne la redemande pas toujours seul). */
+export const majDepuisLaPage = (page) =>
+  page.evaluate(async () => {
+    try {
+      await (await navigator.serviceWorker.getRegistration("/")).update();
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+/** Le contenu d'un fichier tel que la page le reçoit (donc servi par SA version du SW). */
+export const contenuVu = (page, chemin) =>
+  page.evaluate(async (c) => (await fetch(c)).text(), chemin);
