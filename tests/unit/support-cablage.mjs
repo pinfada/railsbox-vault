@@ -39,20 +39,6 @@ export function monterLeCablage(options = {}) {
     return d.promesse;
   };
   const conteneur = doc.getElementById("affichage");
-  if (options.masquerEchoue) {
-    conteneur.removeAttribute = () => {
-      throw new Error("retrait");
-    };
-    Object.defineProperty(conteneur, "hidden", {
-      get: () => false,
-      set: () => {},
-      configurable: true,
-    });
-    conteneur.setAttribute = (nom, valeur) => {
-      if (nom === "hidden") return;
-      return Object.getPrototypeOf(conteneur).setAttribute.call(conteneur, nom, valeur);
-    };
-  }
   const cablage = creerLeCablage({
     doc,
     conteneur,
@@ -84,6 +70,17 @@ export function monterLeCablage(options = {}) {
     cablage.appliquer({ type: "coffre-ouvert", moyen });
     await repondreALInventaire({ ...surcharge });
   };
+  /** Le navigateur ne retire plus l'estampille ni ne pose `hidden` : le masquage ne s'établit plus. */
+  const saboterLeMasquage = () => {
+    conteneur.removeAttribute = () => {
+      throw new Error("retrait");
+    };
+    Object.defineProperty(conteneur, "hidden", {
+      get: () => false,
+      set: () => {},
+      configurable: true,
+    });
+  };
   const clic = (id) => {
     const bouton = doc.getElementById(id);
     bouton.click?.();
@@ -102,6 +99,7 @@ export function monterLeCablage(options = {}) {
     repondreALInventaire,
     jusquAP,
     clic,
+    saboterLeMasquage,
     clicSynthetique,
     texte: () => conteneur.textContent,
     estampille: () => conteneur.getAttribute("data-vue"),

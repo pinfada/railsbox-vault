@@ -15,17 +15,23 @@ import {
 
 // --- le montage et la première publication -------------------------------------------------------------
 
-test("[montage] demarrer lance UNE lecture de l'inventaire ; l'affichage reste masqué jusqu'à la publication", async () => {
+test("[montage] demarrer lance UNE lecture ; l'écran imposé « chargement » est publié, puis cède à la vue de la lecture", async () => {
   const p = monterLeCablage();
   assert.equal(p.estampille(), null, "avant tout : aucune estampille");
   p.cablage.demarrer();
   assert.deepEqual(p.messages, ["inventaire"]);
   await tourner();
-  assert.equal(p.conteneur.hidden, true, "pas de réponse : le conteneur reste masqué");
-  assert.equal(p.estampille(), null);
+  assert.equal(p.cablage.etat().phase, "FL");
+  assert.equal(p.doc.getElementById("affichage-impose").getAttribute("data-impose"), "chargement");
+  assert.equal(p.conteneur.getAttribute("data-occurrence"), String(p.cablage.etat().occurrence));
   await p.repondreALInventaire({ feuilleEprouvee: false });
-  assert.notEqual(p.estampille(), null, "la réponse acceptée est publiée puis estampillée");
-  assert.equal(p.conteneur.hidden, false);
+  assert.equal(p.cablage.etat().phase, "FC");
+  assert.equal(
+    p.doc.getElementById("affichage-impose"),
+    null,
+    "la lecture acceptée remplace l'écran imposé",
+  );
+  assert.equal(p.conteneur.getAttribute("data-occurrence"), String(p.cablage.etat().occurrence));
 });
 
 test("[C2-1′] le miroir (`rapport`) n'est écrit QUE par `publier`, après acceptation : une réponse périmée n'écrit rien", async () => {
@@ -74,34 +80,38 @@ test("[C2-1′] lirePublic et lireLeConstat sont les portes : fermées avant la 
 
 // --- les gestes : première instruction, aucune lecture de `aria-disabled` --------------------------------
 
-test("[C2-2] un clic synthétique sur un bouton `aria-disabled` est REFUSÉ par la table, et l'état ne bouge pas", async () => {
+test("[C2-2] pendant l'envoi, « Terminer sans révoquer » est REFUSÉ par la table : aucun bouton n'est offert, aucun effet", async () => {
   const p = monterLeCablage();
   await p.jusquAP();
-  const avant = p.cablage.etat();
-  assert.equal(p.doc.getElementById("revocation-oui"), null, "pas de confirmation en P");
-  p.cablage.appliquer({ type: "demander-la-revocation" });
-  await tourner();
-  p.cablage.appliquer({ type: "annuler" });
-  await tourner();
-  assert.equal(p.cablage.etat().phase, "P");
-  void avant;
-  const bouton = p.doc.getElementById("parcours-sans-revoquer");
-  assert.equal(bouton.getAttribute("aria-disabled"), "false");
-  // en V, plus aucune sortie : le bouton rendu est `aria-disabled`, et le clic synthétique n'a aucun effet
-  p.cablage.appliquer({ type: "demander-la-revocation" });
+  p.clic("revoquer-en-urgence");
   await tourner();
   p.clic("revocation-oui");
   await tourner();
   assert.equal(p.cablage.etat().phase, "V");
+  assert.equal(p.doc.getElementById("parcours-sans-revoquer"), null, "aucune sortie rendue en V");
   const termine = p.journal.termine;
-  p.clicSynthetique("parcours-sans-revoquer");
-  assert.equal(
-    p.cablage.etat().phase,
-    "V",
-    "« Terminer sans révoquer » est refusé pendant l'envoi",
-  );
+  const resultat = p.cablage.appliquer({ type: "terminer-sans-revoquer" });
+  assert.equal(resultat.accepte, false);
   assert.equal(p.journal.termine, termine, "le geste n'a pas été exécuté");
   assert.match(p.doc.getElementById("affichage-annonce").textContent, /en cours/);
+});
+
+test("[C2-2] un clic synthétique sur « Révoquer… » rendu `aria-disabled` (K) est REFUSÉ par la table et DIT pourquoi", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  p.clic("revocation-oui");
+  p.attentes.revoquerEnUrgence[0].resoudre(SUCCES);
+  await tourner();
+  await p.repondreALInventaire({ emplacements: reponseDInventaire({ codes: 0 }).emplacements });
+  assert.equal(p.cablage.etat().phase, "K");
+  const bouton = p.doc.getElementById("revoquer-en-urgence");
+  assert.equal(bouton.getAttribute("aria-disabled"), "true");
+  p.clicSynthetique("revoquer-en-urgence");
+  assert.equal(p.cablage.etat().phase, "K");
+  assert.equal(p.messages.filter((m) => m === "revoquerEnUrgence").length, 1);
+  assert.match(p.doc.getElementById("affichage-annonce").textContent, /déjà été faite/);
 });
 
 test("[C2-2] « Révoquer… » ouvre la confirmation ; « Annuler » la ferme et dit qu'aucun geste n'a été fait dans la séance", async () => {
@@ -156,10 +166,11 @@ test("[C2-13] « Oui » : le conteneur est MASQUÉ quand le message part, et un 
 });
 
 test("[C2-13] masquage IMPOSSIBLE : aucun message n'est posé sur le canal, l'envoi est annulé et dit", async () => {
-  const p = monterLeCablage({ masquerEchoue: true });
+  const p = monterLeCablage();
   await p.jusquAP();
   p.clic("revoquer-en-urgence");
   await tourner();
+  p.saboterLeMasquage();
   p.clic("revocation-oui");
   await tourner();
   assert.equal(p.messages.filter((m) => m === "revoquerEnUrgence").length, 0, "aucun message");
@@ -221,9 +232,10 @@ test("[C2-3] `modifier` : le lanceur part après le masquage, puis l'inventaire 
 });
 
 test("[C2-3] `modifier` avec un masquage impossible : le lanceur n'est JAMAIS appelé", async () => {
-  const p = monterLeCablage({ masquerEchoue: true });
+  const p = monterLeCablage();
   p.cablage.demarrer();
   await p.repondreALInventaire({ feuilleEprouvee: false });
+  p.saboterLeMasquage();
   let appele = 0;
   const resultat = p.cablage.modifier(() => {
     appele += 1;
