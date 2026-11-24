@@ -293,6 +293,7 @@ class Document extends Noeud {
     this.activeElement = this.body;
     this.defaultView = null;
   }
+  Evenement = Evenement;
   createElement(nom) {
     return new Element(this, nom);
   }
