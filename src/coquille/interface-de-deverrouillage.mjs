@@ -333,7 +333,7 @@ async function ouvrirPar(contexte, moyen, corps, avantEnvoi = null) {
   if (!lue.valide) return dire(noeuds.refus, lue.aveu);
   // Rien n'est dérivé pour un coffre que l'inventaire a déjà refusé : aucune attente pour rien.
   const inventaire = inventaireDeDerivation(contexte);
-  if (inventaire === null) return dire(noeuds.refus, TEXTE_PAS_ENCORE_LU);
+  if (inventaire === null) return refuserSansInventaire(contexte);
   if (inventaire.refus) return montrerLeRefus(contexte, inventaire.refus);
   dire(noeuds.refus, "");
   surMesure("geste");
@@ -391,6 +391,19 @@ export function messageDOuverture(reponse) {
   return reponse.enveloppeMigree === true
     ? `${version} L'enveloppe a été mise à jour au format v2 : RE-NOTEZ cette version — celle que vous aviez notée ne vaut plus.`
     : version;
+}
+
+/**
+ * La page ne sait pas ce que le coffre contient (lecture en cours, ou en échec) : aucune dérivation ne
+ * part. Un Worker MORT le dit par son refus typé — c'est lui, la cause —, sinon la page dit d'attendre.
+ */
+async function refuserSansInventaire(contexte) {
+  try {
+    await contexte.demander("etat", {});
+  } catch (erreur) {
+    return montrerLeRefus(contexte, erreur);
+  }
+  dire(contexte.noeuds.refus, TEXTE_PAS_ENCORE_LU);
 }
 
 /** Rend un refus à l'utilisateur, sous sa conduite et son code. Un seul endroit, un seul format. */
@@ -482,7 +495,7 @@ async function ouvrirParLaPasskey(contexte) {
   const lue = relireLAncre(contexte);
   if (!lue.valide) return dire(contexte.noeuds.refus, lue.aveu);
   const inventaire = inventaireDeDerivation(contexte);
-  if (inventaire === null) return dire(contexte.noeuds.refus, TEXTE_PAS_ENCORE_LU);
+  if (inventaire === null) return refuserSansInventaire(contexte);
   if (inventaire.refus) return montrerLeRefus(contexte, inventaire.refus);
   dire(contexte.noeuds.refus, "");
   try {

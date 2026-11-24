@@ -1245,15 +1245,6 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_PARCOURS_CONDUITES],
   },
   {
-    nom: "un refus de GESTE n'est pas un refus d'inventaire",
-    garde: "coffreObserve — la ligne des moyens d'un refus d'inventaire",
-    fichier: PARCOURS,
-    avant:
-      '  if (REFUS_D_INVENTAIRE.includes(dernierRefus) && texte.startsWith("Ce coffre ne peut pas")) {\n',
-    apres: '  if (texte.startsWith("Ce coffre ne peut pas")) {\n',
-    epreuves: [EPREUVE_PARCOURS],
-  },
-  {
     nom: "un code du chemin rend SA conduite, jamais la phrase générique",
     garde: "conduiteHumaine — la lecture de la table",
     fichier: "src/coquille/conduites-du-parcours.mjs",

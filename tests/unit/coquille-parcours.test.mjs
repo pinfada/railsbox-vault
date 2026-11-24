@@ -36,7 +36,6 @@ import {
   annonceDeLaSaisie,
   attenteDeLaPhrase,
   codeEnFinDeTexte,
-  coffreObserve,
   ecranCourant,
   ecrireProgression,
   etapeAdmise,
@@ -651,34 +650,6 @@ test("« où suis-je » et l'étape suivante ; un coffre restauré n'a pas joué
   assert.equal(etapeSuivante("sauvegarder").titre, "Restaurer sur un autre appareil");
   assert.equal(etapeSuivante("revoquer"), null);
   assert.equal(etapeSuivante("chargement"), null);
-});
-
-test("l'état du coffre se lit des relevés publiés", () => {
-  assert.equal(coffreObserve({ etat: "ouvert", texteDesMoyens: "" }), COFFRE.ouvert);
-  assert.equal(coffreObserve({ etat: "verrouille", texteDesMoyens: "" }), COFFRE.inconnu);
-  assert.equal(
-    coffreObserve({ etat: "verrouille", texteDesMoyens: "Aucun coffre sur cet appareil." }),
-    COFFRE.absent,
-  );
-  assert.equal(
-    coffreObserve({
-      etat: "verrouille",
-      texteDesMoyens: "Ce coffre s'ouvre par : une phrase de déverrouillage (version 1).",
-      moyensProposes: ["phrase"],
-    }),
-    COFFRE.verrouille,
-  );
-  const refuse = {
-    etat: "verrouille",
-    texteDesMoyens: "Ce coffre ne peut pas être ouvert par cette coquille.",
-    dernierRefus: CODES_REFUS_COQUILLE.coffreAnterieur,
-  };
-  assert.equal(coffreObserve(refuse), COFFRE.refuse);
-  assert.equal(
-    coffreObserve({ ...refuse, dernierRefus: "VAULT_ENVELOPPE_CLE_REFUSEE" }),
-    COFFRE.absent,
-    "un refus de GESTE n'est pas un refus d'inventaire",
-  );
 });
 
 test("les lignes d'état publiées se lisent, code compris", () => {

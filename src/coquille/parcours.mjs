@@ -286,31 +286,6 @@ export function etapeAdmise(demandee, progression) {
 }
 
 /**
- * L'état du coffre, lu de ce que la coquille a PUBLIÉ : l'état du relevé, la ligne des moyens et le
- * relevé de l'interface de déverrouillage. Rien n'est demandé au Worker pour le savoir.
- *
- * @param {{ etat?: string | null, texteDesMoyens?: string | null, moyensProposes?: string[],
- *           dernierRefus?: string | null }} releves
- * @returns {string} une valeur de `COFFRE`
- */
-export function coffreObserve({
-  etat = null,
-  texteDesMoyens = "",
-  moyensProposes = [],
-  dernierRefus = null,
-}) {
-  if (etat === "ouvert") return COFFRE.ouvert;
-  const texte = String(texteDesMoyens ?? "").trim();
-  if (texte === "") return COFFRE.inconnu;
-  // La ligne que `rafraichirLInventaire` écrit pour un refus d'inventaire, et elle seule.
-  if (REFUS_D_INVENTAIRE.includes(dernierRefus) && texte.startsWith("Ce coffre ne peut pas")) {
-    return COFFRE.refuse;
-  }
-  if (moyensProposes.length > 0) return COFFRE.verrouille;
-  return COFFRE.absent;
-}
-
-/**
  * Les sous-états de l'étape 3 quand la feuille est affichée DANS CETTE PAGE : annoncée, affichée,
  * puis recopiée — le code est encore dans le document, et la personne peut le revoir tant qu'elle n'a
  * pas verrouillé (#239 : la confirmation EST une ouverture par le code, après verrouillage).

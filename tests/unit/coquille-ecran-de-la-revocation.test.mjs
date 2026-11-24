@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { COFFRE } from "../../src/coquille/parcours.mjs";
+import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import {
   ecranImposeDeLEtat,
   observationDeLEtat,
@@ -48,10 +49,17 @@ test("[coffre] fermé et lu (FC) : verrouillé s'il porte des moyens, absent sin
     COFFRE.absent,
   );
   const refus = observationDeLEtat({
-    etat: vide({ refus: { code: "VAULT_COFFRE_ANTERIEUR" }, present: true }),
+    etat: vide({ refus: { code: CODES_REFUS_COQUILLE.coffreAnterieur }, present: true }),
     pointeur: null,
   });
-  assert.equal(refus.refus, "VAULT_COFFRE_ANTERIEUR");
+  assert.equal(refus.refus, CODES_REFUS_COQUILLE.coffreAnterieur);
+  assert.equal(refus.coffre, COFFRE.refuse);
+  // Un refus de GESTE n'est pas un refus d'inventaire : sans moyen proposé, le coffre est « absent ».
+  const geste = observationDeLEtat({
+    etat: vide({ refus: { code: "VAULT_ENVELOPPE_CLE_REFUSEE" }, present: true }),
+    pointeur: null,
+  });
+  assert.equal(geste.coffre, COFFRE.absent);
 });
 
 test("[C2-1′] les données de décision viennent des deux portes : fermées là où la page ne sait pas", () => {
