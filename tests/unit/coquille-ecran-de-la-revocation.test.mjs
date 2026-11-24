@@ -89,7 +89,9 @@ test("[S3] la fin offerte : `termine` dans K seulement ; `termine-sans-attestati
 
 test("[D4] l'indice seul n'ouvre jamais `termine` (l'écran qui dit « révoqué »)", () => {
   for (const phase of LISTE_DES_PHASES) {
+    if (phase === "K") continue; // `termine` y vient de l'acquit du Worker, jamais de l'indice
     assert.notEqual(observer(phase, { indice: true }).fin, "termine", phase);
+    assert.notEqual(observer(phase, { indice: false }).fin, "termine", phase);
   }
 });
 
