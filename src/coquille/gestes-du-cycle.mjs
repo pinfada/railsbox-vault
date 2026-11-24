@@ -50,6 +50,7 @@ import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
  *                    conclure: (etape: string, issue: string, motif?: string | null) => void },
  *           rapport: Record<string, unknown>, publier: () => void,
  *           avantVerrouillage?: (declencheur: string) => void,
+ *           accepteLeVerrouillage?: () => boolean,
  *           apresRefusDOrdre?: (code: string) => void,
  *           apresRefusDeVerrouillage?: (code: string | null, declencheur: string) => void,
  *           apresVerrouillage: (declencheur: string) => void }} liaison
@@ -323,8 +324,11 @@ async function reprendre(contexte) {
  * @returns {{ verrouille: false, code: string, horsOrdre: true } | null} le refus, ou `null` si
  *   l'ordre laisse passer.
  */
-function refusDOrdre({ enVol, dire, apresRefusDOrdre }, declencheur) {
-  if (enVol?.demarrage !== true) return null;
+function refusDOrdre({ enVol, dire, apresRefusDOrdre, accepteLeVerrouillage }, declencheur) {
+  // La TABLE de la révocation tranche aussi (#265, C2-2) : pas de verrouillage pendant l'envoi d'une
+  // révocation ni pendant une modification de l'enveloppe — le rechargement couperait l'écriture.
+  const refuseParLaTable = accepteLeVerrouillage?.() === false;
+  if (enVol?.demarrage !== true && !refuseParLaTable) return null;
   const code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
   dire(`cycle:verrouillage-refuse:${code}`);
   // Le DÉCLENCHEUR voyage avec le refus, et il décide de ce qui suit : un geste refusé se reclique,

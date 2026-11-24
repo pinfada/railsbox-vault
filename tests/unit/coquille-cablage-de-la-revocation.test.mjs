@@ -301,3 +301,34 @@ test("[e18] « Revenir à mon application » est accepté en P, K, I et appelle 
   assert.equal(resultat.accepte, true);
   assert.equal(p.journal.revenu, 1);
 });
+
+test("[abonnés] chaque changement d'occurrence prévient les abonnés APRÈS la transition, et `attendre` se règle sur l'état", async () => {
+  const p = monterLeCablage();
+  const vus = [];
+  p.cablage.abonner(() => vus.push(p.cablage.etat().phase));
+  const attente = p.cablage.attendre((etat) => etat.phase === "FC");
+  p.cablage.demarrer();
+  await tourner();
+  assert.deepEqual(vus, ["FL"], "prévenu après la transition, avec l'état déjà posé");
+  await p.repondreALInventaire({ feuilleEprouvee: false });
+  await attente;
+  assert.equal(p.cablage.etat().phase, "FC");
+  await p.cablage.attendre((etat) => etat.phase === "FC");
+});
+
+test("[abonnés] un abonné peut APPLIQUER un événement : il s'exécute hors de la transition", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  let reentree = null;
+  p.cablage.abonner(() => {
+    try {
+      p.cablage.appliquer({ type: "changer-d-etape" });
+    } catch (erreur) {
+      reentree = erreur;
+    }
+  });
+  p.cablage.appliquer({ type: "demander-la-revocation" });
+  await tourner();
+  assert.equal(reentree, null, "aucune réentrance : l'abonné est appelé après la transition");
+  assert.equal(p.cablage.etat().phase, "P", "« changer d'étape » a oublié la confirmation");
+});

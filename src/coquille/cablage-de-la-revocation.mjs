@@ -58,7 +58,11 @@ function creerLesExecuteurs(ctx) {
       liaison.rapport.revocation = { evenement, code };
       liaison.publierLeRapport();
     },
-    vueARendre: () => ctx.rendeur.reveiller(),
+    vueARendre: () => {
+      ctx.rendeur.reveiller();
+      // Les abonnés sont prévenus APRÈS la transition : l'un d'eux peut appeler `appliquer`.
+      queueMicrotask(() => ctx.abonnes.forEach((abonne) => abonne()));
+    },
   };
 }
 
@@ -88,6 +92,19 @@ function brancherLesGestes(ctx) {
     const cible = evenement.target?.closest?.("[data-geste]");
     if (cible === null || cible === undefined || !conteneur.contains(cible)) return;
     dire(ctx, ctx.revocation.appliquer({ type: cible.getAttribute("data-geste") }));
+  });
+}
+
+/** Une promesse réglée quand l'état vérifie `predicat` : tout de suite, ou au premier changement qui le vérifie. */
+function attendre(ctx, predicat) {
+  return new Promise((rendre) => {
+    const verifier = () => {
+      if (!predicat(ctx.revocation.etat())) return;
+      ctx.abonnes.delete(verifier);
+      rendre();
+    };
+    ctx.abonnes.add(verifier);
+    verifier();
   });
 }
 
@@ -138,6 +155,7 @@ export function creerLeCablage(liaison) {
     /** La dernière réponse de révocation ; lue par `noter`, appelé à l'acquit de CETTE demande. */
     derniere: { reponse: null },
     revocation: null,
+    abonnes: new Set(),
     affichage: creerLAffichage({
       doc: liaison.doc,
       conteneur: liaison.conteneur,
@@ -160,6 +178,8 @@ export function creerLeCablage(liaison) {
     appliquer: (evenement) => dire(ctx, revocation.appliquer(evenement)),
     modifier: (lanceur) => dire(ctx, revocation.modifier(lanceur)),
     definirLIndice: (valeur) => revocation.definirLIndice(valeur),
+    abonner: (abonne) => ctx.abonnes.add(abonne),
+    attendre: (predicat) => attendre(ctx, predicat),
     etat: () => revocation.etat(),
     projection: () => revocation.projection(),
     lirePublic: () => lirePublic(revocation.etat()),
