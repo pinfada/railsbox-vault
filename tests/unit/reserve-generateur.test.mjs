@@ -165,6 +165,39 @@ test("le script de RETRAIT est le même modèle, sans liste, marqué retrait, av
   assert.throws(() => fabriquerLeScriptDeRetrait({ prefixesAnciens: ["", "x"] }), /préfixe/);
 });
 
+test("une SURPRISE (fichier publié que la réserve ne saurait servir) fait ÉCHOUER la fabrication, en nommant le fichier", () => {
+  const surprise = fichiers();
+  surprise.set("/inconnu.xyz", Buffer.from("?"));
+  surprise.set("/dossier/sans-extension", Buffer.from("?"));
+  assert.throws(
+    () => fabriquerLaReserve({ fichiers: surprise, entetesDe, sequence: 4 }),
+    /ne saurait servir : .*\/inconnu\.xyz.*\/dossier\/sans-extension/,
+  );
+});
+
+test("un ancien préfixe de cache ne peut être ni le préfixe produit, ni vide, ni mal formé", () => {
+  for (const prefixe of ["reserve-", "", "x", "A-", "a_b-", "a--b-", "-", 3, null]) {
+    assert.throws(
+      () =>
+        fabriquerLaReserve({
+          fichiers: fichiers(),
+          entetesDe,
+          sequence: 4,
+          prefixesAnciens: [prefixe],
+        }),
+      /préfixe/,
+      String(prefixe),
+    );
+  }
+  const admis = fabriquerLaReserve({
+    fichiers: fichiers(),
+    entetesDe,
+    sequence: 4,
+    prefixesAnciens: ["coquille-v1-"],
+  });
+  assert.deepEqual(admis.config.prefixesAnciens, ["coquille-v1-"]);
+});
+
 test("le classement de chemins reconnaît la surprise : un chemin ni listé, ni exclu, ni en passage est INCONNU", () => {
   const classes = classerLesChemins([
     ...fichiers().keys(),

@@ -3,7 +3,7 @@
  * révisée par l'ADR 0048 — #299).
  *
  * **LISTE BLANCHE (#299).** La règle « aucun Service Worker » devient « aucun AUTRE Service Worker que
- * celui-ci » : un seul appelant d'enregistrement dans l'arbre `coquille` (`src/coquille/reserve-portail.mjs`),
+ * celui-ci » : un seul appelant d'enregistrement dans l'arbre `coquille` (`src/coquille/reserve-installation.mjs`),
  * quelques fichiers nommés qui lisent `navigator.serviceWorker` pour le brancher, et un script SW publié —
  * généré (`tools/publier-reserve.mjs`), vérifié plus bas. Toute autre apparition d'une porte d'entrée de
  * Service Worker rougit ici, avec le même texte qu'avant. Côté `application`, seul
@@ -68,7 +68,7 @@ const PORTES = [
 /**
  * LA LISTE BLANCHE (ADR 0048 § 15) : pour chaque fichier publié par la coquille, les portes qu'il a le droit
  * de nommer. Un fichier absent de cette table n'en a aucune ; une porte absente de sa ligne est interdite.
- * L'enregistrement lui-même (`.register(`) a sa propre garde, plus bas : UN SEUL appelant, le portail.
+ * L'enregistrement lui-même (`.register(`) a sa propre garde, plus bas : UN SEUL appelant, l'installation de la réserve.
  */
 const LISTE_BLANCHE = Object.freeze({
   "public/coquille/reserve-de-la-page.mjs": ["navigator.serviceWorker"],
@@ -284,7 +284,7 @@ test("la LISTE BLANCHE est exacte : chaque fichier nommé existe, est publié pa
   }
 });
 
-test("UN SEUL appelant d'enregistrement : `.register(` n'apparaît, dans ce que la coquille publie, que dans le portail", async () => {
+test("UN SEUL appelant d'enregistrement : `.register(` n'apparaît, dans ce que la coquille publie, que dans l'installation de la réserve", async () => {
   const appelants = [];
   for (const chemin of await fichiersPublies()) {
     // L'émulateur v86 est un artefact TIERS, épinglé par empreinte (ADR 0003) : il n'est pas du code du produit.
@@ -294,15 +294,10 @@ test("UN SEUL appelant d'enregistrement : `.register(` n'apparaît, dans ce que 
       appelants.push(chemin);
     }
   }
-  assert.deepEqual(appelants, ["src/coquille/reserve-portail.mjs"]);
+  assert.deepEqual(appelants, ["src/coquille/reserve-installation.mjs"]);
 });
 
-test("l'enregistrement du portail est celui de la réserve : script stable, portée racine, `updateViaCache: none` (gardes 26 et 28)", async () => {
-  const portail = await readFile(path.join(REPO_ROOT, "src/coquille/reserve-portail.mjs"), "utf8");
-  assert.match(
-    portail,
-    /conteneur\.register\(URL_DU_SW, \{ scope: "\/", updateViaCache: "none" \}\)/,
-  );
+test("l'URL du script enregistré est celle de la réserve, à la racine : `/sw-coquille.mjs` (l'enregistrement lui-même est éprouvé par le portail, `reserve-portail.test.mjs`)", async () => {
   const { URL_DU_SW } = await import("../../src/coquille/reserve-identite.mjs");
   assert.equal(URL_DU_SW, "/sw-coquille.mjs");
 });
