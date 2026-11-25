@@ -210,9 +210,9 @@ comportement dont une épreuve dépend est rejoué sur le DOM réel des trois mo
 | `tests/browser/coquille-revocation-page.spec.mjs`         | la coquille réelle : ordre DOM = visuel = tabulation, deux temps, conteneur masqué au départ du message, un seul message, doute, oubli par ajout de code, indice après rechargement, deux documents ; trois moteurs |
 
 Leurs mutants sont dans `tools/mutants-du-cablage-de-la-revocation.mjs`, concaténés à la campagne
-`coquille` (86 mutants, tous tués). Les mutants équivalents au comportement actuel ne sont pas
-comptés ; ils sont listés, avec leur raison, dans l'en-tête de la table et dans l'ADR 0049 (note de
-C2).
+`coquille` (115 mutants ; la campagne `coquille` entière : 581/581 tués). Les mutants équivalents au
+comportement actuel ne sont pas comptés ; ils sont listés, avec leur raison, dans l'en-tête de la
+table et dans l'ADR 0049 (note de C2).
 
 WebKit n'offre pas l'OPFS synchrone dans un Worker : `coquille-revocation-page.spec.mjs` l'exige par
 `test.skip(condition, raison)` après avoir mesuré `indisponible`, au lieu de contourner la limite.

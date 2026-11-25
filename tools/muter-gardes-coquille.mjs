@@ -1103,9 +1103,8 @@ export const MUTATIONS = Object.freeze([
     nom: "l'étape 9 est facultative : « Terminer sans révoquer » (décision du 19/09)",
     garde: "ecranOuvert — la fin de visite sans révocation",
     fichier: PARCOURS,
-    avant:
-      '    9: revocationFaite ? "termine" : sansRevoquer ? "termine-sans-revoquer" : "revoquer",\n',
-    apres: '    9: revocationFaite ? "termine" : "revoquer",\n',
+    avant: '    9: fin ?? (sansRevoquer ? "termine-sans-revoquer" : "revoquer"),\n',
+    apres: '    9: fin ?? "revoquer",\n',
     epreuves: [EPREUVE_PARCOURS],
   },
   {
