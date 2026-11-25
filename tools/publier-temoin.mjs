@@ -318,9 +318,8 @@ const ORIGINES_DU_TEMOIN = Object.freeze({
  * encore chargée, et la politique de cache d'un arbre par un `fetch` émis DEPUIS un document de cet
  * arbre — c'est ce qui en fait un relevé de même origine, sans CORS entre le témoin et sa mesure.
  */
-async function releverLesDeuxOrigines(page, natures, feuilles) {
+async function releverLesDeuxOrigines(page, natures, feuilles, demarrage) {
   const enTetesCoquille = await relevePage(page, `${ORIGINE_COQUILLE}/index.html`);
-  const demarrage = await releverDemarrage(page);
   const cacheCoquille = await releverPolitiqueDeCache(page, "coquille", natures);
   const feuillesCoquille = await releverLesFeuilles(page, "coquille", feuilles.coquille);
   const absence = await releverLAbsence(page);
@@ -390,12 +389,19 @@ function mesureDeLApplication(enTetes) {
 
 async function mesurerMoteur(nom, natures, feuilles) {
   const navigateur = await MOTEURS[nom].launch();
-  // `serviceWorkers: "block"` (#299) : le témoin mesure ce que le SERVEUR sert. Sans lui, la page publiée
-  // enregistrerait le Service Worker de la réserve, qui répondrait à la place du serveur (503 sur une
-  // adresse non listée) : la mesure porterait sur le SW, pas sur la politique d'hébergement.
+  // Le DÉMARRAGE se relève dans un contexte ORDINAIRE : depuis #299, la coquille publiée ne démarre que sous
+  // le Service Worker de la réserve (première visite : installation, rechargement, puis `prete`).
+  const contexteDeDemarrage = await navigateur.newContext();
+  const pageDeDemarrage = await contexteDeDemarrage.newPage();
+  await pageDeDemarrage.goto(`${ORIGINE_COQUILLE}/index.html`);
+  const demarrage = await releverDemarrage(pageDeDemarrage);
+  await contexteDeDemarrage.close();
+  // Les en-têtes, la politique de cache et l'absence se relèvent SERVICE WORKERS BLOQUÉS : le témoin mesure ce
+  // que le SERVEUR sert. Sans cela, la page publiée enregistrerait le SW, qui répondrait à la place du serveur
+  // (503 sur une adresse non listée) : la mesure porterait sur le SW, pas sur la politique d'hébergement.
   const contexte = await navigateur.newContext({ serviceWorkers: "block" });
   const page = await contexte.newPage();
-  const releves = await releverLesDeuxOrigines(page, natures, feuilles);
+  const releves = await releverLesDeuxOrigines(page, natures, feuilles, demarrage);
   await page.close();
 
   const mesure = {
