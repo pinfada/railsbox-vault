@@ -396,6 +396,7 @@ test("[calibrage] du réveil du rendeur à l'estampille : la latence reste très
     body: JSON.stringify(mesures, null, 2),
     contentType: "application/json",
   });
+  console.log(`CALIBRAGE ${browserName} ${JSON.stringify(mesures)}`);
   expect(mesures.n).toBe(300);
   // Le délai n'est jamais atteint par un rendu SAIN : une marge de dix fois sur le pire cas mesuré.
   expect(mesures.max, `pire latence mesurée sur ${browserName}`).toBeLessThan(

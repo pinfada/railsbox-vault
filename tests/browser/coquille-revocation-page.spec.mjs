@@ -386,6 +386,7 @@ test("[C2-17] deux documents, fermetures INVERSÉES : le fichier final est celui
   await expect(
     page.getByRole("heading", { level: 2, name: "Vérifier votre code de récupération" }),
   ).toBeVisible({ timeout: DELAI });
-  await expect(page.locator("#revoquer-en-urgence")).toHaveCount(0);
-  await expect(page.locator("#parcours-sans-revoquer")).toHaveCount(0);
+  // Les gestes de la vue sont dans le DOM mais cachés par leur bloc : l'écran de travail n'est pas ouvert.
+  await expect(page.locator("#revoquer-en-urgence")).toBeHidden();
+  await expect(page.locator("#parcours-sans-revoquer")).toBeHidden();
 });
