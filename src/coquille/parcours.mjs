@@ -579,7 +579,8 @@ export const GESTES_LONGS = Object.freeze([
   "verrouiller-le-coffre",
   "sauvegarder-le-coffre",
   "restaurer-le-coffre",
-  "revoquer-en-urgence",
+  // « Révoquer… » n'y est plus (#265) : ses boutons sont écrits par la VUE, que la page ne ferme pas à la
+  // main — fermer c'est dériver `aria-disabled` de la table (C2-2), jamais poser `disabled`.
 ]);
 
 /**

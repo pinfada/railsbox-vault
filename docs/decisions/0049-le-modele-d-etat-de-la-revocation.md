@@ -408,3 +408,9 @@ Fermés par C1 seul : 2, 4, 7, 8, 11 ; 6 est un processus.
   doute passe par une réponse MALFORMÉE, qui emprunte la même issue sans tuer le Worker de produit.
 - **C2-L6.** L'ordre d'écriture de `parcours.json` entre deux documents reste hors de portée (L13′)
   : C2-17 prouve qu'aucun champ ne ferme ni n'ouvre un geste de récupération.
+- **C2-L7.** Un geste LONG en cours (sauvegarde, démarrage, restauration) ne ferme plus « Révoquer…
+  » : la table ne le connaît pas, et la page ne ferme pas à la main un bouton que la vue écrit. Une
+  demande faite pendant un geste long reçoit du Worker le refus typé `gesteEnCours`
+  (`refusPendantUnGesteLong`) ; la table de C1 range tout refus reçu après l'envoi dans le doute
+  (L4), et la page dit alors « peut-être » à tort — **sur-prudent, jamais faux dans l'autre sens**.
+  Suivi : #319.
