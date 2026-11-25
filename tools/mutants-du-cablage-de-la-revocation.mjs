@@ -24,6 +24,7 @@ const VUE = `${SRC}construction-de-la-vue.mjs`;
 const ECRAN = `${SRC}ecran-de-la-revocation.mjs`;
 const MODIF = `${SRC}modification-d-enveloppe.mjs`;
 const TEXTES = `${SRC}textes-de-la-revocation.mjs`;
+const INTERFACE = `${SRC}interface-de-deverrouillage.mjs`;
 
 const T = "tests/unit/coquille-";
 const EPREUVE_RENDEUR = `${T}rendeur-de-la-vue.test.mjs`;
@@ -33,6 +34,7 @@ const EPREUVE_VUE = `${T}construction-de-la-vue.test.mjs`;
 const EPREUVE_ECRAN = `${T}ecran-de-la-revocation.test.mjs`;
 const EPREUVE_MODIF = `${T}modification-d-enveloppe.test.mjs`;
 const EPREUVE_TEXTES = `${T}textes-de-la-revocation.test.mjs`;
+const EPREUVE_INTERFACE = `${T}interface-et-revocation.test.mjs`;
 
 /** `[fichier, avant, apres, nom, garde, epreuve]` → une entrée de la campagne. */
 const m = (fichier, avant, apres, nom, garde, epreuve) => ({
@@ -850,6 +852,74 @@ const CABLAGE_MUTANTS = [
   ),
 ];
 
+/** L'interface de déverrouillage : elle ne lit que les portes, dit l'ouverture, écrit par `modifier`. */
+const INTERFACE_MUTANTS = [
+  m(
+    INTERFACE,
+    "    identifiantVolume: contexte.portes.identifiantDuVolume(),",
+    '    identifiantVolume: "x",',
+    "L'identifiant du volume de la dérivation ne vient plus de la porte",
+    "inventaireDeDerivation — C2-1′",
+    EPREUVE_INTERFACE,
+  ),
+  m(
+    INTERFACE,
+    "    contexte.portes.coffreOuvert(moyen);\n",
+    "",
+    "l'ouverture n'est pas dite au magasin : il ne relit pas l'inventaire",
+    "ouvrirPar — e1",
+    EPREUVE_INTERFACE,
+  ),
+  m(
+    INTERFACE,
+    '  if (inventaire === null) return refuserSansInventaire(contexte);\n  if (inventaire.refus) return montrerLeRefus(contexte, inventaire.refus);\n  dire(noeuds.refus, "");\n  surMesure("geste");',
+    '  if (inventaire.refus) return montrerLeRefus(contexte, inventaire.refus);\n  dire(noeuds.refus, "");\n  surMesure("geste");',
+    "une dérivation part sans inventaire connu",
+    "ouvrirPar — rien n'est dérivé sans paramètres",
+    EPREUVE_INTERFACE,
+  ),
+  m(
+    INTERFACE,
+    '  if (inventaire.refus) return montrerLeRefus(contexte, inventaire.refus);\n  dire(noeuds.refus, "");\n  surMesure("geste");',
+    '  dire(noeuds.refus, "");\n  surMesure("geste");',
+    "un coffre dont l'inventaire est refusé est dérivé quand même",
+    "ouvrirPar — aucune attente pour rien",
+    EPREUVE_INTERFACE,
+  ),
+  m(
+    INTERFACE,
+    '    await contexte.demander("etat", {});\n  } catch (erreur) {',
+    "  } catch (erreur) {",
+    "un Worker mort est dit « patientez » : la cause typée est perdue",
+    "refuserSansInventaire — le refus de la mort",
+    EPREUVE_INTERFACE,
+  ),
+  m(
+    INTERFACE,
+    "    dire(noeuds.refus, conduiteDeRefus(refus.code, messageDuCode(refus.code)));",
+    "    dire(noeuds.refus, conduiteDeRefus(refus.code, null));",
+    "le refus d'inventaire perd son message (la date du 13/09/2026)",
+    "refleter — le message de la table des refus",
+    EPREUVE_INTERFACE,
+  ),
+  m(
+    INTERFACE,
+    "  if (!lance.accepte) return;\n  const { rendu, erreur } = await lance.issue;",
+    "  const { rendu, erreur } = await lance.issue;",
+    "la feuille est attendue même quand la porte a refusé la modification",
+    "creerLaFeuille — C2-3",
+    EPREUVE_INTERFACE,
+  ),
+  m(
+    INTERFACE,
+    "  if (erreur !== null) return montrerLeRefus(contexte, erreur);\n  const feuille",
+    "  const feuille",
+    "un refus du Worker pendant la création est tu : une feuille vide s'affiche",
+    "creerLaFeuille — le refus dit",
+    EPREUVE_INTERFACE,
+  ),
+];
+
 /** `modifierEtAttendre` : l'issue revient, le lanceur ne part que par `modifier`. */
 const MODIF_MUTANTS = [
   m(
@@ -920,6 +990,7 @@ export const MUTATIONS_DU_CABLAGE = Object.freeze([
   ...VUE_MUTANTS,
   ...CABLAGE_MUTANTS,
   ...ECRAN_MUTANTS,
+  ...INTERFACE_MUTANTS,
   ...MODIF_MUTANTS,
   ...TEXTES_MUTANTS,
 ]);
