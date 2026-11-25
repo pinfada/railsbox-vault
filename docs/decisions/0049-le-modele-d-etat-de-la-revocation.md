@@ -282,3 +282,129 @@ La confirmation reste une **aide à la personne**, pas une garde de sécurité (
 Tout ce qui touche au DOM, au CSS, au focus, aux lecteurs d'écran et aux trois moteurs (C2) ; que
 tout geste d'écriture passe par `modifier` (balayage de C2) ; la course d'ouverture sur le Worker de
 produit (#311) ; que les 384 cellules soient les bonnes — objet de la revue.
+
+## Note de C2 — l'interface de la révocation (#265), 25/11/2026
+
+C2 câble la page sur le modèle de C1 **sans le modifier** (aucun fichier des sept modules de C1 n'a
+changé). Cette note dit ce que C2 a décidé, ce qu'il a prouvé, et ce qu'il ne prouve pas.
+
+### Ce que C2 a livré
+
+| Pièce                                       | Fichier                                                        | Rôle                                                                                                                  |
+| ------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Rendeur unique                              | `src/coquille/rendeur-de-la-vue.mjs`                           | une tentative AUTORISÉE à la fois (identité d'objet), fragment privé, publication atomique, successeur garanti (X1.2) |
+| Affichage                                   | `src/coquille/affichage-de-la-revocation.mjs`                  | les effets visibles ; `masquer()` ÉCRIT puis RELIT ; un seul `replaceChildren` ; l'estampille en dernier              |
+| Construction de la vue                      | `src/coquille/construction-de-la-vue.mjs`                      | un fragment fait de la SEULE projection ; « Terminer sans révoquer » avant « Révoquer… » dans le DOM                  |
+| Textes                                      | `src/coquille/textes-de-la-revocation.mjs`                     | un texte final par clé du catalogue de C1, chacune à son étiquette                                                    |
+| Décision d'écran                            | `src/coquille/ecran-de-la-revocation.mjs`                      | le coffre, les moyens, le compte des codes, le constat : lus par les DEUX portes                                      |
+| Câblage                                     | `src/coquille/cablage-de-la-revocation.mjs`                    | magasin + rendeur + affichage + gestes ; seul écrivain des miroirs (effet `publier`)                                  |
+| Écriture d'enveloppe dont on attend l'issue | `src/coquille/modification-d-enveloppe.mjs`                    | `modifierEtAttendre` : le lanceur n'est jamais appelé que par `modifier`                                              |
+| Branchement                                 | `public/coquille/revocation-de-la-page.mjs`, `public/main.mjs` | prête les nœuds du document et les gestes des autres modules, par le pont                                             |
+
+Le conteneur `#affichage` est du HTML **statique, masqué par la feuille de style**
+(`#affichage:not([data-vue]) { display: none }`), sans script : une page dont le script ne s'exécute
+plus n'affirme rien. L'espace réservé et la région d'erreur sont du HTML statique aussi, hors du
+conteneur.
+
+### Décisions de C2
+
+1. **Portée du conteneur.** Il porte ce que la page AFFIRME de la révocation, des moyens, du compte
+   des codes et des écrans que l'ÉTAT impose, plus les gestes de révocation. Le formulaire
+   d'ouverture, la feuille affichée et les boutons de cycle (démarrer, sauvegarder, verrouiller) n'y
+   sont pas : ils n'affirment rien du coffre. **Limite :** les titres des écrans d'ouverture
+   dépendent de `lirePublic` pour être CHOISIS, mais restent écrits hors du conteneur.
+2. **Titres.** Le `h2` du parcours reste neutre pour les écrans de fin et d'état (« Parcours terminé
+   », « Votre coffre ») ; ce que la révocation a fait est dit en `h3` dans le conteneur, sous
+   l'étiquette de sa clé.
+3. **Gestes.** Un seul écouteur, sur le conteneur : le type de l'événement vient de `data-geste`,
+   `appliquer` est la première instruction synchrone, et rien ne lit `disabled` ni `aria-disabled`
+   pour décider. Les boutons fermés par la table portent `aria-disabled` — jamais `disabled`, que
+   `dispatchEvent` n'atteint pas — pour que le clic arrive et que la table DISE pourquoi (annonce).
+4. **Annonce.** Le résultat d'un geste est écrit hors du conteneur (`#affichage-annonce`), est
+   effacé par `masquer`, et ne dit que ce que son événement établit (étiquettes `seance`,
+   `non-lancee`, `revoque` pour un refus après succès).
+5. **e1 est la migration.** L'ouverture (`deverrouiller`) n'est pas enveloppée dans `modifier` : la
+   table la range dans e1, qui relit l'inventaire. `creerRecuperation` et `restaurer` — les deux
+   autres écritures de l'enveloppe par la page — passent par `modifier`, et le balayage statique le
+   refuse autrement.
+6. **Le constat inconnu n'est pas « non éprouvé ».** `retenirLesIndices` n'écrit l'indice
+   `feuilleEprouvee` que quand `lireLeConstat` rend un constat : une lecture en cours ou en échec,
+   ou un Worker mort, n'efface pas l'indice d'une feuille déjà éprouvée. Un premier jet l'écrasait à
+   la mort du Worker (mesuré par `#252`).
+7. **Une réussite traverse les écrans imposés.** `chargement` et `etat-du-coffre` sont des passages,
+   pas des destinations : « 7 moyen(s) retiré(s) » dit à l'acquit survit jusqu'à l'écran où le geste
+   mène.
+8. **Le focus.** La confirmation qui s'ouvre prend le focus sur « Annuler » (`data-focus-initial`) ;
+   le focus déjà dans son groupe n'est pas volé ; à la fermeture, il revient au geste qui l'avait
+   ouverte s'il est encore offert (`data-focus-retour`), sinon au repère stable. Mesuré sur les
+   trois moteurs.
+9. **L'indice persisté (D4).** Après rechargement, `finDisponible` n'offre que « aucun geste de
+   révocation dans cette séance » ; `ecranCourant` n'a plus de paramètre `revocationFaite`, et le
+   texte « révoqué » n'existe que dans les clés étiquetées `revoque`, balayé sur tout
+   `src/coquille/`.
+
+### Le délai du rendeur (`DELAI_DU_RENDEUR_MS = 2000`)
+
+La construction d'une vue est SYNCHRONE et son règlement est une micro-tâche : un rendu sain se
+règle avant toute minuterie. Le délai ne borne qu'une anomalie (un rendu qui ne se règle jamais). Il
+ne peut donc pas expirer à tort sous charge — une minuterie est une macro-tâche —, et sa valeur
+n'est pas une marge de performance. Elle est **mesurée, pas supposée** :
+`tests/browser/coquille-affichage-dom.spec.mjs` (« calibrage ») relève 300 cycles du geste à
+l'estampille sur chaque moteur et exige que le pire cas reste sous un dixième du délai (200 ms).
+Mesures : CALIBRAGE_A_REMPLIR.
+
+### Ce que C2 prouve, et comment
+
+- **Rendeur** : X-a à X-g, R-a à R-h, X-g′ (règlement réentrant), 24 mutants tués (M283, M309-M319,
+  M335, M339-M344 et les gardes de chaque effet), sur promesses et horloge contrôlées, puis sur le
+  DOM réel (S-a, S-b, R-d/S-k).
+- **Affichage** : le masquage vérifié (retrait, `hidden`, détachement, les trois ensemble, référence
+  absente, repli, dernier recours), l'atomicité (un seul lot de mutations), l'estampille en dernier,
+  le focus ; 21 mutants tués.
+- **Câblage** : 26 mutants tués ; la lecture périmée n'écrit aucun miroir ; « Oui » part avec le
+  conteneur MASQUÉ ; masquage impossible = zéro message ; un double clic = un envoi ; un doute dit «
+  peut-être » et ferme les nouvelles demandes ; la région survit à la navigation.
+- **Écran, vue, textes, interface, `modifierEtAttendre`** : 13, 14, 4, 8 et 3 mutants tués.
+- **Balayages statiques** (`coquille-balayage-de-la-revocation.test.mjs`) : le canal n'écrit plus le
+  constat ni la taille ; les miroirs n'ont qu'un écrivain ; personne ne lit un miroir pour décider ;
+  chaque écriture d'enveloppe passe par `modifier` ; `envoyer` est le seul appel de
+  `revoquerEnUrgence`.
+- **Navigateur, trois moteurs** : `coquille-revocation-page.spec.mjs` et
+  `coquille-affichage-dom.spec.mjs`.
+
+### Les constats de #308 fermés par C1 + C2
+
+| #   | Constat                                                  | Fermé par                                                                                                                                                                         |
+| --- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | confirmation inexacte avec plusieurs codes               | `avertissementDeRevocation(…, { codes })` ; épreuves du texte et de la vue (deux codes) ; mutant « avertissement ignore les moyens »                                              |
+| 3   | mutant de l'oubli de la confirmation absent              | l'oubli est une TRANSITION (C → P, C → SM) : épreuve du câblage et du navigateur (« ajouter un code OUBLIE la confirmation ») ; mutants de C1 et du câblage                       |
+| 5   | mutant du branchement tué par une recherche textuelle    | mutants du câblage RÉEL (`tools/mutants-du-cablage-de-la-revocation.mjs`), chacun tué par une épreuve de comportement ; les balayages complètent, ne remplacent pas               |
+| 9   | fermeture des sorties dépendante d'un rendu différé      | `appliquer` en première instruction ; épreuve « le refus est SYNCHRONE, avant la republication » ; clic synthétique sur `aria-disabled`                                           |
+| 10  | l'avertissement d'incertitude disparaît à la navigation  | région d'annonce fonction de l'état seul (V, I) ; épreuve de navigation et de « Revenir »                                                                                         |
+| 12  | relecture échouée après succès : données périmées        | RE : « la révocation a été faite, mais à relire », `lirePublic` et `lireLeConstat` rendent `null`                                                                                 |
+| 13  | relecture échouée SANS révocation : « révocation faite » | SE : l'écran « à relire » ne dit pas un mot de révocation ; balayage des textes                                                                                                   |
+| 14  | valeur par défaut qui réactive des constats périmés      | aucune valeur par défaut : `observationDeLEtat` rend `undefined`/`[]`/`false` quand la page ne sait pas ; mutants « compte par défaut », « moyens supposés », « constat supposé » |
+
+Fermés par C1 seul : 2, 4, 7, 8, 11 ; 6 est un processus.
+
+### Limites écrites par C2
+
+- **C2-L1.** L'annonce par un **lecteur d'écran réel** n'est pas prouvée : seuls le nom accessible,
+  le rôle `group`, le `role="status"` des régions et l'ordre de tabulation le sont, sur trois
+  moteurs. Un nœud inséré dans une région vivante n'est pas annoncé de façon fiable par tous les
+  lecteurs ; la région d'annonce de V et I est donc doublée par le titre et le texte de l'écran
+  imposé.
+- **C2-L2.** La mutation ne rejoue que Node : la glue de `public/` (`parcours-de-la-page.mjs`,
+  `revocation-de-la-page.mjs`, `main.mjs`) n'est mutée par aucune campagne. Elle est prouvée par les
+  épreuves du navigateur et par les balayages ; ce qui y vit de décision (écran, constat, vue) a été
+  extrait dans `src/`.
+- **C2-L3.** `#sauvegarde-annonce` (la taille d'une sauvegarde) reste un MIROIR de diagnostic écrit
+  par `publier`, hors conteneur : ce n'est pas une affirmation sur les moyens, les codes, la feuille
+  ou la révocation.
+- **C2-L4.** Équivalents non comptés : voir l'en-tête de
+  `tools/mutants-du-cablage-de-la-revocation.mjs` (`finally` de `regler`,
+  `derniereOccurrenceTraitee` avant le `try`, hygiène de `lectures`, désabonnement de `attendre`).
+- **C2-L5.** Un Worker mort pendant l'envoi est un doute (L4, inchangée) ; l'épreuve navigateur du
+  doute passe par une réponse MALFORMÉE, qui emprunte la même issue sans tuer le Worker de produit.
+- **C2-L6.** L'ordre d'écriture de `parcours.json` entre deux documents reste hors de portée (L13′)
+  : C2-17 prouve qu'aucun champ ne ferme ni n'ouvre un geste de récupération.

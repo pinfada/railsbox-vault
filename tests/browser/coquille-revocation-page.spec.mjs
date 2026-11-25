@@ -325,3 +325,67 @@ test("[D4] après rechargement, l'indice persisté n'ouvre que « aucun geste de
   ).toBe(true);
   for (const texte of lues) expect(texte).not.toMatch(/La révocation a été faite|révoqué\b/i);
 });
+
+test("[C2-17] deux documents, fermetures INVERSÉES : le fichier final est celui de l'ancien, et aucun écran de travail ne s'ouvre", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(300_000);
+  await coffreOuvert(page);
+  // Un coffre dont le code existe mais n'a JAMAIS ouvert le coffre : le Worker ne constate rien.
+  const ancien = {
+    version: 2,
+    etapeAtteinte: 9,
+    origine: "creation",
+    code: { rendu: true, version: 7 },
+    feuilleEprouvee: true,
+    visiteTerminee: true,
+    revocationFaite: true,
+  };
+  const neuf = {
+    version: 2,
+    etapeAtteinte: 3,
+    origine: "restauration",
+    code: { rendu: false, version: null },
+    feuilleEprouvee: false,
+    visiteTerminee: false,
+    revocationFaite: false,
+  };
+  // X ouvre son flux d'écriture ; Y remet à zéro ET FERME d'abord ; X ferme ensuite : X l'emporte.
+  await page.evaluate(async (texte) => {
+    const racine = await navigator.storage.getDirectory();
+    const fichier = await racine.getFileHandle("parcours.json", { create: true });
+    window.__fluxDeX = await fichier.createWritable();
+    await window.__fluxDeX.write(texte);
+  }, JSON.stringify(ancien));
+  const autre = await context.newPage();
+  await autre.goto(new URL("/index.html?vue=complete", SHELL_ORIGIN).toString(), {
+    waitUntil: "commit",
+  });
+  await autre.evaluate(async (texte) => {
+    const racine = await navigator.storage.getDirectory();
+    const fichier = await racine.getFileHandle("parcours.json", { create: true });
+    const flux = await fichier.createWritable();
+    await flux.write(texte);
+    await flux.close();
+  }, JSON.stringify(neuf));
+  await autre.close();
+  await page.evaluate(() => window.__fluxDeX.close());
+  const final = await page.evaluate(async () => {
+    const racine = await navigator.storage.getDirectory();
+    const fichier = await (await racine.getFileHandle("parcours.json")).getFile();
+    return JSON.parse(await fichier.text());
+  });
+  expect(final.etapeAtteinte, "la fermeture inversée : le fichier est celui de X").toBe(9);
+
+  // Un troisième document recharge, demande l'étape 9 et ouvre par la phrase : le constat du Worker est
+  // « non éprouvée ». L'écran est celui de la VÉRIFICATION de la feuille — jamais l'étape 9.
+  await page.goto(new URL("/index.html?etape=9", SHELL_ORIGIN).toString());
+  await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
+  await ouvrirParLaPhrase(page);
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Vérifier votre code de récupération" }),
+  ).toBeVisible({ timeout: DELAI });
+  await expect(page.locator("#revoquer-en-urgence")).toHaveCount(0);
+  await expect(page.locator("#parcours-sans-revoquer")).toHaveCount(0);
+});
