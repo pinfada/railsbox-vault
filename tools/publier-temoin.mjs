@@ -390,7 +390,10 @@ function mesureDeLApplication(enTetes) {
 
 async function mesurerMoteur(nom, natures, feuilles) {
   const navigateur = await MOTEURS[nom].launch();
-  const contexte = await navigateur.newContext();
+  // `serviceWorkers: "block"` (#299) : le témoin mesure ce que le SERVEUR sert. Sans lui, la page publiée
+  // enregistrerait le Service Worker de la réserve, qui répondrait à la place du serveur (503 sur une
+  // adresse non listée) : la mesure porterait sur le SW, pas sur la politique d'hébergement.
+  const contexte = await navigateur.newContext({ serviceWorkers: "block" });
   const page = await contexte.newPage();
   const releves = await releverLesDeuxOrigines(page, natures, feuilles);
   await page.close();
