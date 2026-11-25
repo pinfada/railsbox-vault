@@ -36,9 +36,11 @@ jobs:
     # libicu74 et libxml2.so.2. À lever par l'issue de suite 26.04. Date de retrait d'ubuntu-24.04 par
     # GitHub : non annoncée au 18/11/2026. Cliquet : tests/unit/workflows-image-sur-ubuntu-24-04.test.mjs.
     runs-on: ubuntu-24.04
-    # Budget mesuré : la suite VM dure 19 à 22 min et le protocole de mesure 7 min ; les
-    # dépendances peuvent en coûter 7 sans cache. À 30 min, le protocole était tué (SIGTERM,
-    # code 143) alors que les épreuves avaient réussi. 45 laisse la marge d'un run sans cache.
+    # Budget mesuré (15 → 25/11/2026, 57 jobs) : la suite VM dure 15 à 31 min selon le pool d'exécutants
+    # (le fichier `recuperation-generation.spec.mjs` en pèse 63 à 70 %) et le protocole de mesure 6,2 à
+    # 7,1 min. Avec des dépendances système installées vite, le job le plus long a duré 39,5 min.
+    # À 30 min, le protocole était tué (SIGTERM, code 143) alors que les épreuves avaient réussi. 45
+    # laisse la marge d'un run lent. Ce plafond n'est pas relevé par la scission de #243 : voir l'issue.
     timeout-minutes: 45
     steps:
       - name: Récupération du dépôt
@@ -53,32 +55,33 @@ jobs:
       - name: Installation des dépendances
         run: npm ci
 
-      # Depuis #74 le job installe TROIS moteurs au lieu d'un : le téléchargement domine désormais sa
-      # durée. La clé porte la version de `@playwright/test` résolue dans `package-lock.json` — les
-      # binaires des moteurs sont liés à cette version, et une clé sur autre chose restituerait des
-      # moteurs que la bibliothèque refuserait de piloter (#87).
-      - name: Cache des moteurs Playwright
+      # La barrière ne joue que sur Chromium : c'est le moteur où OPFS, la barrière de durabilité (#6,
+      # #14) et la matrice de coupures de #15 sont mesurés (`playwright.vm.config.mjs`). Elle n'installe
+      # donc QUE Chromium. Firefox et WebKit ont leur job (`temoin`), sans quoi les ~190 paquets système
+      # de WebKit passaient par `apt` dans CE job : sur le miroir lent du 17 au 19/11/2026 (125 Mo à
+      # 67-146 ko/s), l'étape durait 15 à 33 min et 8 jobs ont été annulés au plafond (#243).
+      #
+      # La clé porte la version de `@playwright/test` résolue dans `package-lock.json` — les binaires
+      # des moteurs sont liés à cette version, et une clé sur autre chose restituerait des moteurs que
+      # la bibliothèque refuserait de piloter (#87). Le cache n'est pas le levier de durée : un cache
+      # raté coûte ~1 min (les moteurs se téléchargent en quelques secondes), `apt` coûtait 0,5 à 33 min.
+      - name: Cache du moteur Playwright
         id: cache-moteurs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: ms-playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          key: ms-playwright-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
-      # Les trois moteurs, depuis #74 : `test:vm` porte un témoin de démarrage du guest sur
-      # Chromium, Firefox et WebKit. Sans Firefox ni WebKit installés, ce témoin ne s'exécuterait
-      # pas — et la matrice de `docs/compatibility.md` reposerait de nouveau sur un seul moteur.
-      #
-      # `--with-deps` est réexécuté même sur cache retrouvé : le cache porte les BINAIRES des
-      # moteurs, jamais les paquets système du runner, qui sont remis à zéro à chaque job. Sur cache
-      # retrouvé, `playwright install` constate que les moteurs sont là et ne télécharge rien.
-      - name: Installation des moteurs
-        run: npx playwright install --with-deps chromium firefox webkit
+      # `--with-deps` est réexécuté même sur cache retrouvé : le cache porte les BINAIRES des moteurs,
+      # jamais les paquets système du runner, qui sont remis à zéro à chaque job.
+      - name: Installation du moteur
+        run: npx playwright install --with-deps chromium
 
       - name: Récupération vérifiée des artefacts v86
         run: npm run vm:fetch
 
       - name: Intégration VM
-        run: npm run test:vm
+        run: npm run test:vm -- --project=chromium
 
       - name: Protocole de mesure
         if: always()
@@ -89,6 +92,69 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mesures-vm
+          path: |
+            reports/vm/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 30
+
+  # Le TÉMOIN de démarrage sur Firefox et WebKit (#74), qui vivait dans le job ci-dessus. Ses épreuves
+  # sont les deux de `playwright.vm.config.mjs` qui ne portent pas sur Chromium seul : le boot du guest
+  # (`boot-trois-moteurs.spec.mjs`) sur les deux moteurs, et la mesure du pont série sur Firefox, qui
+  # se met en SKIP sans l'image de référence (absente de ce job, comme de l'ancien). Il ne fait AUCUNE
+  # des épreuves OPFS de la barrière : WebKit Playwright n'expose pas OPFS (`VAULT_STORAGE_UNSUPPORTED`).
+  #
+  # Ce que la scission change dans la preuve : rien dans les épreuves ni dans leurs seuils. Les moteurs
+  # restent tous trois exigés par la matrice de `docs/compatibility.md` ; un moteur qui ne démarre plus
+  # rougit CE job, nommé pour ce qu'il prouve, et plus la barrière de durabilité de Chromium.
+  temoin:
+    name: Témoin de démarrage Firefox et WebKit
+    # PROVISOIRE (#295) : ubuntu-24.04 et non ubuntu-latest — même raison que le job de la barrière
+    # (ENOSYS de Docker 29.4.2 sous 26.04, libicu74 et libxml2.so.2 absents pour le WebKit de Playwright).
+    # Cliquet : tests/unit/workflows-image-sur-ubuntu-24-04.test.mjs.
+    runs-on: ubuntu-24.04
+    # Plafond NEUF, pas un relèvement : la barrière gardait 45 min, et c'est le seul chiffre que les
+    # mesures justifient ici. Ce job porte l'installation de WebKit (~190 paquets système) : sur le
+    # miroir lent du 17 au 19/11/2026, `apt` a pris jusqu'à 32,8 min, soit ~37 min avec les épreuves
+    # (quelques minutes) et la mise en place. Un plafond plus court l'aurait tué pour la même cause
+    # que la barrière.
+    timeout-minutes: 45
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installation de Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      # Clé distincte de celle de la barrière : deux jobs qui n'installent pas les mêmes moteurs ne
+      # doivent pas se disputer la même entrée (un cache n'est écrit qu'une fois).
+      - name: Cache des moteurs Playwright
+        id: cache-moteurs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-temoin-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Installation des moteurs
+        run: npx playwright install --with-deps firefox webkit
+
+      - name: Récupération vérifiée des artefacts v86
+        run: npm run vm:fetch
+
+      - name: Témoin de démarrage
+        run: npm run test:vm -- --project=firefox --project=webkit
+
+      - name: Mesures
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mesures-vm-temoin
           path: |
             reports/vm/
             playwright-report/

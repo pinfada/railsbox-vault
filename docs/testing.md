@@ -1978,8 +1978,16 @@ y échoueraient pour une raison déjà mesurée et étrangère à l'ordonnanceme
 lui, tient sur un volume en mémoire.
 
 Coût de l'extension : **+35 s environ** (1,6 min contre 1,1 min sur Chromium seul), essentiellement
-les 22 s que Firefox met à atteindre l'invite du guest. Le job CI `Intégration VM` installe donc les
-trois moteurs.
+les 22 s que Firefox met à atteindre l'invite du guest. Le témoin tourne dans son PROPRE job CI
+(`temoin`, « Témoin de démarrage Firefox et WebKit », #243), qui installe Firefox et WebKit ; le job
+de la barrière (« Barrière de durabilité du guest ») n'installe que Chromium et joue
+`npm run test:vm -- --project=chromium`. Les deux jobs partageaient le même
+`playwright install --with-deps chromium firefox webkit`, dont environ 190 paquets système sont ceux
+de WebKit : sur un miroir `apt` lent (17 → 19/11/2026, 125 Mo à 67-146 ko/s), cette étape a duré 15
+à 33 min et huit jobs de la barrière ont été annulés à leur plafond de 45 min, `test:vm` et
+protocole verts pour quatre d'entre eux. La scission ne change ni les épreuves ni leurs seuils ;
+elle sépare la preuve de durabilité (Chromium) du fait de compatibilité (le guest démarre sur les
+trois moteurs).
 
 Un moteur qui ne démarrerait plus fait désormais **rougir la suite**. C'est le changement de nature
 apporté par #74 : jusque-là, un moteur qui ne faisait pas battre le runtime était un fait consigné
