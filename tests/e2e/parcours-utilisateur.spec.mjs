@@ -320,9 +320,14 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
       ),
     ).toBeVisible();
     await bouton(a, "Terminer sans révoquer").click();
-    // #246 : l'écran où RIEN n'a été révoqué a son propre titre, distinct de « Parcours terminé ».
-    await attendreLEcran(a, "Parcours terminé, rien n'a été révoqué");
-    await expect(a.getByText(/l'ouvre toujours/)).toBeVisible();
+    // D4 (#265) : le titre est neutre ; ce que la page affirme de la séance est dit par l'annonce du geste,
+    // et se limite à « aucun geste de révocation dans cette séance » — jamais « révoqué », jamais « rien
+    // n'a été révoqué » ni « chacun des moyens l'ouvre toujours ».
+    await attendreLEcran(a, "Parcours terminé");
+    await expect(
+      a.getByText("Aucun geste de révocation n'a été fait dans cette séance.", { exact: false }),
+    ).toBeVisible();
+    await expect(a.getByText(/révoqué\b|l'ouvre toujours/i)).toHaveCount(0);
     // La phrase ouvre TOUJOURS : la visite n'a rien détruit.
     await bouton(a, "Revenir à mon application").click();
     await attendreLEcran(a, "Votre application");
