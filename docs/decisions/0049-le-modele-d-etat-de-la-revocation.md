@@ -351,7 +351,17 @@ ne peut donc pas expirer à tort sous charge — une minuterie est une macro-tâ
 n'est pas une marge de performance. Elle est **mesurée, pas supposée** :
 `tests/browser/coquille-affichage-dom.spec.mjs` (« calibrage ») relève 300 cycles du geste à
 l'estampille sur chaque moteur et exige que le pire cas reste sous un dixième du délai (200 ms).
-Mesures : CALIBRAGE_A_REMPLIR.
+Mesures (300 cycles P ↔ C, un coffre à huit emplacements, 25/11/2026, aarch64 sans GPU) :
+
+| Moteur   | médiane | p99    | pire cas |
+| -------- | ------- | ------ | -------- |
+| Chromium | 4,3 ms  | 5,3 ms | 5,4 ms   |
+| Firefox  | 4 ms    | 6 ms   | 7 ms     |
+| WebKit   | 8 ms    | 11 ms  | 19 ms    |
+
+La granularité de la mesure est celle de `setTimeout(0)`, environ 4 ms. Le pire cas, 19 ms, laisse
+un rapport de plus de cent au délai de 2 000 ms : la valeur est conservée, et l'épreuve la défend si
+un moteur ou une vue l'approchait.
 
 ### Ce que C2 prouve, et comment
 
