@@ -523,7 +523,7 @@ export function creerParcoursDeLaPage({
     // « non éprouvée », et n'efface pas l'indice d'une feuille déjà éprouvée.
     const constat = revocation.lireLeConstat()?.feuilleEprouvee ?? null;
     if (constat !== null && constat !== etat.progression.feuilleEprouvee) pas("feuille", constat);
-    const fin = ecranId === "termine-sans-attestation" || ecranId === "termine-sans-revoquer";
+    const fin = ["termine", "termine-sans-attestation", "termine-sans-revoquer"].includes(ecranId);
     if (fin && !etat.progression.visiteTerminee) pas("visite-terminee");
   }
 
