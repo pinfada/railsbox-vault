@@ -513,15 +513,20 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
     handle : une restauration admise sur un emplacement vide, suspendue, pouvait reprendre après
     qu'un autre onglet avait créé son coffre — et remplacer son enveloppe ; deux créations
     simultanées de même. Elles prennent désormais le handle exclusif du volume `coquille` — celui de
-    l'ouverture — AVANT d'écrire, revalident sous lui (l'enveloppe est toujours absente ;
-    l'emplacement est toujours vide), et ne le relâchent qu'après : la création le PASSE à
-    l'ouvreur, sans trou jusqu'à la naissance du volume ; la restauration le tient pendant tout
-    l'import. Un autre détenteur les fait refuser `VAULT_STORAGE_BUSY` ; un emplacement plus vide,
-    `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` (restauration) ou `VAULT_ENVELOPPE_PRESENTE` (création),
-    avant toute écriture. Prendre le handle d'un fichier inexistant le CRÉE vide :
-    `constaterLEmplacement` lit désormais un fichier `coquille` de taille nulle comme absent (un
-    volume né porte toujours son en-tête). La réparation d'une restauration coupée vide le fichier
-    TENU par son handle, après ses voisins, au lieu de le retirer.
+    l'ouverture — AVANT d'écrire, puis **refont le constat COMPLET de l'emplacement sous ce verrou**
+    (le même que celui du début du geste, avec les mêmes refus typés) avant toute écriture, et ne le
+    relâchent qu'après : la création le PASSE à l'ouvreur, sans trou jusqu'à la naissance du volume
+    ; la restauration le tient pendant tout l'import. Un autre détenteur les fait refuser
+    `VAULT_STORAGE_BUSY`. Un emplacement qui n'est plus vide est refusé : pour la restauration
+    `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` ou le refus du constat ; pour la création le refus du
+    constat (`RESTAURATION_INTERROMPUE`, `DISQUE_D_UN_AUTRE_COFFRE`, `COFFRE_ANTERIEUR`,
+    `COFFRE_SERVI_SANS_MANIFESTE`), `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` pour un disque installé sans
+    enveloppe, ou `VAULT_ENVELOPPE_PRESENTE` si l'enveloppe est déjà là. La clé de volume tirée par
+    la création est effacée sur tout échec, y compris une prise de handle rejetée. Prendre le handle
+    d'un fichier inexistant le CRÉE vide : `constaterLEmplacement` lit désormais un fichier
+    `coquille` de taille nulle comme absent (un volume né porte toujours son en-tête). La réparation
+    d'une restauration coupée vide le fichier TENU par son handle, après ses voisins, au lieu de le
+    retirer.
 
     **Ce que cela ne tient pas** — et c'est écrit dans `SECURITY.md`, limite 13 : (a) un détenteur
     antérieur de la clé de volume la garde (limite 12 : révoquer ne rechiffre pas ; la rotation de

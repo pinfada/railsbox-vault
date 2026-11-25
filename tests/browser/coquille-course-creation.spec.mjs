@@ -16,6 +16,7 @@
 import { expect, test } from "../support/test.mjs";
 
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
+import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import {
@@ -100,4 +101,43 @@ test("CRÉATION : B suspendu, A tient encore son volume — B est refusé BUSY, 
   await verrouiller(a);
   await ouvrirParLeCode(a, feuilleDeA);
   await attendreLEtat(a, ETATS_DU_VOLUME.ouvert);
+});
+
+test("CRÉATION : B suspendu, une restauration s'INTERROMPT après le disque — B est refusé, aucune enveloppe n'est écrite", async ({
+  context,
+  browserName,
+}) => {
+  test.skip(browserName === "webkit", "pas d'OPFS synchrone dans un Worker");
+  test.setTimeout(300_000);
+  const { a, b } = await creationRetenue(context);
+
+  // Ce qu'une restauration coupée entre le disque et l'enveloppe laisse : le disque versé, sans
+  // manifeste ni enveloppe. Posé par la page A dans l'OPFS de l'origine, pendant l'attente de B.
+  await a.evaluate(async () => {
+    const racine = await navigator.storage.getDirectory();
+    const dossier = await racine.getDirectoryHandle("vault-volumes", { create: true });
+    const fichier = await dossier.getFileHandle("application", { create: true });
+    const ecrivain = await fichier.createWritable();
+    await ecrivain.write(new Uint8Array(4096).fill(0x5b));
+    await ecrivain.close();
+  });
+
+  await reprendre(b);
+  await expect(b.locator("#deverrouillage-refus")).toContainText(
+    CODES_REFUS_COQUILLE.restaurationInterrompue,
+    { timeout: DELAI },
+  );
+  expect((await releve(b)).etat).toBe(ETATS_DU_VOLUME.verrouille);
+  // Rien n'est né : ni enveloppe, ni volume `coquille` (un fichier vide n'est pas un volume).
+  const fichiers = await a.evaluate(async () => {
+    const racine = await navigator.storage.getDirectory();
+    const dossier = await racine.getDirectoryHandle("vault-volumes");
+    const tailles = {};
+    for await (const [nom, poignee] of dossier.entries()) {
+      tailles[nom] = (await poignee.getFile()).size;
+    }
+    return tailles;
+  });
+  expect(fichiers["coquille.cles"] ?? 0).toBe(0);
+  expect(fichiers.coquille ?? 0).toBe(0);
 });

@@ -2037,8 +2037,8 @@ export const MUTATIONS = Object.freeze([
     nom: "la création prend le handle du volume AVANT d'écrire l'enveloppe (#311, #313)",
     garde: "creerLeCoffre — `ouvrirLeHandle(volume)` avant `creerEnveloppe`",
     fichier: DEVERROUILLAGE,
-    avant: "  const verrou = await ouvrirLeHandle(volume);\n",
-    apres: "  const verrou = { close() {} };\n",
+    avant: "    verrou = await ouvrirLeHandle(volume);\n",
+    apres: "    verrou = { close() {} };\n",
     epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
   {
@@ -2053,7 +2053,7 @@ export const MUTATIONS = Object.freeze([
     nom: "un refus de la création rend le handle (#311)",
     garde: "creerLeCoffre — `verrou.close()` du `catch`",
     fichier: DEVERROUILLAGE,
-    avant: "    verrou.close();\n    dek.fill(0);\n    throw cause;\n",
+    avant: "    verrou?.close();\n    dek.fill(0);\n    throw cause;\n",
     apres: "    dek.fill(0);\n    throw cause;\n",
     epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
@@ -2063,6 +2063,35 @@ export const MUTATIONS = Object.freeze([
     fichier: DEVERROUILLAGE,
     avant: "    ouverte.verrou?.close();\n",
     apres: "",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "la création REFAIT le constat de l'emplacement sous le verrou (#311, PR #314 constat 1)",
+    garde: "creerLeCoffre — `constaterLaPortabilite()` et le refus de `refusDOuverture`",
+    fichier: DEVERROUILLAGE,
+    avant: "    const refusDuCoffre = refusDOuverture(etat);\n" + "    if (refusDuCoffre !== null)",
+    apres: "    const refusDuCoffre = null;\n" + "    if (refusDuCoffre !== null)",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "la création refuse un emplacement qui n'est plus vide et sans enveloppe (#311)",
+    garde: "creerLeCoffre — la branche `emplacementOccupe`",
+    fichier: DEVERROUILLAGE,
+    avant: "    if (etat !== ETATS_DE_L_EMPLACEMENT.vide && !(await support().etat()).present) {\n",
+    apres: "    if (false) {\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "la clé tirée est effacée même quand la prise du handle est rejetée (#311, PR #314 constat 3)",
+    garde: "creerLeCoffre — la prise du handle DANS le `try` qui efface la clé",
+    fichier: DEVERROUILLAGE,
+    avant:
+      "  let verrou = null;\n" +
+      "  // La clé tirée et le verrou sont rendus sur TOUT échec, y compris celui de la prise du handle : le\n" +
+      "  // `try` commence donc AVANT l'attente (revue de la PR #314, constat 3).\n" +
+      "  try {\n" +
+      "    verrou = await ouvrirLeHandle(volume);\n",
+    apres: "  const verrou = await ouvrirLeHandle(volume);\n" + "  try {\n",
     epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
 ]);

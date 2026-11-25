@@ -13,7 +13,7 @@ import {
 } from "./support-worker-deverrouillage.mjs";
 import { installerLeDisque, poserLeVolumeCoquille } from "./support-coffre-de-la-coquille.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
-import { manifestSidecarName } from "../../src/vm/opfs-sync-access.mjs";
+import { manifestSidecarName, voisinsDunVolume } from "../../src/vm/opfs-sync-access.mjs";
 import { IDENTIFIANT_DU_VOLUME_COQUILLE } from "../../src/coquille/identites-du-coffre.mjs";
 import { revoquerToutSauf } from "../../src/vm/enveloppe-de-cle.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "../../src/coquille/identites-du-coffre.mjs";
@@ -283,6 +283,9 @@ test("CRÉATION : un échec AVANT l'ouvreur rend le verrou pris — jamais un ha
 /** Une restauration INTERROMPUE : le disque est versé, ni manifeste ni enveloppe — le coffre n'est pas né. */
 async function restaurationInterrompue(banc) {
   await installerLeDisque(banc);
+  // Une restauration RETIRE les voisins du volume qu'elle remplace (journal, témoin, instantané) et
+  // n'inscrit le manifeste qu'en dernier : ce qui reste est le disque seul.
+  for (const voisin of voisinsDunVolume("application")) await banc.retirer(voisin);
   await banc.retirer(manifestSidecarName("application"));
 }
 
@@ -370,4 +373,28 @@ test("CRÉATION : la clé de volume tirée est EFFACÉE quand la prise du handle
     0,
     "aucun tirage de 32 octets ne reste en clair dans le tas",
   );
+});
+
+test("CRÉATION face à un disque INSTALLÉ sans enveloppe, apparu pendant l'attente : refusée — jamais une clé neuve pour un disque existant", async () => {
+  const banc = magasin();
+  const b = await workerDeverrouillage({ banc });
+  const retenue = b.retenir("*");
+  const issue = b.deverrouiller(await messageDePhrase({ kek: AUTRE_KEK })).then(
+    () => ({}),
+    (erreur) => ({ erreur }),
+  );
+  await retenue.atteint;
+  await installerLeDisque(banc); // manifeste valide, aucune enveloppe : un « coffre » sans serrure
+  const disque = octets(banc, "application");
+  retenue.relacher();
+  const { erreur } = await issue;
+
+  assert.equal(
+    erreur?.code,
+    CODES_REFUS_COQUILLE.emplacementOccupe,
+    String(erreur?.code ?? erreur),
+  );
+  assert.equal(banc.store.sizeOf(ENVELOPPE), 0, "aucune enveloppe neuve pour ce disque");
+  assert.deepEqual(octets(banc, "application"), disque);
+  assert.equal(banc.store.isOpen(VOLUME), false);
 });

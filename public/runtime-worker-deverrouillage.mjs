@@ -13,8 +13,8 @@ import {
   IDENTIFIANT_DU_VOLUME_COQUILLE,
 } from "/src/coquille/identites-du-coffre.mjs";
 import { TYPES_PRIVILEGIES } from "/src/coquille/contrat-de-messages.mjs";
-import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
 import { ETATS_DU_VOLUME } from "/src/coquille/etat-de-la-coquille.mjs";
+import { ETATS_DE_L_EMPLACEMENT, refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
 import {
   ancreDeVersion,
   exigerKekDeLaPage,
@@ -327,8 +327,25 @@ async function creerLeCoffre(moyen, message) {
   const kek = exigerKekDeLaPage(message.kek);
   const parametres = hexEnOctets(String(message.parametresHex ?? ""));
   const dek = tirerCleDeVolume();
-  const verrou = await ouvrirLeHandle(volume);
+  let verrou = null;
+  // La clé tirée et le verrou sont rendus sur TOUT échec, y compris celui de la prise du handle : le
+  // `try` commence donc AVANT l'attente (revue de la PR #314, constat 3).
   try {
+    verrou = await ouvrirLeHandle(volume);
+    // L'emplacement est CONSTATÉ À NOUVEAU sous le verrou, en entier — le même constat que la restauration
+    // et que le début de `deverrouiller` : le premier date d'avant l'attente du handle, et pendant elle
+    // une restauration a pu s'interrompre après le disque, ou le disque d'un autre coffre apparaître
+    // (revue de la PR #314, constat 1). Tout ce que `refusDOuverture` refuse l'est ici, avant toute écriture ;
+    // un emplacement qui n'est plus vide et qui n'a pas d'enveloppe est occupé. Une enveloppe déjà là reste
+    // le refus de `creerEnveloppe` (`VAULT_ENVELOPPE_PRESENTE`), qui la juge sur le support.
+    const etat = await constaterLaPortabilite();
+    const refusDuCoffre = refusDOuverture(etat);
+    if (refusDuCoffre !== null)
+      throw Object.assign(new Error(refusDuCoffre), { code: refusDuCoffre });
+    if (etat !== ETATS_DE_L_EMPLACEMENT.vide && !(await support().etat()).present) {
+      const code = CODES_REFUS_COQUILLE.emplacementOccupe;
+      throw Object.assign(new Error(code), { code });
+    }
     const creee = await creerEnveloppe({
       support: support(),
       identifiantVolume: IDENTIFIANT_VOLUME,
@@ -348,7 +365,7 @@ async function creerLeCoffre(moyen, message) {
       verrou,
     };
   } catch (cause) {
-    verrou.close();
+    verrou?.close();
     dek.fill(0);
     throw cause;
   }

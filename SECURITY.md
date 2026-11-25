@@ -887,16 +887,28 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
     ouvert ». Le refus est celui d'une clé inconnue, le handle est rendu, la clé effacée
     ([ADR 0029](docs/decisions/0029-deverrouillage-dans-la-coquille.md), limite 12). Mesuré sur le
     Worker de produit, deux onglets réels, Chromium et Firefox ; la même séquence rend « ouvert »
-    sans le correctif (commit rouge `871d291`).
+    sans le correctif (commit rouge `e9fb17c`).
 
-    **La création et la restauration prennent le même verrou** (revue de la PR #314, constat 1 ;
+    **La création et la restauration prennent le même verrou** (revue de la PR #314, constats 1 ;
     [#313](https://github.com/pinfada/railsbox-vault/issues/313)) : le handle exclusif du volume
-    `coquille`, pris AVANT d'écrire `coquille.cles`, revalidé sous lui (enveloppe absente,
-    emplacement vide), tenu jusqu'après l'écriture. Une restauration suspendue qui reprend après
-    qu'un autre onglet a créé et ouvert son coffre est refusée, l'enveloppe de ce coffre — sa phrase
-    et sa récupération — reste intacte ; deux créations simultanées de même. Mesuré sur le Worker de
-    produit, deux onglets réels, **Chromium et Firefox**, avec une enveloppe de récupération
-    antérieure.
+    `coquille`, pris AVANT d'écrire `coquille.cles`, puis le **constat COMPLET de l'emplacement
+    refait sous ce verrou** — le même que celui du début du geste, avec les mêmes refus typés —
+    avant toute écriture, et le verrou tenu jusqu'après l'écriture. Ce que cela établit, exactement
+    :
+    - _restauration_ : refusée si l'emplacement n'est plus vide (`VAULT_COQUILLE_EMPLACEMENT_OCCUPE`
+      ou le refus du constat) ; l'enveloppe d'un coffre créé pendant sa suspension — phrase et
+      récupération — reste intacte ;
+    - _création_ : refusée si l'emplacement n'est plus vide — restauration interrompue après le
+      disque, disque d'un autre coffre, coffre antérieur, disque installé sans enveloppe — sous le
+      refus typé du constat (`VAULT_COQUILLE_EMPLACEMENT_OCCUPE` quand le constat dit seulement «
+      occupé »), ou si une enveloppe est déjà là (`VAULT_ENVELOPPE_PRESENTE`). Un autre détenteur du
+      volume les fait refuser `VAULT_STORAGE_BUSY`. La clé de volume tirée est effacée sur tout
+      échec, y compris une prise de handle rejetée.
+
+    Mesuré sur le Worker de produit, deux onglets réels, **Chromium et Firefox**, avec une enveloppe
+    de récupération antérieure ; le constat refait est mesuré sur le banc du vrai Worker
+    (restauration interrompue, disque d'un autre coffre, disque installé sans enveloppe) et, pour la
+    restauration interrompue, dans le navigateur.
 
     **Ce qui reste, dit sans détour.** (a) **Un détenteur antérieur de la clé de volume la garde** :
     s'il avait exécuté l'ouverture de l'enveloppe avant la révocation, il lit le volume (limite 12)
