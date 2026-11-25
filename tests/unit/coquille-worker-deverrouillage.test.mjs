@@ -208,7 +208,11 @@ test("CRÉATION entre deux onglets : B retardé APRÈS son constat, A crée et f
   retenue.relacher();
   const { erreur } = await issueB;
 
-  assert.equal(erreur?.code, ENVELOPPE_ERROR_CODES.presente, String(erreur?.code ?? erreur));
+  assert.equal(
+    erreur?.code,
+    CODES_REFUS_COQUILLE.emplacementOccupe,
+    String(erreur?.code ?? erreur),
+  );
   assert.deepEqual(octets(banc, ENVELOPPE), enveloppeDeA, "l'enveloppe de A n'est pas écrasée");
   assert.equal(b.interne.etat, ETATS_DU_VOLUME.verrouille);
   assert.equal(banc.store.isOpen(VOLUME), false, "B a rendu le handle");
@@ -375,7 +379,7 @@ test("CRÉATION : la clé de volume tirée est EFFACÉE quand la prise du handle
   );
 });
 
-test("CRÉATION face à un disque INSTALLÉ sans enveloppe, apparu pendant l'attente : refusée — jamais une clé neuve pour un disque existant", async () => {
+test("CRÉATION face à un emplacement dont l'état a CHANGÉ pendant l'attente (un disque s'est installé) : refusée, aucune enveloppe neuve", async () => {
   const banc = magasin();
   const b = await workerDeverrouillage({ banc });
   const retenue = b.retenir("*");

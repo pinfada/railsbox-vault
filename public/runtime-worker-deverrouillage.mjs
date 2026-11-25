@@ -14,7 +14,7 @@ import {
 } from "/src/coquille/identites-du-coffre.mjs";
 import { TYPES_PRIVILEGIES } from "/src/coquille/contrat-de-messages.mjs";
 import { ETATS_DU_VOLUME } from "/src/coquille/etat-de-la-coquille.mjs";
-import { ETATS_DE_L_EMPLACEMENT, refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
+import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
 import {
   ancreDeVersion,
   exigerKekDeLaPage,
@@ -162,7 +162,8 @@ export async function deverrouiller(message, correlation) {
     return repondreCode(CODES_REFUS_COQUILLE.typeInconnu, correlation);
   }
   exigerUnVolumeAtteignable();
-  const refusDuCoffre = refusDOuverture(await constaterLaPortabilite());
+  const etatConstate = await constaterLaPortabilite();
+  const refusDuCoffre = refusDOuverture(etatConstate);
   if (refusDuCoffre !== null)
     throw Object.assign(new Error(refusDuCoffre), { code: refusDuCoffre });
   const versionMinimale = ancreDeVersion(message.versionMinimale);
@@ -170,7 +171,7 @@ export async function deverrouiller(message, correlation) {
 
   const ouverte = observe.present
     ? await ouvrirLExistante(moyen, message, versionMinimale)
-    : await creerLeCoffre(moyen, message);
+    : await creerLeCoffre(moyen, message, etatConstate);
 
   // La DEK (celle de la passe 1) est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le
   // chemin d'ÉCHEC est celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
@@ -316,7 +317,7 @@ async function ouvrirSousLeCode(moyen, message, versionMinimale) {
  * naître ni s'ouvrir : le refus de `creerEnveloppe` est enfin un constat, et le volume naît sous CE
  * handle, sans trou. Un autre détenteur fait refuser la création `VAULT_STORAGE_BUSY`.
  */
-async function creerLeCoffre(moyen, message) {
+async function creerLeCoffre(moyen, message, etatConstate) {
   if (moyen.derivePar !== "page") {
     const erreur = new Error(
       "Aucun coffre n'existe encore : un code de récupération secourt, il ne crée pas.",
@@ -335,14 +336,16 @@ async function creerLeCoffre(moyen, message) {
     // L'emplacement est CONSTATÉ À NOUVEAU sous le verrou, en entier — le même constat que la restauration
     // et que le début de `deverrouiller` : le premier date d'avant l'attente du handle, et pendant elle
     // une restauration a pu s'interrompre après le disque, ou le disque d'un autre coffre apparaître
-    // (revue de la PR #314, constat 1). Tout ce que `refusDOuverture` refuse l'est ici, avant toute écriture ;
-    // un emplacement qui n'est plus vide et qui n'a pas d'enveloppe est occupé. Une enveloppe déjà là reste
-    // le refus de `creerEnveloppe` (`VAULT_ENVELOPPE_PRESENTE`), qui la juge sur le support.
+    // (revue de la PR #314, constat 1). Tout ce que `refusDOuverture` refuse l'est ici, avant toute
+    // écriture ; et l'emplacement ne doit pas avoir CHANGÉ depuis le constat qui a décidé de créer — il
+    // s'agit de ne pas créer sur un état que cette décision n'a pas vu, non de réinterpréter un état
+    // qu'elle a admis (un manifeste sans enveloppe l'était déjà). Une enveloppe déjà là reste le refus de
+    // `creerEnveloppe` (`VAULT_ENVELOPPE_PRESENTE`), qui la juge sur le support.
     const etat = await constaterLaPortabilite();
     const refusDuCoffre = refusDOuverture(etat);
     if (refusDuCoffre !== null)
       throw Object.assign(new Error(refusDuCoffre), { code: refusDuCoffre });
-    if (etat !== ETATS_DE_L_EMPLACEMENT.vide && !(await support().etat()).present) {
+    if (etat !== etatConstate) {
       const code = CODES_REFUS_COQUILLE.emplacementOccupe;
       throw Object.assign(new Error(code), { code });
     }

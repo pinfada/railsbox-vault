@@ -517,16 +517,17 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
     (le même que celui du début du geste, avec les mêmes refus typés) avant toute écriture, et ne le
     relâchent qu'après : la création le PASSE à l'ouvreur, sans trou jusqu'à la naissance du volume
     ; la restauration le tient pendant tout l'import. Un autre détenteur les fait refuser
-    `VAULT_STORAGE_BUSY`. Un emplacement qui n'est plus vide est refusé : pour la restauration
-    `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` ou le refus du constat ; pour la création le refus du
+    `VAULT_STORAGE_BUSY`. Un emplacement que le constat refuse l'est : pour la restauration
+    `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` quand il n'est plus vide ; pour la création le refus du
     constat (`RESTAURATION_INTERROMPUE`, `DISQUE_D_UN_AUTRE_COFFRE`, `COFFRE_ANTERIEUR`,
-    `COFFRE_SERVI_SANS_MANIFESTE`), `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` pour un disque installé sans
-    enveloppe, ou `VAULT_ENVELOPPE_PRESENTE` si l'enveloppe est déjà là. La clé de volume tirée par
-    la création est effacée sur tout échec, y compris une prise de handle rejetée. Prendre le handle
-    d'un fichier inexistant le CRÉE vide : `constaterLEmplacement` lit désormais un fichier
-    `coquille` de taille nulle comme absent (un volume né porte toujours son en-tête). La réparation
-    d'une restauration coupée vide le fichier TENU par son handle, après ses voisins, au lieu de le
-    retirer.
+    `COFFRE_SERVI_SANS_MANIFESTE`), ou `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` quand l'état a CHANGÉ
+    depuis le constat qui l'a décidée — elle ne réinterprète pas un état qu'elle avait admis (un
+    manifeste sans enveloppe l'était déjà). Une enveloppe déjà là reste le refus de `creerEnveloppe`
+    (`VAULT_ENVELOPPE_PRESENTE`). La clé de volume tirée par la création est effacée sur tout échec,
+    y compris une prise de handle rejetée. Prendre le handle d'un fichier inexistant le CRÉE vide :
+    `constaterLEmplacement` lit désormais un fichier `coquille` de taille nulle comme absent (un
+    volume né porte toujours son en-tête). La réparation d'une restauration coupée vide le fichier
+    TENU par son handle, après ses voisins, au lieu de le retirer.
 
     **Ce que cela ne tient pas** — et c'est écrit dans `SECURITY.md`, limite 13 : (a) un détenteur
     antérieur de la clé de volume la garde (limite 12 : révoquer ne rechiffre pas ; la rotation de

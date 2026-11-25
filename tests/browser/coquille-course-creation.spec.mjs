@@ -17,7 +17,6 @@ import { expect, test } from "../support/test.mjs";
 
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
-import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import {
   DELAI,
@@ -69,9 +68,12 @@ test("CRÉATION : B suspendu, A crée et ferme — B est refusé, l'enveloppe de
   await verrouiller(a);
 
   await reprendre(b);
-  await expect(b.locator("#deverrouillage-refus")).toContainText(ENVELOPPE_ERROR_CODES.presente, {
-    timeout: DELAI,
-  });
+  await expect(b.locator("#deverrouillage-refus")).toContainText(
+    CODES_REFUS_COQUILLE.emplacementOccupe,
+    {
+      timeout: DELAI,
+    },
+  );
   expect((await releve(b)).etat).toBe(ETATS_DU_VOLUME.verrouille);
 
   // L'enveloppe de A — sa phrase ET sa récupération — est intacte, et son volume s'ouvre.

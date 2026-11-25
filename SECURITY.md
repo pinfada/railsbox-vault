@@ -898,16 +898,19 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
     - _restauration_ : refusée si l'emplacement n'est plus vide (`VAULT_COQUILLE_EMPLACEMENT_OCCUPE`
       ou le refus du constat) ; l'enveloppe d'un coffre créé pendant sa suspension — phrase et
       récupération — reste intacte ;
-    - _création_ : refusée si l'emplacement n'est plus vide — restauration interrompue après le
-      disque, disque d'un autre coffre, coffre antérieur, disque installé sans enveloppe — sous le
-      refus typé du constat (`VAULT_COQUILLE_EMPLACEMENT_OCCUPE` quand le constat dit seulement «
-      occupé »), ou si une enveloppe est déjà là (`VAULT_ENVELOPPE_PRESENTE`). Un autre détenteur du
-      volume les fait refuser `VAULT_STORAGE_BUSY`. La clé de volume tirée est effacée sur tout
-      échec, y compris une prise de handle rejetée.
+    - _création_ : refusée si le constat refait sous le verrou refuse l'emplacement — restauration
+      interrompue après le disque, disque d'un autre coffre, coffre antérieur — sous son refus typé,
+      **ou si l'emplacement a changé depuis le constat qui a décidé de créer**
+      (`VAULT_COQUILLE_EMPLACEMENT_OCCUPE`), y compris quand un autre onglet a créé son coffre entre
+      les deux. Elle ne réinterprète pas un état que cette décision avait admis (un manifeste sans
+      enveloppe, par exemple : ce cas existait déjà et n'est pas changé) ; si une enveloppe est déjà
+      là, `creerEnveloppe` la refuse (`VAULT_ENVELOPPE_PRESENTE`). Un autre détenteur du volume les
+      fait refuser `VAULT_STORAGE_BUSY`. La clé de volume tirée est effacée sur tout échec, y
+      compris une prise de handle rejetée.
 
     Mesuré sur le Worker de produit, deux onglets réels, **Chromium et Firefox**, avec une enveloppe
     de récupération antérieure ; le constat refait est mesuré sur le banc du vrai Worker
-    (restauration interrompue, disque d'un autre coffre, disque installé sans enveloppe) et, pour la
+    (restauration interrompue, disque d'un autre coffre, état changé pendant l'attente) et, pour la
     restauration interrompue, dans le navigateur.
 
     **Ce qui reste, dit sans détour.** (a) **Un détenteur antérieur de la clé de volume la garde** :

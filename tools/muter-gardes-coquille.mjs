@@ -2074,10 +2074,10 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
   {
-    nom: "la création refuse un emplacement qui n'est plus vide et sans enveloppe (#311)",
+    nom: "la création refuse un emplacement qui a CHANGÉ depuis le constat qui l'a décidée (#311)",
     garde: "creerLeCoffre — la branche `emplacementOccupe`",
     fichier: DEVERROUILLAGE,
-    avant: "    if (etat !== ETATS_DE_L_EMPLACEMENT.vide && !(await support().etat()).present) {\n",
+    avant: "    if (etat !== etatConstate) {\n",
     apres: "    if (false) {\n",
     epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
   },
