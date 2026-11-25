@@ -230,6 +230,10 @@ test("[R-9] une confirmation qui s'ouvre prend le focus ; le focus déjà dans s
   p.conteneur.querySelector("#revoquer").focus();
   const confirmation = (occ) => {
     const fragment = p.doc.createDocumentFragment();
+    // Le geste qui a ouvert la confirmation est toujours là, comme dans la vue réelle.
+    const revoquer = p.doc.createElement("button");
+    revoquer.id = "revoquer";
+    fragment.append(revoquer);
     const groupe = p.doc.createElement("div");
     groupe.setAttribute("role", "group");
     for (const id of ["annuler", "oui"]) {
@@ -269,4 +273,32 @@ test("[R-9] après la fermeture d'une confirmation, le focus revient au geste qu
   p.conteneur.querySelector("#oui").focus();
   contenu(4, { ferme: true });
   assert.equal(p.doc.activeElement, p.repereDeFocus, "un geste fermé ne reçoit pas le focus");
+});
+
+test("[R-9] le focus d'un nœud HORS du conteneur n'est ni déplacé ni ramené au repère", () => {
+  const p = page();
+  const dehors = p.doc.createElement("button");
+  dehors.id = "dehors";
+  p.doc.body.append(dehors);
+  publier(p, 1, "e1", "oui");
+  dehors.focus();
+  publier(p, 2, "e2", "oui");
+  assert.equal(p.doc.activeElement, dehors);
+});
+
+test("[R-8] dernier recours : retrait ET `hidden` en échec, nœud attaché — il est DÉTACHÉ, rien ne reste visible", () => {
+  const p = page();
+  publier(p, 1, "e", "oui");
+  SABOTAGES["(a) removeAttribute lève"](p.conteneur);
+  Object.defineProperty(p.conteneur, "hidden", {
+    get: () => false,
+    set: () => {},
+    configurable: true,
+  });
+  const setAttribute = p.conteneur.setAttribute.bind(p.conteneur);
+  p.conteneur.setAttribute = (nom, valeur) => {
+    if (nom !== "hidden") setAttribute(nom, valeur);
+  };
+  assert.equal(p.affichage.masquer(), false);
+  assert.equal(p.conteneur.isConnected, false, "détaché en dernier recours");
 });

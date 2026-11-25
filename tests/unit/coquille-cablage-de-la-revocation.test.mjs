@@ -407,3 +407,50 @@ test("[e5] un échec d'écriture de l'indice ne perd pas la révocation : K est 
   assert.equal(p.cablage.etat().phase, "K");
   assert.equal(p.cablage.etat().indice, false);
 });
+
+test("[gestes] un clic sur un texte du conteneur ne déclenche aucun geste et ne lève pas", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  const avant = p.cablage.etat();
+  p.doc.getElementById("parcours-avertissement-revocation").click();
+  assert.equal(p.cablage.etat(), avant);
+});
+
+test("[attendre] la promesse n'est PAS réglée tant que l'état ne vérifie pas le prédicat", async () => {
+  const p = monterLeCablage();
+  let reglee = false;
+  void p.cablage
+    .attendre((etat) => etat.phase === "FC")
+    .then(() => {
+      reglee = true;
+    });
+  p.cablage.demarrer();
+  await tourner();
+  assert.equal(reglee, false, "en FL : pas encore");
+  await p.repondreALInventaire({ feuilleEprouvee: false });
+  assert.equal(reglee, true);
+});
+
+test("[data-vue] l'estampille porte l'identité du CONTENU : l'empreinte canonique de la vue publiée", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  assert.equal(p.estampille(), p.cablage.projection().empreinte);
+});
+
+test("[C2-1′] le miroir du constat suit l'instantané accepté : faux coffre fermé, faux si non éprouvée, vrai si éprouvée", async () => {
+  const p = monterLeCablage();
+  p.cablage.demarrer();
+  await p.repondreALInventaire({ feuilleEprouvee: true });
+  assert.equal(
+    p.rapport.feuilleEprouvee,
+    false,
+    "coffre fermé : aucun constat, jamais « éprouvée »",
+  );
+  p.cablage.appliquer({ type: "coffre-ouvert", moyen: "phrase" });
+  await p.repondreALInventaire({ feuilleEprouvee: false });
+  assert.equal(p.rapport.feuilleEprouvee, false);
+  p.cablage.modifier(() => Promise.resolve());
+  await tourner();
+  await p.repondreALInventaire({ feuilleEprouvee: true });
+  assert.equal(p.rapport.feuilleEprouvee, true);
+});

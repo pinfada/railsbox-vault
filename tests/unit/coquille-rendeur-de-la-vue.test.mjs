@@ -407,3 +407,17 @@ test("[R-h] exception dans la publication : échec de la tentative vivante, masq
   assert.deepEqual(b.visible.slice(-2), ["masquer", "erreur:1"]);
   assert.equal(b.lancementsDe(1), 1);
 });
+
+test("[X-g′] un règlement RÉENTRANT pendant le bloc de publication libère `enVol` : le bloc s'arrête avant l'estampille", async () => {
+  let b;
+  b = banc({ defaillances: { demasquer: () => b.expirer() } });
+  b.rendeur.reveiller();
+  b.taches[0].ok();
+  await vider();
+  assert.ok(
+    !b.visible.some((ligne) => ligne === "estampe:1"),
+    "la tentative n'a plus l'autorisation : aucune estampille",
+  );
+  assert.equal(b.rendeur.diagnostic().enVol, false);
+  assert.equal(b.rendeur.diagnostic().occurrencePubliee, null);
+});

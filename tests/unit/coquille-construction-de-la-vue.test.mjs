@@ -221,3 +221,9 @@ test("chaque bloc de la vue est un `data-bloc` que le parcours connaît", () => 
     }
   }
 });
+
+test("[#266 Q3] l'avertissement ne nomme que les moyens RÉELLEMENT présents : jamais une passkey que le coffre n'a pas", () => {
+  const texte = rendre("P").hote.querySelector("#parcours-avertissement-revocation").textContent;
+  assert.match(texte, /Votre phrase/);
+  assert.doesNotMatch(texte, /passkey/);
+});

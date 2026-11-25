@@ -28,6 +28,7 @@
 import { fileURLToPath } from "node:url";
 
 import { MUTATIONS_DE_LA_REVOCATION } from "./mutants-de-la-revocation.mjs";
+import { MUTATIONS_DU_CABLAGE } from "./mutants-du-cablage-de-la-revocation.mjs";
 import { campagneDeMutation } from "./moteur-de-mutation.mjs";
 
 const ADMISSION = "src/coquille/admission-applicative.mjs";
@@ -1254,6 +1255,8 @@ export const MUTATIONS = Object.freeze([
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,
+  // Le câblage de la révocation (#265, C2) : rendeur, affichage, vue, câblage, décision d'écran.
+  ...MUTATIONS_DU_CABLAGE,
 ]);
 
 function rapporter({ resultats }, json) {
