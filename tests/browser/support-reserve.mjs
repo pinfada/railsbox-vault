@@ -316,10 +316,12 @@ export async function ouvrirUnNavigateur(nomDuMoteur, { profil = null, options =
   }
   await contexte.addInitScript(SONDE_DES_WORKERS);
   await contexte.addInitScript(SONDE_DES_CHANGEMENTS);
+  await verifierLaSonde(contexte);
   return {
     contexte,
     async page() {
       const page = await contexte.newPage();
+      page.moteur = nomDuMoteur;
       page.erreurs = [];
       page.on("pageerror", (erreur) => page.erreurs.push(erreur.message));
       return page;
@@ -382,16 +384,71 @@ export const majDepuisLaPage = (page) =>
 export const contenuVu = (page, chemin) =>
   page.evaluate(async (c) => (await fetch(c)).text(), chemin);
 
+/** Les origines déjà visitées par chaque contexte : une « première visite » est une origine jamais visitée. */
+const DEJA_VISITEES = new WeakMap();
+
 /**
- * `page.goto` qui TOLÈRE le rechargement du produit : à la première visite, la page installe le Service Worker
- * puis se recharge d'elle-même (« préparation hors connexion, une seule fois »). Quand l'installation est
- * rapide, Firefox annonce que la navigation demandée est « interrompue par une autre navigation vers la même
- * URL » : c'est le rechargement du produit, pas un échec. Toute autre erreur est relevée.
+ * `page.goto` qui tolère UN SEUL cas, et le vérifie.
+ *
+ * À la PREMIÈRE VISITE d'une origine, la page installe le Service Worker puis se recharge d'elle-même
+ * (« préparation hors connexion, une seule fois »). Sous FIREFOX, quand l'installation est rapide, Playwright
+ * annonce que la navigation demandée est « interrompue par une autre navigation vers » la MÊME URL : c'est le
+ * rechargement du produit. La tolérance est bornée :
+ *  - au moteur Firefox (`page.moteur`, posé par `ouvrirUnNavigateur` : une page sans moteur connu n'en a aucune) ;
+ *  - à la première visite de cette origine par ce contexte ;
+ *  - à ce message, dont les DEUX URL sont exactement l'URL demandée ;
+ * et, une fois tolérée, elle EXIGE que l'URL finale soit l'URL demandée et que la coquille soit dans un état
+ * final (`prete` ou `reserve-refusee`). Toute autre erreur est relevée, partout ailleurs `goto` relève tout.
+ *
+ * @param {number} [delaiMs] délai de l'état final après la tolérance
  */
-export async function aller(page, url) {
+export async function aller(page, url, { delaiMs = 60_000 } = {}) {
+  const origine = new URL(url).origin;
+  const visitees = DEJA_VISITEES.get(page.context()) ?? new Set();
+  const premiereVisite = !visitees.has(origine);
   try {
     await page.goto(url, { waitUntil: "load" });
   } catch (erreur) {
-    if (!/interrupted by another navigation/.test(String(erreur?.message))) throw erreur;
+    const attendu = `Navigation to "${url}" is interrupted by another navigation to "${url}"`;
+    const toleree =
+      premiereVisite && page.moteur === "firefox" && String(erreur?.message).includes(attendu);
+    if (!toleree) throw erreur;
+    if (new URL(page.url()).href !== new URL(url).href) {
+      throw new Error(`après la tolérance, l'URL est ${page.url()} et non ${url}`, {
+        cause: erreur,
+      });
+    }
+    const releve = await attendreLaCoquille(page, { delaiMs });
+    if (!["prete", "reserve-refusee"].includes(releve.coquille)) {
+      throw new Error(`après la tolérance, la coquille est « ${releve.coquille} »`, {
+        cause: erreur,
+      });
+    }
+  }
+  DEJA_VISITEES.set(page.context(), visitees.add(origine));
+}
+
+/**
+ * TÉMOIN POSITIF de la sonde des Workers : dans ce contexte, un `new Worker` est COMPTÉ. Sans lui, « zéro
+ * Worker » passerait avec une sonde absente ou cassée, qui reste à zéro. Jette si elle ne compte pas.
+ */
+export async function verifierLaSonde(contexte) {
+  const page = await contexte.newPage();
+  try {
+    await page.goto("about:blank");
+    const compte = await page.evaluate(() => {
+      const avant = window.__workersCrees;
+      try {
+        new Worker("/temoin-de-la-sonde.mjs");
+      } catch {
+        /* l'adresse n'a pas d'importance : c'est le CONSTRUCTEUR qui est compté */
+      }
+      return [avant, window.__workersCrees];
+    });
+    if (compte[0] !== 0 || compte[1] !== 1) {
+      throw new Error(`la sonde de comptage des Workers ne compte pas : ${JSON.stringify(compte)}`);
+    }
+  } finally {
+    await page.close();
   }
 }

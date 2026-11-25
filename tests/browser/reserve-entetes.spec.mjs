@@ -11,7 +11,6 @@ import {
   ouvrirUnNavigateur,
   portDe,
   visiter,
-  aller,
 } from "./support-reserve.mjs";
 
 let origine;
@@ -119,7 +118,7 @@ test("DEUX ORIGINES (sens coquille → application) : la requête inter-origine 
   navigateur = await ouvrirUnNavigateur(browserName);
   const page = await navigateur.page();
   await visiter(page, origine);
-  await aller(page, `${origine.origine}/sans-csp.html`);
+  await page.goto(`${origine.origine}/sans-csp.html`);
   expect(
     await page.evaluate(() => !!navigator.serviceWorker.controller),
     "la page est contrôlée",

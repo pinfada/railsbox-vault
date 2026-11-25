@@ -328,6 +328,31 @@ test("un coffre déjà démarré redémarre ORIGINE ARRÊTÉE, depuis la réserv
   await page.close();
 });
 
+test("la SONDE de comptage des Workers MORD : sans elle, le témoin positif fait ÉCHOUER l'épreuve", async ({
+  browserName,
+}, testInfo) => {
+  void browserName;
+  // Un contexte SANS sonde (ou à la sonde cassée) : `verifierLaSonde` doit jeter, jamais rendre le contexte.
+  const sans = await contexteNeuf(testInfo, "sans-sonde", { compterLesWorkers: false });
+  try {
+    await expect(verifierLaSonde(sans)).rejects.toThrow(/ne compte pas/);
+  } finally {
+    await sans.close();
+  }
+  const cassee = await contexteNeuf(testInfo, "sonde-cassee", { compterLesWorkers: false });
+  try {
+    await cassee.addInitScript(() => {
+      window.__workers = 0; // une sonde qui reste à zéro : elle ne compte rien
+    });
+    await expect(verifierLaSonde(cassee)).rejects.toThrow(/ne compte pas/);
+  } finally {
+    await cassee.close();
+  }
+  // Et la sonde saine passe : le témoin n'est pas un échec systématique.
+  const saine = await contexteNeuf(testInfo, "sonde-saine");
+  await saine.close();
+});
+
 // --- FERMER puis ROUVRIR le navigateur : profil PERSISTANT, origine arrêtée (critère 1) ------------------
 
 test("PROFIL PERSISTANT : le navigateur est FERMÉ puis rouvert, l'origine ARRÊTÉE ; le coffre se déverrouille et démarre depuis la réserve", async ({
@@ -397,6 +422,33 @@ const SONDE_DES_WORKERS = () => {
 };
 
 /**
+ * TÉMOIN POSITIF de la sonde : dans une page de ce contexte, un `new Worker` est COMPTÉ. Sans lui, « zéro
+ * constructeur appelé » passerait avec une sonde absente, désactivée ou cassée, qui reste à zéro. Il rend le
+ * contexte, ou JETTE.
+ */
+async function verifierLaSonde(contexte) {
+  const page = await contexte.newPage();
+  try {
+    await page.goto("about:blank");
+    const compte = await page.evaluate(() => {
+      const avant = window.__workers;
+      try {
+        new Worker("/temoin-de-la-sonde.mjs");
+      } catch {
+        /* l'adresse n'a pas d'importance : c'est le CONSTRUCTEUR qui est compté */
+      }
+      return [avant, window.__workers];
+    });
+    if (compte[0] !== 0 || compte[1] !== 1) {
+      throw new Error(`la sonde de comptage des Workers ne compte pas : ${JSON.stringify(compte)}`);
+    }
+  } finally {
+    await page.close();
+  }
+  return contexte;
+}
+
+/**
  * Un profil NEUF par cas : l'isolation entre refus est totale (inscriptions, caches, OPFS).
  *
  * `compterLesWorkers: false` pour les scénarios qui BOOTENT : mesuré, la sonde (une sous-classe de `Worker`)
@@ -408,7 +460,10 @@ async function contexteNeuf(testInfo, nom, { compterLesWorkers = true } = {}) {
   const contexte = await chromium.launchPersistentContext(profil, {
     headless: testInfo.project.use?.headless ?? true,
   });
-  if (compterLesWorkers) await contexte.addInitScript(SONDE_DES_WORKERS);
+  if (compterLesWorkers) {
+    await contexte.addInitScript(SONDE_DES_WORKERS);
+    await verifierLaSonde(contexte);
+  }
   return contexte;
 }
 
@@ -428,6 +483,8 @@ async function exigerUnRefusDePortail(page, journal, code, cause) {
   expect(etat.reserve.refus).toEqual({ code, cause });
   expect(etat.canalPrivilegie, "aucun canal : aucun Worker, aucune clé").toBe("absent");
   expect(journal.filter(estUneRequeteDeBoot), "zéro requête de boot").toEqual([]);
+  // La sonde est active dans CE contexte (témoin positif à la création) : aucun constructeur n'a été appelé.
+  expect(await page.evaluate(() => window.__workers), "zéro constructeur de Worker appelé").toBe(0);
 }
 
 /** Le texte du SW tel que l'origine le sert, modifié : une faute injectée, jamais la configuration nominale. */
@@ -613,15 +670,13 @@ for (const cas of CAS) {
             (await releve(page)).canalPrivilegie,
             "la session n'est pas interrompue : le canal reste établi",
           ).toBe("etabli");
-          // LE GESTE SUIVANT, dans la MÊME page : une NOUVELLE OUVERTURE par le portail de cette page (la même
-          // instance que `main.mjs`, donc le même état de révocation et la même anomalie de contrôleur).
+          // La sonde est VIVANTE (témoin positif) : le Worker de confiance de cette page a été compté. Sans
+          // quoi « zéro nouveau Worker » passerait avec une sonde cassée qui reste à zéro.
           const workersAvant = await page.evaluate(() => window.__workers);
+          expect(workersAvant, "le Worker de confiance initial a été compté").toBeGreaterThan(0);
           const requetesAvant = journaux.flat().length;
-          const ouverture = await page.evaluate(async () => {
-            const { reserveCourante } = await import("/coquille/reserve-de-la-page.mjs");
-            return (await reserveCourante().ouvrir()) === null ? "refusee" : "ouverte";
-          });
-          expect(ouverture, "la nouvelle ouverture est refusée").toBe("refusee");
+          // Rien ne naît de l'anomalie : on laisse à la page le temps de faire une bêtise, puis on compte.
+          await page.waitForTimeout(3_000);
           expect(await page.evaluate(() => window.__workers), "zéro nouveau Worker").toBe(
             workersAvant,
           );
@@ -630,6 +685,16 @@ for (const cas of CAS) {
             "zéro requête de démarrage",
           ).toEqual([]);
           expect((await releve(page)).reserve.refus).toEqual({ code: cas.code, cause: cas.cause });
+          // Le chemin EXISTANT d'une nouvelle ouverture est le rechargement (le verrouillage recharge la
+          // coquille) : la page repasse par son portail normal, sans l'anomalie — le drapeau de changement de
+          // contrôleur est PAR PAGE. Le contrôleur est alors le même que celui de la page, et le portail ouvre.
+          // (« Plus aucun Worker n'est créé » dans une même page par un second portail est éprouvé en unitaire :
+          // `reserve-portail.test.mjs`, état partagé entre portails ; aucun second portail n'existe dans une page.)
+          await page.reload({ waitUntil: "load" });
+          await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", {
+            timeout: 60_000,
+          });
+          expect(await page.evaluate(() => window.__workers), "un Worker, par le portail").toBe(1);
           return;
         }
         // La page d'avant reste OUVERTE : tant qu'elle l'est, la version en attente n'est pas active (ADR 0048 § 6).

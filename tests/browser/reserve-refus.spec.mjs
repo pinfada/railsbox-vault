@@ -15,7 +15,6 @@ import {
   ouvrirUnNavigateur,
   portDe,
   visiter,
-  aller,
 } from "./support-reserve.mjs";
 
 /** Un fichier que SEUL le Worker de confiance importe : l'altérer ne casse pas la page, le portail le voit. */
@@ -116,7 +115,7 @@ test("SW ABSENT (inscription refusée) : RESERVE_ABSENTE (installation-impossibl
       Promise.reject(new DOMException("refusé", "SecurityError"));
   });
   const page = await navigateur.page();
-  await aller(page, `${origine.origine}/index.html`);
+  await page.goto(`${origine.origine}/index.html`);
   await exigerLeRefus(page, C.reserveAbsente, "installation-impossible");
 });
 
@@ -128,7 +127,7 @@ test("API ABSENTE (`navigator.serviceWorker` retiré) : RESERVE_ABSENTE (api-abs
     delete Navigator.prototype.serviceWorker;
   });
   const page = await navigateur.page();
-  await aller(page, `${origine.origine}/index.html`);
+  await page.goto(`${origine.origine}/index.html`);
   await exigerLeRefus(page, C.reserveAbsente, "api-absente");
   expect(await page.evaluate(() => "serviceWorker" in navigator)).toBe(false);
 });
@@ -161,7 +160,7 @@ test("VERSION PÉRIMÉE : une version en attente au plancher supérieur → RESE
     fabriquerGeneration({ sequence: 2, plancher: 2, surcharges: { "/main.mjs": null } }),
   );
   const neuve = await navigateur.page();
-  await aller(neuve, `${origine.origine}/index.html`);
+  await neuve.goto(`${origine.origine}/index.html`);
   await exigerLeRefus(neuve, C.reservePerimee, "plancher");
 });
 
@@ -171,7 +170,7 @@ test("RETRAIT : un script de retrait en attente → RESERVE_PERIMEE (retrait), a
   await installer(browserName);
   origine.publier(fabriquerGeneration({ sequence: 1, retrait: true }));
   const neuve = await navigateur.page();
-  await aller(neuve, `${origine.origine}/index.html`);
+  await neuve.goto(`${origine.origine}/index.html`);
   await exigerLeRefus(neuve, C.reservePerimee, "retrait");
 });
 
