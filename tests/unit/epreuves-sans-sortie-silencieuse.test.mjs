@@ -44,3 +44,80 @@ test("aucune épreuve ne sort par `return` sur ce que la page affiche : écran i
   }
   assert.deepEqual(fautes, [], "une sortie silencieuse sur ce que la page affiche");
 });
+
+// ---------------------------------------------------------------------------------------------------
+// Revue de la PR #305 (relecteur 2) : les sorties INDIRECTES. Une épreuve qui fait
+// `if (await exigerLaLimiteDuMoteur(page)) return;` sort par un utilitaire dont la condition est
+// l'ÉTAT lu sur la page : sur Chromium et Firefox, un volume « indisponible » faisait alors réussir
+// l'épreuve sans ses assertions. Trois règles, éprouvées ensemble :
+//
+// 1. les assistants de `tests/support/refus-de-capacite.mjs` sont liés au MOTEUR de la fixture :
+//    Chromium et Firefox n'admettent AUCUN état « sans volume » ;
+// 2. toute sortie `if (await F(…)) return` passe par une fonction `F` dont le corps pose d'abord la
+//    porte du moteur (`moteurDe(page)` ou `browserName`) ;
+// 3. aucune ligne de test ne lit `etatsSansVolume` pour DÉCIDER (condition, valeur rendue) sans porte du
+//    moteur : hors d'un `expect(…)`, la mention est refusée.
+
+const PORTE_DU_MOTEUR = /moteurDe\(|browserName|test\.skip\(/;
+
+async function fonctionsDeclarees() {
+  const rendu = new Map();
+  for (const chemin of await sources(RACINE)) {
+    const lignes = (await readFile(chemin, "utf8")).split("\n");
+    lignes.forEach((ligne, index) => {
+      const m = /^(?:export )?(?:async )?function (\w+)\(/.exec(ligne);
+      if (!m) return;
+      let fin = index;
+      while (fin < lignes.length && !/^}/.test(lignes[fin])) fin += 1;
+      rendu.set(`${chemin}:${m[1]}`, { chemin, corps: lignes.slice(index, fin + 1).join("\n") });
+    });
+  }
+  return rendu;
+}
+
+test("les assistants de capacité n'admettent AUCUN état sans volume sous Chromium ni Firefox", async () => {
+  const { etatsSansVolume } = await import("../support/refus-de-capacite.mjs");
+  const fausse = (moteur) => ({
+    context: () => ({ browser: () => ({ browserType: () => ({ name: () => moteur }) }) }),
+  });
+  assert.deepEqual(etatsSansVolume(fausse("chromium")), [], "Chromium : aucun état sans volume");
+  assert.deepEqual(etatsSansVolume(fausse("firefox")), [], "Firefox : aucun état sans volume");
+  assert.notDeepEqual(etatsSansVolume(fausse("webkit")), [], "WebKit éphémère : la limite écrite");
+});
+
+test("une sortie `if (await F(…)) return` passe par une fonction qui pose la porte du moteur D'ABORD", async () => {
+  const fonctions = await fonctionsDeclarees();
+  const fautes = [];
+  for (const chemin of await sources(RACINE)) {
+    const lignes = (await readFile(chemin, "utf8")).split("\n");
+    lignes.forEach((ligne, index) => {
+      const m = /^\s*if \(await (\w+)\(.*\)\) return;/.exec(ligne);
+      if (!m) return;
+      const definition = fonctions.get(`${chemin}:${m[1]}`);
+      const corps = definition?.corps ?? "";
+      const avantLaLecture = corps.split(/releve\(|etatsSansVolume\(/)[0];
+      if (!PORTE_DU_MOTEUR.test(avantLaLecture)) {
+        fautes.push(`${path.relative(RACINE, chemin)}:${index + 1} : ${ligne.trim()} (${m[1]})`);
+      }
+    });
+  }
+  assert.deepEqual(fautes, [], "une sortie par un utilitaire que le moteur ne conditionne pas");
+});
+
+test("aucune ligne de test ne lit `etatsSansVolume` pour décider sans porte du moteur", async () => {
+  const fautes = [];
+  for (const chemin of await sources(RACINE)) {
+    if (chemin.endsWith(`${path.sep}refus-de-capacite.mjs`)) continue;
+    const lignes = (await readFile(chemin, "utf8")).split("\n");
+    lignes.forEach((ligne, index) => {
+      if (!/\b(?:etatsSansVolume|ETATS_SANS_VOLUME)\b/.test(ligne)) return;
+      if (/^\s*(?:import\b|\/\/|\*)/.test(ligne)) return;
+      if (/\bexpect\(|\bexpect\s*$/.test(ligne) || PORTE_DU_MOTEUR.test(ligne)) return;
+      // Les arguments d'un `expect(` coupé sur deux lignes : la mention suit un `expect([`.
+      const precedente = lignes[index - 1] ?? "";
+      if (/\bexpect\(\s*$/.test(precedente)) return;
+      fautes.push(`${path.relative(RACINE, chemin)}:${index + 1} : ${ligne.trim()}`);
+    });
+  }
+  assert.deepEqual(fautes, [], "un état sans volume décide d'un chemin sans porte du moteur");
+});
