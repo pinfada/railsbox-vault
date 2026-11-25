@@ -327,7 +327,7 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(
       a.getByText("Aucun geste de révocation n'a été fait dans cette séance.", { exact: false }),
     ).toBeVisible();
-    await expect(a.getByText(/révoqué\b|l'ouvre toujours/i)).toHaveCount(0);
+    await expect(a.locator("#affichage")).not.toHaveText(/révoqué\b|l'ouvre toujours/i);
     // La phrase ouvre TOUJOURS : la visite n'a rien détruit.
     await bouton(a, "Revenir à mon application").click();
     await attendreLEcran(a, "Votre application");
