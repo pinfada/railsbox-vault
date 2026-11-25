@@ -522,6 +522,28 @@ test("un verrouillage demandé PENDANT un boot est refusé sous le code de l'ORD
   assert.equal(apres.verrouille, true, "le verrouillage reste refusé après la fin du boot");
 });
 
+test("#265 : la table de la révocation refuse le verrouillage (envoi en vol, modification) : refus d'ORDRE, le Worker n'est pas sollicité", async () => {
+  const journal = [];
+  const demandes = [];
+  const { liaison } = liaisonFeinte(journal, {
+    demander: (type) => {
+      demandes.push(type);
+      return Promise.resolve({ etat: ETATS_DU_VOLUME.verrouille });
+    },
+  });
+  let accord = false;
+  const gestes = brancherLesGestesDuCycle({ ...liaison, accepteLeVerrouillage: () => accord });
+  const refuse = await gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
+  assert.equal(refuse.verrouille, false);
+  assert.equal(refuse.horsOrdre, true);
+  assert.equal(refuse.code, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+  assert.deepEqual(demandes, [], "rien n'est demandé au Worker");
+  assert.ok(journal.includes(`refus-d-ordre:${CODES_REFUS_COQUILLE.etapeHorsOrdre}`));
+  accord = true;
+  const accepte = await gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
+  assert.equal(accepte.verrouille, true, "la table d'accord : le verrouillage part");
+});
+
 test("#215 : un second démarrage ne part pas et ne remplace pas le rapport du premier", async () => {
   let liberer;
   let demandes = 0;
