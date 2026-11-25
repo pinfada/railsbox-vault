@@ -128,14 +128,16 @@ n'offre pas… », avec le conseil de changer de navigateur : une affirmation qu
   inventaire refusé ou INCONNU (`ouvrirParLaPhrase`) est mutée, et tuée par
   `tests/unit/coquille-interface-inventaire-refuse.test.mjs`, qui monte la VRAIE `monterLInterface`
   sur un document minimal et exécute le geste (phrase présentée, clic) : aucune dérivation ne part,
-  le champ de phrase n'est pas vidé, le refus d'inventaire prime sur la politique de création. **Non
-  mutés** : `app-inter.mjs` et le banc (branchement DOM, navigateur seul) ; les deux AUTRES gardes
-  de même forme de l'interface (`ouvrirPar`, `ouvrirParLaPasskey`), dont celle d'`ouvrirPar` masque
-  la première pour la seule dérivation. Le geste qui ATTEINT l'OPFS à la levée est éprouvé par le
-  Worker chargé tel quel (un double de racine dont l'accès est compté) et par ses mutants. **Le
-  passkey** n'est pas rejoué après une panne : l'inventaire relu propose les moyens du coffre par le
-  même chemin que la phrase et le code (`moyensProposes`), mais aucun authentificateur virtuel n'est
-  piloté ici.
+  le champ de phrase n'est pas vidé, le refus d'inventaire prime sur la politique de création. Un
+  second mutant porte sur la condition qui choisit la politique de création
+  (`!present && inconnu !== true`) : un inventaire inconnu n'a ni `minLength` de création, ni
+  `new-password`, ni constat, ni conseil de choix. **Non mutés** : `app-inter.mjs` et le banc
+  (branchement DOM, navigateur seul) ; les deux AUTRES gardes de même forme de l'interface
+  (`ouvrirPar`, `ouvrirParLaPasskey`), dont celle d'`ouvrirPar` masque la première pour la seule
+  dérivation. Le geste qui ATTEINT l'OPFS à la levée est éprouvé par le Worker chargé tel quel (un
+  double de racine dont l'accès est compté) et par ses mutants. **Le passkey** n'est pas rejoué
+  après une panne : l'inventaire relu propose les moyens du coffre par le même chemin que la phrase
+  et le code (`moyensProposes`), mais aucun authentificateur virtuel n'est piloté ici.
 
 ## Alternatives rejetées
 

@@ -123,8 +123,8 @@ et les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les 
 fabriqué » et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en
 bout en bout ; le retour arrière, en unitaire.
 
-La campagne `coquille` gagne **cinquante-huit mutants** avec #231 (18/11/2026, après la revue
-complète de la PR #305), tous tués, **525/525** pour la campagne entière (elle porte aussi la table
+La campagne `coquille` gagne **cinquante-neuf mutants** avec #231 (18/11/2026, après la revue
+complète de la PR #305), tous tués, **526/526** pour la campagne entière (elle porte aussi la table
 de la révocation, #310). Huit portent sur la SONDE du stockage (`src/vm/sonde-du-stockage.mjs` : la
 borne et le réessai, le délai, le classement `indetermine` jamais `absente`, le code précis d'une
 panne), deux sur la traduction en `VAULT_STORAGE_INDETERMINE` (`opfs-sync-access.mjs`), dix-neuf sur
@@ -139,10 +139,11 @@ l'inventaire INCONNU, le refus typé, le retour à `verrouille` avec un geste qu
 quatre sur la racine des témoins du spike et la fouille du banc
 (`public/spike/origin/racine-opfs.mjs`), sept sur la comparaison des témoins
 (`tests/support/temoins-opfs.mjs`), deux sur le parcours (`coffreObserve` et `ecranCourant`
-reconnaissent l'inventaire inconnu), un sur la garde de l'interface de déverrouillage (un inventaire
-refusé ou inconnu ne juge aucune phrase, `coquille-interface-inventaire-refuse.test.mjs` monte la
-vraie `monterLInterface`). **Non muté, et dit :** le branchement DOM du spike (`app-inter.mjs`), du
-banc et le reste de l'interface de déverrouillage (« Réessayer », les gardes de `ouvrirPar` et de la
+reconnaissent l'inventaire inconnu), deux sur l'interface de déverrouillage (un inventaire refusé ou
+inconnu ne juge aucune phrase ; un inventaire inconnu n'est pas un coffre à créer, donc aucune
+politique de création, `coquille-interface-inventaire-refuse.test.mjs` monte la vraie
+`monterLInterface`). **Non muté, et dit :** le branchement DOM du spike (`app-inter.mjs`), du banc
+et le reste de l'interface de déverrouillage (« Réessayer », les gardes de `ouvrirPar` et de la
 passkey), éprouvable par le seul navigateur — `apps-frontiere.spec.mjs`,
 `deverrouillage-frontiere.spec.mjs` et `coquille-stockage-indetermine.spec.mjs` (Chromium et Firefox
 : coffre existant, rejet posé dans le Worker, au démarrage ou après une sonde réussie, reprise sans

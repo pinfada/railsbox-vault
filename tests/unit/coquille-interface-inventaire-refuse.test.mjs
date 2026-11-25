@@ -13,7 +13,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { monterLInterface } from "../../src/coquille/interface-de-deverrouillage.mjs";
+import {
+  CONSEIL_DE_REOUVERTURE,
+  monterLInterface,
+} from "../../src/coquille/interface-de-deverrouillage.mjs";
+import {
+  CONSEIL_DE_CHOIX_DE_PHRASE,
+  LONGUEUR_MINIMALE_PHRASE,
+} from "../../src/coquille/politique-de-phrase.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 
@@ -165,4 +172,49 @@ test("contre-épreuve : un inventaire SANS refus laisse partir la dérivation", 
     1,
     "sans refus, la phrase est dérivée : la garde ne bloque pas tout",
   );
+});
+
+// La condition qui CHOISIT la politique de création (`relireLaPhrase` : `!present && inconnu !== true`).
+// Un inventaire INCONNU a `present: false` comme un appareil sans coffre : seule la seconde moitié de la
+// condition les distingue. Sans elle, la politique de création — attribut `minLength`, complétion
+// `new-password`, constat en direct, conseil de choix — reviendrait dès la relecture d'un inventaire
+// dont on ne sait rien, et inviterait à CHOISIR une phrase pour un coffre qui existe peut-être.
+
+const INVENTAIRE_INCONNU = {
+  present: false,
+  versionEnveloppe: null,
+  emplacements: [],
+  inconnu: true,
+  refus: REFUS_DU_STOCKAGE,
+};
+
+test("un inventaire INCONNU : aucune politique de création, ni attribut, ni complétion, ni conseil", async () => {
+  const { dom } = await monter(INVENTAIRE_INCONNU);
+  const phrase = dom.querySelector("#saisie-phrase");
+
+  assert.equal(phrase.minLength, 1, "pas de longueur minimale de création");
+  assert.equal(phrase.autocomplete, "current-password", "pas de `new-password`");
+  assert.equal(dom.querySelector("#phrase-aide").textContent, "", "pas de conseil de choix");
+  assert.equal(
+    dom.querySelector("#phrase-conseil").textContent,
+    CONSEIL_DE_REOUVERTURE,
+    "le conseil est celui de la RÉOUVERTURE, jamais le constat de création",
+  );
+
+  // À chaque frappe aussi : une phrase courte n'ouvre pas le constat de création.
+  phrase.value = "court";
+  phrase.declencher("input");
+  assert.equal(dom.querySelector("#phrase-conseil").textContent, CONSEIL_DE_REOUVERTURE);
+  assert.equal(phrase.minLength, 1);
+  assert.equal(phrase.autocomplete, "current-password");
+});
+
+test("contre-épreuve : un appareil SANS coffre (inventaire lu, vide) reçoit la politique de création", async () => {
+  const { dom } = await monter({ present: false, versionEnveloppe: null, emplacements: [] });
+  const phrase = dom.querySelector("#saisie-phrase");
+
+  assert.equal(phrase.minLength, LONGUEUR_MINIMALE_PHRASE);
+  assert.equal(phrase.autocomplete, "new-password");
+  assert.equal(dom.querySelector("#phrase-aide").textContent, CONSEIL_DE_CHOIX_DE_PHRASE);
+  assert.notEqual(dom.querySelector("#phrase-conseil").textContent, CONSEIL_DE_REOUVERTURE);
 });
