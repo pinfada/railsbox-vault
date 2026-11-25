@@ -891,7 +891,13 @@ décision n'est rouvert.
    (l'image est une obligation d'exploitant, jamais publiée) et un crochet de **surcharge** pour
    faire mentir une origine ; l'épreuve démarre et **arrête** ses origines pour de vrai.
 7. **Preuves** : unitaire (SW dans un `vm`, portail, générateur), 3 moteurs (`reserve-*`), E2E
-   Chromium, campagne `reserve` du lanceur (`tools/muter-gardes-reserve.mjs`).
+   Chromium, campagne `reserve` du lanceur (`tools/muter-gardes-reserve.mjs`). Ajoutées après la
+   première relecture, **vertes d'emblée** (elles servent de garde de non-régression) : redémarrage
+   du navigateur sur **profil persistant**, origine arrêtée, déverrouillage et boot (E2E, critère 1)
+   ; nouvelle ouverture dans la même page après un changement de contrôleur, avec décompte des
+   Workers et journal réseau (E2E, critère 13c ; `reserveCourante()` donne accès au portail de la
+   page) ; retrait **interrompu entre la suppression des caches et la désinscription**, puis geste
+   suivant (unitaire et 3 moteurs, critère 7).
 8. **Limites inchangées et écrites** : Safari réel, éviction réelle, navigation privée réelle,
    hébergeur réel ; boot Rails Chromium seul ; l'origine applicative n'est pas dans la réserve ;
    TOFU et origine hostile avant le jalon 6 ; `tests/browser/reserve-messages.spec.mjs` ignorée sous
