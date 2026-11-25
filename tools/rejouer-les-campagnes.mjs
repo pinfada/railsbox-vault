@@ -121,7 +121,7 @@ export function enMarkdown(lignes, dureeTotaleMs, arreteA) {
   ];
   const bilan = arreteA
     ? `**Arrêtée au premier échec : \`${arreteA}\`.** Les campagnes suivantes n'ont pas été jouées.`
-    : `**${lignes.reduce((s, l) => s + l.tues, 0)}/${lignes.reduce((s, l) => s + l.mutants, 0)} mutants tués sur les onze campagnes, ${formaterDuree(dureeTotaleMs)} au total.**`;
+    : `**${lignes.reduce((s, l) => s + l.tues, 0)}/${lignes.reduce((s, l) => s + l.mutants, 0)} mutants tués sur les ${lignes.length} campagnes, ${formaterDuree(dureeTotaleMs)} au total.**`;
   return ["## Campagnes de mutation", "", ...corps, "", bilan, ""].join("\n");
 }
 
