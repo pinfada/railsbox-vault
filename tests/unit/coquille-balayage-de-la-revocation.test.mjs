@@ -184,3 +184,11 @@ test("[#321 point 2] la page branche le cycle PAR la liaison de `src/`, et l'acq
     "src/coquille/gestes-du-cycle.mjs",
   ]);
 });
+
+test("[#321 point 1] aucune réponse d'inventaire hors du magasin : seul le câblage demande `inventaire`", () => {
+  assert.deepEqual(fichiersQuiContiennent(/demander\(\s*"inventaire"/), [
+    "src/coquille/cablage-de-la-revocation.mjs",
+  ]);
+  const gestes = codeSeul(lire("src/coquille/gestes-de-portabilite.mjs"));
+  assert.doesNotMatch(gestes, /normaliserLInventaire|"inventaire"/);
+});

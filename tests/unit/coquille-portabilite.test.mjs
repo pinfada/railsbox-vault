@@ -30,9 +30,7 @@ import {
   refusPendantUnGesteLong,
 } from "../../src/coquille/portabilite-du-coffre.mjs";
 import { brancherLesGestesDePortabilite } from "../../src/coquille/gestes-de-portabilite.mjs";
-import { TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
-import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
 import { construireEnveloppeDeRecuperation } from "../../src/vm/enveloppe-de-recuperation.mjs";
 import { manifestSidecarName } from "../../src/vm/opfs-sync-access.mjs";
@@ -425,132 +423,65 @@ test("chaque geste PUBLIE son relevé avant de dire son état final (revue #208,
   }
 });
 
-// --- Revue de #321, point 1 : « inconnu » ne veut jamais dire « sans risque » -----------------------------
+// --- Revue de #321, point 1 : la porte du magasin, et elle seule (voir coquille-sauvegarde-et-porte) -----
 
-function reponseDInventaire(emplacements) {
-  return {
-    type: TYPES_PRIVILEGIES.inventaireReponse,
-    present: true,
-    refus: null,
-    versionEnveloppe: 3,
-    feuilleEprouvee: false,
-    emplacements,
-  };
-}
-
-const PHRASE_PUBLIQUE = {
-  typeKek: TYPES_KEK.phrase,
-  identifiantEmplacement: "0102030405060708",
-  parametresHex: "ab".repeat(24),
-};
-const CODE_PUBLIC = { typeKek: TYPES_KEK.recuperation, identifiantEmplacement: "1112131415161718" };
-
-function portabilite({ lirePublic, inventaire }) {
+function portabilite({ lirePublic }) {
   const demandes = [];
   const noeuds = new Map();
   const noeud = (id) => {
-    if (!noeuds.has(id)) {
-      noeuds.set(id, {
-        id,
-        textContent: "",
-        hidden: false,
-        addEventListener() {},
-      });
-    }
+    if (!noeuds.has(id))
+      noeuds.set(id, { id, textContent: "", hidden: false, addEventListener() {} });
     return noeuds.get(id);
   };
-  const offerts = [];
-  const rapport = {};
+  const offres = [];
+  const etatPendant = [];
   const gestes = brancherLesGestesDePortabilite({
     racine: { querySelector: (s) => noeud(s.replace("#", "")) },
     demander: async (type) => {
       demandes.push(type);
-      if (type === "inventaire") return inventaire();
+      etatPendant.push(noeud("portabilite-etat").textContent);
       return { taille: 3, archive: {}, applicationArretee: false };
     },
     modifier: () => ({ accepte: false }),
     lirePublic,
-    rapport,
+    relireLInventaire: () => ({ demandee: true }),
+    causeDeLEchec: () => null,
+    rapport: {},
     publier() {},
-    enregistrer: (fichier) => offerts.push(fichier),
+    enregistrer: () => offres.push(noeud("portabilite-avertissement").textContent),
   });
-  return { gestes, demandes, offerts, noeud, rapport };
+  return { gestes, demandes, offres, noeud, etatPendant };
 }
 
-test("[#321 point 1] porte FERMÉE : l'inventaire est RELU ; sans moyen de récupération, l'avertissement précède l'archive", async () => {
-  const p = portabilite({
-    lirePublic: () => null,
-    inventaire: () => reponseDInventaire([PHRASE_PUBLIQUE]),
-  });
+test("[#321 point 1] porte ouverte, aucun moyen de récupération : l'avertissement est dit AVANT l'offre de l'archive", async () => {
+  const p = portabilite({ lirePublic: () => ({ present: true, nombreDeCodes: 0 }) });
   await p.gestes.sauvegarder();
-  assert.deepEqual(p.demandes, ["inventaire", "sauvegarder"]);
-  assert.match(p.noeud("portabilite-avertissement").textContent, /récupération/i);
-  assert.equal(p.offerts.length, 1);
+  assert.deepEqual(p.demandes, ["sauvegarder"]);
+  assert.equal(p.offres.length, 1);
+  assert.match(p.offres[0], /récupération/i, "au moment de l'offre");
 });
 
-test("[#321 point 1] porte fermée, un code présent : aucun avertissement", async () => {
-  const p = portabilite({
-    lirePublic: () => null,
-    inventaire: () => reponseDInventaire([PHRASE_PUBLIQUE, CODE_PUBLIC]),
-  });
+test("[#321 point 1] porte ouverte, un code : aucun avertissement à l'offre", async () => {
+  const p = portabilite({ lirePublic: () => ({ present: true, nombreDeCodes: 1 }) });
   await p.gestes.sauvegarder();
-  assert.equal(p.noeud("portabilite-avertissement").textContent, "");
-  assert.equal(p.offerts.length, 1);
-});
-
-test("[#321 point 1] porte fermée ET relecture en échec : la sauvegarde n'est PAS offerte, et le refus du Worker est rendu tel quel", async () => {
-  const refus = Object.assign(new Error("indisponible"), { code: STORAGE_ERROR_CODES.unsupported });
-  const p = portabilite({
-    lirePublic: () => null,
-    inventaire: () => {
-      throw refus;
-    },
-  });
-  const rendu = await p.gestes.sauvegarder();
-  assert.deepEqual(p.demandes, ["inventaire"], "la sauvegarde n'est jamais demandée");
-  assert.deepEqual(p.offerts, []);
-  assert.equal(rendu.refus, STORAGE_ERROR_CODES.unsupported);
-  assert.match(
-    p.noeud("portabilite-refus").textContent,
-    new RegExp(STORAGE_ERROR_CODES.unsupported),
+  assert.deepEqual(p.offres, [""]);
+  assert.deepEqual(
+    p.etatPendant,
+    ["portabilite:sauvegarde-en-cours"],
+    "l'état est dit AVANT la demande",
   );
 });
 
-test("[#321 point 1] porte fermée et réponse qui n'est pas un inventaire (ou refusée) : « inconnu », donc pas d'archive", async () => {
-  for (const inventaire of [
-    () => ({ type: "n'importe quoi" }),
-    () => ({ ...reponseDInventaire([]), refus: { code: "VAULT_COQUILLE_COFFRE_ANTERIEUR" } }),
-  ]) {
-    const p = portabilite({ lirePublic: () => null, inventaire });
-    const rendu = await p.gestes.sauvegarder();
-    assert.deepEqual(p.demandes, ["inventaire"]);
-    assert.deepEqual(p.offerts, []);
-    assert.equal(rendu.refus, CODES_REFUS_COQUILLE.etapeHorsOrdre);
-  }
-});
-
-test("[#321 point 1] porte ouverte : aucune relecture ; sans moyen de récupération l'avertissement précède l'archive, avec un code aucun", async () => {
-  const sans = portabilite({
-    lirePublic: () => ({ present: true, nombreDeCodes: 0 }),
-    inventaire: () => assert.fail("relu"),
-  });
-  await sans.gestes.sauvegarder();
-  assert.deepEqual(sans.demandes, ["sauvegarder"]);
-  assert.match(sans.noeud("portabilite-avertissement").textContent, /récupération/i);
-  const avec = portabilite({
-    lirePublic: () => ({ present: true, nombreDeCodes: 1 }),
-    inventaire: () => assert.fail("relu"),
-  });
-  await avec.gestes.sauvegarder();
-  assert.equal(avec.noeud("portabilite-avertissement").textContent, "");
-  assert.equal(avec.offerts.length, 1);
-});
-
-test("[#321 point 1] un coffre ABSENT n'est pas averti d'une récupération qu'il n'a pas : l'avertissement ne vaut que pour un coffre présent", async () => {
-  const p = portabilite({
-    lirePublic: () => ({ present: false, nombreDeCodes: 0 }),
-    inventaire: () => assert.fail("relu"),
-  });
+test("[#321 point 1] un coffre ABSENT n'est pas averti d'une récupération qu'il n'a pas", async () => {
+  const p = portabilite({ lirePublic: () => ({ present: false, nombreDeCodes: 0 }) });
   await p.gestes.sauvegarder();
-  assert.equal(p.noeud("portabilite-avertissement").textContent, "");
+  assert.deepEqual(p.offres, [""]);
+});
+
+test("[#321 point 1] porte FERMÉE : ni sauvegarde ni lecture ; relecture demandée = « en cours », sinon la cause consignée", async () => {
+  const p = portabilite({ lirePublic: () => null });
+  const rendu = await p.gestes.sauvegarder();
+  assert.deepEqual(p.demandes, []);
+  assert.equal(rendu.refus, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+  assert.match(p.noeud("portabilite-refus").textContent, /en cours de relecture/);
 });

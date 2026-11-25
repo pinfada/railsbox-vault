@@ -40,6 +40,7 @@ const EPREUVE_MODIF = `${T}modification-d-enveloppe.test.mjs`;
 const EPREUVE_TEXTES = `${T}textes-de-la-revocation.test.mjs`;
 const EPREUVE_LIAISON_DU_CYCLE = `${T}cycle-sur-la-revocation.test.mjs`;
 const EPREUVE_ACQUIT = `${T}acquit-de-la-revocation.test.mjs`;
+const EPREUVE_SAUVEGARDE_ET_PORTE = `${T}sauvegarde-et-porte.test.mjs`;
 const EPREUVE_PORTABILITE = `${T}portabilite.test.mjs`;
 const EPREUVE_INTERFACE = `${T}interface-et-revocation.test.mjs`;
 
@@ -1027,35 +1028,27 @@ const LIAISON_MUTANTS = [
   ),
   m(
     PORTABILITE,
-    "    const donnees = contexte.lirePublic() ?? (await relireSansLeMagasin(contexte));",
+    "    const donnees = contexte.lirePublic();\n    if (donnees === null) throw refusSansPorte(contexte);",
     "    const donnees = contexte.lirePublic() ?? { present: false, nombreDeCodes: 0 };",
-    "une porte fermée vaut « rien à signaler » : la sauvegarde est offerte sans relire l'inventaire",
+    "une porte fermée vaut « rien à signaler » : la sauvegarde est offerte sans avertissement",
     "sauvegarderLeCoffre — « inconnu » n'est jamais « sans risque »",
-    EPREUVE_PORTABILITE,
+    EPREUVE_SAUVEGARDE_ET_PORTE,
   ),
   m(
     PORTABILITE,
-    "  if (!normalise.ok || normalise.donnees.public.refus !== null) throw SAUVEGARDE_SANS_INVENTAIRE;",
-    "  if (!normalise.ok) throw SAUVEGARDE_SANS_INVENTAIRE;",
-    "un inventaire refusé par le Worker vaut « connu » : la sauvegarde est offerte",
-    "relireSansLeMagasin — le refus d'inventaire",
-    EPREUVE_PORTABILITE,
+    "  if (contexte.relireLInventaire().demandee) {",
+    "  if (!contexte.relireLInventaire().demandee) {",
+    "le refus dit « en cours de relecture » quand aucune relecture n'est demandée (et inversement)",
+    "refusSansPorte — le sens de la demande",
+    EPREUVE_SAUVEGARDE_ET_PORTE,
   ),
   m(
     PORTABILITE,
-    "  if (!normalise.ok || normalise.donnees.public.refus !== null) throw SAUVEGARDE_SANS_INVENTAIRE;",
-    "  if (normalise.donnees.public.refus !== null) throw SAUVEGARDE_SANS_INVENTAIRE;",
-    "une réponse qui n'est pas un inventaire valide vaut « connu »",
-    "relireSansLeMagasin — la réponse validée",
-    EPREUVE_PORTABILITE,
-  ),
-  m(
-    PORTABILITE,
-    '  const reponse = await contexte.demander("inventaire", {});',
-    "  const reponse = {};",
-    "la relecture n'interroge pas le Worker",
-    "relireSansLeMagasin — la lecture",
-    EPREUVE_PORTABILITE,
+    "    code: contexte.causeDeLEchec() ?? CODES_REFUS_COQUILLE.etapeHorsOrdre,",
+    "    code: CODES_REFUS_COQUILLE.etapeHorsOrdre,",
+    "la cause consignée par le magasin n'est pas rendue (la limite WebKit se perd)",
+    "refusSansPorte — la cause",
+    EPREUVE_SAUVEGARDE_ET_PORTE,
   ),
   m(
     PORTABILITE,
@@ -1063,7 +1056,7 @@ const LIAISON_MUTANTS = [
     "    if (donnees.present === true && donnees.nombreDeCodes === 99) {",
     "la sauvegarde sans moyen de récupération n'est plus avertie",
     "sauvegarderLeCoffre — l'avertissement avant l'archive",
-    EPREUVE_PORTABILITE,
+    EPREUVE_SAUVEGARDE_ET_PORTE,
   ),
   m(
     PORTABILITE,
@@ -1072,6 +1065,38 @@ const LIAISON_MUTANTS = [
     "l'avertissement est dit pour un coffre qui n'existe pas",
     "sauvegarderLeCoffre — le coffre présent",
     EPREUVE_PORTABILITE,
+  ),
+  m(
+    PORTABILITE,
+    '    dire("portabilite-etat", "portabilite:sauvegarde-en-cours");\n    const rendu',
+    "    const rendu",
+    "l'état « sauvegarde en cours » n'est plus dit avant la demande",
+    "sauvegarderLeCoffre — la ligne d'état",
+    EPREUVE_PORTABILITE,
+  ),
+  m(
+    CABLAGE,
+    'const RELECTURE_EN_COURS = Object.freeze(["FL", "SL", "RL", "FM", "SM", "RM"]);',
+    'const RELECTURE_EN_COURS = Object.freeze(["FL", "RL", "FM", "SM", "RM"]);',
+    "une lecture en cours après l'ouverture (SL) n'est pas dite « en cours »",
+    "relireLInventaire — les phases où une lecture suit",
+    EPREUVE_SAUVEGARDE_ET_PORTE,
+  ),
+  m(
+    CABLAGE,
+    "    relireLInventaire: () => ({ demandee: RELECTURE_EN_COURS.includes(revocation.etat().phase) }),",
+    "    relireLInventaire: () => ({ demandee: true }),",
+    "une relecture est toujours dite demandée, même fermé pour de bon (échec terminal, doute)",
+    "relireLInventaire — fermé pour de bon",
+    EPREUVE_SAUVEGARDE_ET_PORTE,
+  ),
+  m(
+    CABLAGE,
+    "    causeDeLEchec: () => liaison.rapport.revocation?.code ?? null,",
+    "    causeDeLEchec: () => null,",
+    "la cause consignée n'est pas transmise aux gestes",
+    "causeDeLEchec — le diagnostic du magasin",
+    EPREUVE_SAUVEGARDE_ET_PORTE,
   ),
 ];
 

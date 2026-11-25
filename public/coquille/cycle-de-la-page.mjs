@@ -267,6 +267,8 @@ export function creerCycle({
       publier,
       modifier: pont.revocation.modifier,
       lirePublic: pont.revocation.lirePublic,
+      relireLInventaire: pont.revocation.relireLInventaire,
+      causeDeLEchec: pont.revocation.causeDeLEchec,
     });
 
     inscrire("backendPuisVm", ISSUES_DETAPE.differee, "volume-verrouille");

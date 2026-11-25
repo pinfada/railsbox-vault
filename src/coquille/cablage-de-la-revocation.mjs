@@ -24,6 +24,9 @@ import { creerLeRendeur } from "./rendeur-de-la-vue.mjs";
 import { texteDe } from "./textes-de-la-revocation.mjs";
 import { lireLeConstat, lirePublic } from "./vue-de-la-revocation.mjs";
 
+/** Les phases où une lecture suit : la lecture elle-même, ou la modification dont l'issue relit (e20). */
+const RELECTURE_EN_COURS = Object.freeze(["FL", "SL", "RL", "FM", "SM", "RM"]);
+
 /** Les exécuteurs de C1 : des fonctions SANS récepteur, qui ne lisent jamais l'état de la page. */
 function creerLesExecuteurs(ctx) {
   const { liaison, lectures, derniere } = ctx;
@@ -191,9 +194,14 @@ export function creerLeCablage(liaison) {
     etat: () => revocation.etat(),
     projection: () => revocation.projection(),
     lirePublic: () => lirePublic(revocation.etat()),
-    // ÉCHAFAUDAGE du commit rouge (revue de #321) : le contrat est posé, le comportement ne l'est pas encore.
-    relireLInventaire: () => ({ demandee: false }),
-    causeDeLEchec: () => null,
+    /**
+     * Une relecture est-elle déjà DEMANDÉE au magasin ? Lecture en cours (FL, SL, RL), ou modification en cours,
+     * dont l'issue relit toujours (e20) : oui, rien n'est relancé. Fermé pour de bon (échec terminal, doute,
+     * avant le montage) : non — la table ne prévoit alors aucune lecture, et la page ne s'en invente pas.
+     */
+    relireLInventaire: () => ({ demandee: RELECTURE_EN_COURS.includes(revocation.etat().phase) }),
+    /** La cause que le magasin a CONSIGNÉE pour son dernier échec (un code), ou `null` : un diagnostic. */
+    causeDeLEchec: () => liaison.rapport.revocation?.code ?? null,
     lireLeConstat: () => lireLeConstat(revocation.etat()),
     identifiantDuVolume: () => ctx.identifiantVolume,
     terminer: () => revocation.terminer(),

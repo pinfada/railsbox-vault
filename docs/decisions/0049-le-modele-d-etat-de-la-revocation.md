@@ -428,8 +428,10 @@ Fermés par C1 seul : 2, 4, 7, 8, 11 ; 6 est un processus.
   désormais dans `src/` : `brancherLeCycleSurLaRevocation` (le verrouillage consulte la table ;
   `brancherLesGestesDuCycle` REFUSE de se brancher sans cette décision, et seul un `true` franc
   laisse passer) et `creerLAcquit` (relevé, fermeture du lien d'archive — obligatoire —, ligne
-  d'état). Une sauvegarde n'est pas offerte quand la page ne sait pas ce que le coffre contient («
-  inconnu » n'est jamais « sans risque ») : elle est refusée sous le code de l'ordre. Reste dans la
-  glue de `public/` : la garde `pont.portabilite?.retirerLeLien()` (aucun lien n'existe avant le
-  branchement des gestes de portabilité) et le passage des fonctions, exigés par les balayages
-  statiques.
+  d'état). Une sauvegarde n'est pas offerte quand la porte publique est fermée (« inconnu » n'est
+  jamais « sans risque ») : le geste ne lit AUCUNE réponse d'inventaire hors du magasin ; il dit que
+  la relecture est en cours (ou que la page ne peut plus relire, avec la cause que le magasin a
+  consignée), et la personne réessaie une fois la porte ouverte. L'avertissement « sans moyen de
+  récupération » est dit AVANT l'offre de l'archive. Reste dans la glue de `public/` : la garde
+  `pont.portabilite?.retirerLeLien()` (aucun lien n'existe avant le branchement des gestes de
+  portabilité) et le passage des fonctions, exigés par les balayages statiques.

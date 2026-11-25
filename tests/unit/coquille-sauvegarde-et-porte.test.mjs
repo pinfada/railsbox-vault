@@ -150,3 +150,12 @@ test("[relireLInventaire] déjà en cours : rien n'est relancé ; fermé pour de
   await tourner();
   assert.deepEqual(p.cablage.relireLInventaire(), { demandee: false });
 });
+
+test("[relireLInventaire] après l'ouverture (SL) la lecture court aussi : demandée, rien n'est relancé", async () => {
+  const p = monterLeCablage();
+  p.cablage.demarrer();
+  await p.repondreALInventaire({ feuilleEprouvee: false });
+  p.cablage.appliquer({ type: "coffre-ouvert", moyen: "phrase" });
+  assert.equal(p.cablage.etat().phase, "SL");
+  assert.deepEqual(p.cablage.relireLInventaire(), { demandee: true });
+});
