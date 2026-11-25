@@ -18,6 +18,7 @@ import {
   ouvrirUnNavigateur,
   portDe,
   visiter,
+  aller,
 } from "./support-reserve.mjs";
 
 let origine;
@@ -96,7 +97,7 @@ test("SCRIPT DE RETRAIT par l'origine : onglet actif non interrompu, onglet neuf
   expect((await etatDeLInscription(page)).changements).toBe(0);
   // Un onglet neuf voit « révocation connue » et refuse.
   const neuf = await navigateur.page();
-  await neuf.goto(`${origine.origine}/index.html`);
+  await aller(neuf, `${origine.origine}/index.html`);
   const refus = await attendreLaCoquille(neuf);
   expect(refus.rapport.reserve.refus).toEqual({
     code: "VAULT_COQUILLE_RESERVE_PERIMEE",

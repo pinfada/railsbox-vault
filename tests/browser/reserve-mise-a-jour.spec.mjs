@@ -18,6 +18,7 @@ import {
   ouvrirUnNavigateur,
   portDe,
   visiter,
+  aller,
 } from "./support-reserve.mjs";
 
 const FICHIER = "/coquille/promesse-de-l-entree.mjs";
@@ -183,7 +184,7 @@ test("MÊME CONTENU, plancher relevé : même cache, rien n'est réinstallé (cr
   expect((await etatDeLInscription(page)).changements).toBe(0);
   // Un onglet NEUF refuse : RESERVE_PERIMEE, aucun Worker.
   const neuf = await navigateur.page();
-  await neuf.goto(`${origine.origine}/index.html`);
+  await aller(neuf, `${origine.origine}/index.html`);
   const refus = await attendreLaCoquille(neuf);
   expect(refus.rapport.reserve.refus).toEqual({
     code: "VAULT_COQUILLE_RESERVE_PERIMEE",

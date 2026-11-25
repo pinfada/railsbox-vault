@@ -333,7 +333,7 @@ export async function ouvrirUnNavigateur(nomDuMoteur, { profil = null, options =
 
 /** Visite la coquille et attend son état final (première visite : installation, puis rechargement). */
 export async function visiter(page, origine, chemin = "/index.html") {
-  await page.goto(origine.origine + chemin, { waitUntil: "load" });
+  await aller(page, origine.origine + chemin);
   return attendreLaCoquille(page);
 }
 
@@ -381,3 +381,17 @@ export const majDepuisLaPage = (page) =>
 /** Le contenu d'un fichier tel que la page le reçoit (donc servi par SA version du SW). */
 export const contenuVu = (page, chemin) =>
   page.evaluate(async (c) => (await fetch(c)).text(), chemin);
+
+/**
+ * `page.goto` qui TOLÈRE le rechargement du produit : à la première visite, la page installe le Service Worker
+ * puis se recharge d'elle-même (« préparation hors connexion, une seule fois »). Quand l'installation est
+ * rapide, Firefox annonce que la navigation demandée est « interrompue par une autre navigation vers la même
+ * URL » : c'est le rechargement du produit, pas un échec. Toute autre erreur est relevée.
+ */
+export async function aller(page, url) {
+  try {
+    await page.goto(url, { waitUntil: "load" });
+  } catch (erreur) {
+    if (!/interrupted by another navigation/.test(String(erreur?.message))) throw erreur;
+  }
+}
