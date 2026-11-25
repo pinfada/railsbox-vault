@@ -115,9 +115,9 @@ jobs:
     runs-on: ubuntu-24.04
     # Plafond NEUF, pas un relèvement : la barrière gardait 45 min, et c'est le seul chiffre que les
     # mesures justifient ici. Ce job porte l'installation de WebKit (~190 paquets système) : sur le
-    # miroir lent du 17 au 19/11/2026, `apt` a pris jusqu'à 32,8 min, soit ~37 min avec les épreuves
-    # (quelques minutes) et la mise en place. Un plafond plus court l'aurait tué pour la même cause
-    # que la barrière.
+    # miroir lent du 17 au 19/11/2026, `apt` a pris jusqu'à 32,8 min, soit ~35 min avec les épreuves
+    # (0,6 min mesurées, 25/11/2026) et la mise en place. Un plafond plus court l'aurait tué pour la
+    # même cause que la barrière.
     timeout-minutes: 45
     steps:
       - name: Récupération du dépôt
