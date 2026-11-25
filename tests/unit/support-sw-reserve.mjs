@@ -128,7 +128,10 @@ function fabriquerLesCaches(operations) {
  * Un SW instancié. `reseau` : `{ chemin: { statut?, corps?, entetes?, redirection? } | Error }` ; un chemin
  * absent répond 404 ; `reseau.coupe = true` fait lever un `TypeError` à tout `fetch` (hors connexion).
  */
-export function instancier(config, { reseau = {}, caches: initiaux = {}, clients = [] } = {}) {
+export function instancier(
+  config,
+  { reseau = {}, caches: initiaux = {}, clients = [], coupureAvantDesinscription = false } = {},
+) {
   const operations = [];
   const appels = [];
   const compteurs = { digest: 0, skipWaiting: 0, claim: 0, desinscriptions: 0 };
@@ -190,6 +193,8 @@ export function instancier(config, { reseau = {}, caches: initiaux = {}, clients
     },
     registration: {
       unregister: async () => {
+        // Coupure simulée ENTRE la suppression des caches et la désinscription (retrait interrompu).
+        if (coupureAvantDesinscription) throw new Error("coupure");
         compteurs.desinscriptions += 1;
         operations.push(["unregister"]);
         return true;

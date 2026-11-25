@@ -328,14 +328,88 @@ test("un coffre déjà démarré redémarre ORIGINE ARRÊTÉE, depuis la réserv
   await page.close();
 });
 
+// --- FERMER puis ROUVRIR le navigateur : profil PERSISTANT, origine arrêtée (critère 1) ------------------
+
+test("PROFIL PERSISTANT : le navigateur est FERMÉ puis rouvert, l'origine ARRÊTÉE ; le coffre se déverrouille et démarre depuis la réserve", async ({
+  browserName,
+}, testInfo) => {
+  void browserName;
+  exigerLesPrealables(raison, "hors-ligne.spec.mjs");
+  test.setTimeout(2_400_000);
+  const erreurs = [];
+  await demarrerLesOrigines();
+
+  // Premier navigateur : en ligne, installation du SW, déverrouillage, premier boot (le magasin se remplit).
+  const premier = await contexteNeuf(testInfo, "redemarrage", { compterLesWorkers: false });
+  let page = await ouvrirLaCoquille(premier, erreurs);
+  await ouvrirParLaPhrase(page);
+  await page.click("#demarrer-application");
+  expect(await verdictDuDemarrage(page, BUDGET_DEMARRAGE_MS)).toBe("cycle:application-demarree");
+  await expect
+    .poll(() => lireLeRange(page), { message: "le descripteur est rangé", timeout: 30_000 })
+    .not.toBeNull();
+  await verrouiller(page);
+  // Le navigateur est FERMÉ (le processus meurt, pas seulement la page), et l'origine est ARRÊTÉE.
+  await premier.close();
+  await couperLeReseau();
+
+  // Second navigateur : MÊME profil, aucune origine. Rien n'est servi que par la réserve et l'OPFS.
+  const second = await contexteNeuf(testInfo, "redemarrage", { compterLesWorkers: false });
+  try {
+    page = await second.newPage();
+    page.on("pageerror", (erreur) => erreurs.push(erreur.message));
+    await page.goto(`${E2E_ORIGIN_PUBLIEE}/index.html?vue=complete`, { waitUntil: "load" });
+    await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", {
+      timeout: 60_000,
+    });
+    const reserve = (await releve(page)).reserve;
+    expect(
+      reserve.refus,
+      "la coquille s'ouvre sans origine, après un redémarrage du navigateur",
+    ).toBeNull();
+    expect(reserve.fraicheur).toBe("version-courante-non-verifiable");
+    await ouvrirParLaPhrase(page);
+    await page.click("#demarrer-application");
+    expect(await verdictDuDemarrage(page, BUDGET_DEMARRAGE_MS)).toBe("cycle:application-demarree");
+    const application = (await releve(page)).application;
+    expect(application.demarree, "l'application répond, origine arrêtée, navigateur rouvert").toBe(
+      true,
+    );
+    expect(application.horsConnexion).not.toBeNull();
+    expect(erreurs, "aucune erreur de page").toEqual([]);
+  } finally {
+    await second.close();
+  }
+});
+
 // --- Les REFUS du portail : un code typé, ZÉRO requête de boot, aucun canal, aucune clé ----------------
 
-/** Un profil NEUF par cas : l'isolation entre refus est totale (inscriptions, caches, OPFS). */
-async function contexteNeuf(testInfo, nom) {
+/** Compte les `new Worker` de la page, dès le premier instant : « zéro Worker, zéro clé » se mesure. */
+const SONDE_DES_WORKERS = () => {
+  window.__workers = 0;
+  const Natif = window.Worker;
+  window.Worker = class extends Natif {
+    constructor(...arguments_) {
+      window.__workers += 1;
+      super(...arguments_);
+    }
+  };
+};
+
+/**
+ * Un profil NEUF par cas : l'isolation entre refus est totale (inscriptions, caches, OPFS).
+ *
+ * `compterLesWorkers: false` pour les scénarios qui BOOTENT : mesuré, la sonde (une sous-classe de `Worker`)
+ * fait mourir le Worker de confiance pendant un vrai boot (`VAULT_COQUILLE_WORKER_MORT`) ; elle ne sert qu'aux
+ * refus, où aucun Worker ne doit exister.
+ */
+async function contexteNeuf(testInfo, nom, { compterLesWorkers = true } = {}) {
   const profil = join(testInfo.outputDir, `profil-${nom}`);
-  return chromium.launchPersistentContext(profil, {
+  const contexte = await chromium.launchPersistentContext(profil, {
     headless: testInfo.project.use?.headless ?? true,
   });
+  if (compterLesWorkers) await contexte.addInitScript(SONDE_DES_WORKERS);
+  return contexte;
 }
 
 async function visiter(contexte, initScript) {
@@ -539,6 +613,23 @@ for (const cas of CAS) {
             (await releve(page)).canalPrivilegie,
             "la session n'est pas interrompue : le canal reste établi",
           ).toBe("etabli");
+          // LE GESTE SUIVANT, dans la MÊME page : une NOUVELLE OUVERTURE par le portail de cette page (la même
+          // instance que `main.mjs`, donc le même état de révocation et la même anomalie de contrôleur).
+          const workersAvant = await page.evaluate(() => window.__workers);
+          const requetesAvant = journaux.flat().length;
+          const ouverture = await page.evaluate(async () => {
+            const { reserveCourante } = await import("/coquille/reserve-de-la-page.mjs");
+            return (await reserveCourante().ouvrir()) === null ? "refusee" : "ouverte";
+          });
+          expect(ouverture, "la nouvelle ouverture est refusée").toBe("refusee");
+          expect(await page.evaluate(() => window.__workers), "zéro nouveau Worker").toBe(
+            workersAvant,
+          );
+          expect(
+            journaux.flat().slice(requetesAvant).filter(estUneRequeteDeBoot),
+            "zéro requête de démarrage",
+          ).toEqual([]);
+          expect((await releve(page)).reserve.refus).toEqual({ code: cas.code, cause: cas.cause });
           return;
         }
         // La page d'avant reste OUVERTE : tant qu'elle l'est, la version en attente n'est pas active (ADR 0048 § 6).

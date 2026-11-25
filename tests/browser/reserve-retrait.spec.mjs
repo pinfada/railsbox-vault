@@ -125,6 +125,90 @@ test("SCRIPT DE RETRAIT par l'origine : onglet actif non interrompu, onglet neuf
   expect(temoins.inscriptions, "l'inscription distincte survit").toContain("/autre/");
 });
 
+test("RETRAIT INTERROMPU entre la suppression des caches et la désinscription : l'état final est SÛR, le geste suivant termine le retrait (critère 7, ADR 0048 § 11)", async ({
+  browserName,
+}) => {
+  navigateur = await ouvrirUnNavigateur(browserName);
+  const page = await navigateur.page();
+  await visiter(page, origine);
+  await poserLesTemoins(page);
+  // Un script de retrait COUPÉ : il vide les caches, puis échoue au lieu de se désinscrire.
+  origine.publier(
+    fabriquerGeneration({
+      sequence: 1,
+      retrait: true,
+      transformerLeScript: (texte) =>
+        texte.replace("await self.registration.unregister();", 'throw new Error("coupure");'),
+    }),
+  );
+  await majDepuisLaPage(page);
+  expect(
+    await jusqua(async () => (await etatDeLInscription(page)).attente === "installed", {
+      delaiMs: 20_000,
+    }),
+  ).toBe(true);
+  await page.close();
+  // Tous les clients ont disparu : le retrait s'applique, et il est coupé à mi-chemin.
+  let sonde = null;
+  const coupe = await jusqua(
+    async () => {
+      await sonde?.close();
+      sonde = await navigateur.page();
+      await sonde.goto(`${origine.origine}/autre/vide`).catch(() => {});
+      return (
+        (
+          await sonde.evaluate(async () =>
+            (await caches.keys()).filter((n) => n.startsWith("reserve-")),
+          )
+        ).length === 0
+      );
+    },
+    { delaiMs: 40_000, pasMs: 500 },
+  );
+  expect(coupe, "les caches `reserve-*` sont partis").toBe(true);
+  // ÉTAT SÛR : aucun cache servable ; l'autre cache et l'autre inscription sont intacts.
+  const temoins = await temoinsVivants(sonde);
+  expect(temoins.caches).toEqual(["autre-cache"]);
+  expect(temoins.inscriptions).toContain("/autre/");
+  await sonde.close();
+  // La page ne démarre pas sur ce reste : elle refuse (PERIMEE/retrait) ou n'a plus de SW sain — jamais un Worker.
+  const neuve = await navigateur.page();
+  await neuve.goto(`${origine.origine}/index.html`).catch(() => {});
+  await jusqua(
+    async () => (await lireLeReleve(neuve).catch(() => ({}))).coquille === "reserve-refusee",
+    { delaiMs: 40_000 },
+  );
+  const apres = await lireLeReleve(neuve);
+  expect(apres.coquille).toBe("reserve-refusee");
+  expect(apres.workers, "aucun Worker").toBe(0);
+  expect(apres.rapport.canalPrivilegie).toBe("absent");
+  // LE GESTE SUIVANT termine le retrait : idempotent, les témoins survivent.
+  const geste = await neuve.evaluate(async () => {
+    const { retirerLaCopie } = await import("/src/coquille/reserve-retrait.mjs");
+    return retirerLaCopie({ conteneur: navigator.serviceWorker, caches });
+  });
+  expect(geste.caches, "plus aucun cache à retirer").toEqual([]);
+  const final = await temoinsVivants(neuve);
+  expect(final.inscriptions, "l'inscription de la coquille est partie").not.toContain("/");
+  expect(final.inscriptions).toContain("/autre/");
+  expect(final.caches).toEqual(["autre-cache"]);
+  // L'éditeur republie une version saine : la coquille repart de zéro.
+  origine.publier(fabriquerGeneration({ sequence: 2 }));
+  await neuve.close();
+  let depart = null;
+  const repart = await jusqua(
+    async () => {
+      await depart?.close();
+      depart = await navigateur.page();
+      await depart.goto(`${origine.origine}/index.html`).catch(() => {});
+      const releve = await attendreLaCoquille(depart).catch(() => null);
+      return releve?.coquille === "prete";
+    },
+    { delaiMs: 60_000, pasMs: 700 },
+  );
+  expect(repart, "après le retrait et une version saine, la coquille démarre").toBe(true);
+});
+
 test("RÉSEAU COUPÉ : le script de retrait n'est jamais vu, l'ancienne version est servie et dit « non vérifiable » (limite écrite, R2)", async ({
   browserName,
 }) => {

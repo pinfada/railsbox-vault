@@ -197,6 +197,45 @@ test("RETRAIT : les caches `reserve-*` d'abord, la désinscription ensuite, puis
   assert.deepEqual(sw.messagesAuxClients, [{ type: "retire" }]);
 });
 
+test("RETRAIT INTERROMPU entre la suppression des caches et la désinscription : l'état final est SÛR (aucun cache, rien de servi), et la reprise termine le retrait sans erreur (critère 7)", async () => {
+  const config = configurer(FICHIERS, { retrait: true });
+  const caches = {
+    "reserve-abc": { [`${ORIGINE}/main.mjs`]: "x" },
+    "autre-cache": { [`${ORIGINE}/z`]: "z" },
+  };
+  const coupe = instancier(config, { reseau: {}, caches, coupureAvantDesinscription: true });
+  await coupe.installer();
+  await assert.rejects(coupe.activer(), /coupure/);
+  // État final : les caches du produit sont partis, l'inscription survit (la désinscription n'a pas eu lieu).
+  assert.deepEqual(
+    [...coupe.caches.keys()],
+    ["autre-cache"],
+    "aucun cache `reserve-*`, un autre cache intact",
+  );
+  assert.equal(coupe.compteurs.desinscriptions, 0);
+  assert.equal(
+    (await coupe.requete("/main.mjs")).repondu,
+    false,
+    "le SW de retrait ne sert RIEN : jamais une réponse fabriquée",
+  );
+  assert.equal(
+    (await coupe.message({ type: "version" })).retrait,
+    true,
+    "il se reconnaît : la page le lit « retrait »",
+  );
+  // REPRISE : le même script, sur l'état laissé par la coupure, termine l'opération (idempotent).
+  const reprise = instancier(config, {
+    reseau: {},
+    caches: Object.fromEntries(
+      [...coupe.caches].map(([nom, entrees]) => [nom, Object.fromEntries(entrees)]),
+    ),
+  });
+  await reprise.installer();
+  await reprise.activer();
+  assert.equal(reprise.compteurs.desinscriptions, 1, "la reprise désinscrit");
+  assert.deepEqual([...reprise.caches.keys()], ["autre-cache"]);
+});
+
 test("un SW de retrait n'intercepte aucune requête et ne sert rien", async () => {
   const sw = instancier(configurer(FICHIERS, { retrait: true }), {
     reseau: { "/main.mjs": { corps: "x" } },

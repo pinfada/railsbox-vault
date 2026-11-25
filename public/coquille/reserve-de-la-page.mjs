@@ -40,10 +40,20 @@ function annonceDuTravailleur(canal, delaiMs) {
  * @param {(etat: string, texte: string) => void} o.terminer
  * @param {() => any} o.creerLeCanal crée le Worker de confiance et son canal (SYNCHRONE)
  */
+/**
+ * La réserve de CETTE page, ou `null` : le point d'entrée de tout NOUVEAU portail de la même page (un
+ * coffre verrouillé puis rouvert sans rechargement, ou une épreuve qui rejoue « la nouvelle ouverture »).
+ * C'est la MÊME instance que celle de `main.mjs` — donc le même état de révocation et la même anomalie de
+ * contrôleur — et non une copie : un module de même origine peut déjà tout ce que ce lecteur permet.
+ */
+let courante = null;
+export const reserveCourante = () => courante;
+
 export function creerLaReserve({ rapport, publier, terminer, creerLeCanal }) {
   if (RESERVE_PUBLIEE === null) {
     // Dépôt vivant : aucune réserve, aucun Service Worker.
-    return { ouvrir: async () => creerLeCanal() };
+    courante = { ouvrir: async () => creerLeCanal() };
+    return courante;
   }
   const bandeau = monterLeBandeau({
     document,
@@ -78,7 +88,7 @@ export function creerLaReserve({ rapport, publier, terminer, creerLeCanal }) {
     bandeau.afficherLeRefus(CODES_REFUS_COQUILLE.reserveDivergente);
     publier();
   });
-  return {
+  courante = {
     /** Rend le canal de confiance, ou `null` si le portail a refusé (la page l'a dit). */
     async ouvrir() {
       const issue = await reserve.ouvrirLePortail({
@@ -99,4 +109,5 @@ export function creerLaReserve({ rapport, publier, terminer, creerLeCanal }) {
       return null;
     },
   };
+  return courante;
 }
