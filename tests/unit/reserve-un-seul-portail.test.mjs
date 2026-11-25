@@ -9,9 +9,17 @@
  * faux, le déverrouillage passent par le canal DÉJÀ établi (`demanderAuWorker`), jamais par le portail.
  *
  * Cette épreuve est la GARDE de cette preuve : si un parcours qui rappelle le portail dans la même page
- * apparaît, elle rougit — et il faudra alors l'éprouver en E2E (zéro Worker, zéro requête de démarrage après
- * un changement de contrôleur) au lieu de s'en remettre à l'épreuve unitaire des portails successifs.
- * Elle compte des APPELS dans le code de production ; elle ne prétend pas prouver un comportement.
+ * apparaît sous l'une des formes qu'elle sait lire, elle rougit — et il faudra alors l'éprouver en E2E (zéro
+ * Worker, zéro requête de démarrage après un changement de contrôleur) au lieu de s'en remettre à l'épreuve
+ * unitaire des portails successifs.
+ *
+ * **Sa LIMITE, écrite** : ce n'est pas une analyse syntaxique. Elle balaie un PÉRIMÈTRE de fichiers
+ * (`PERIMETRE`) et des formes TEXTUELLES sur une seule ligne (`.ouvrir()`, `ouvrirLePortail(`,
+ * `creerCanalDeConfiance(`, `new Worker(…runtime-worker.mjs`) ; le « niveau du module » se lit à
+ * l'indentation (colonne 0, que prettier garantit). Elle ne voit PAS un appel renommé (`const f = reserve.ouvrir;
+ * f()`), coupé sur plusieurs lignes, construit dynamiquement (`import()` puis appel), ou écrit hors du périmètre.
+ * Elle borne donc l'ACCIDENT d'un nouvel appelant évident ; elle ne PROUVE pas l'absence de tout second appelant.
+ * L'absence est établie par la lecture du code (ADR 0048, amendement, point 9).
  */
 
 import assert from "node:assert/strict";
@@ -72,8 +80,9 @@ test("le portail n'est ouvert qu'UNE fois, au niveau du module de la page — ja
     ([f]) => f !== "src/vm/boot-de-reference.mjs",
   );
   assert.deepEqual(
-    ouvertures.map(([f, , l]) => [f, l.trim()]),
+    ouvertures.map(([f, , l]) => [f, l]),
     [["public/main.mjs", "pont.canal = await reserve.ouvrir();"]],
+    "une seule ouverture, À LA COLONNE 0 : niveau du module, jamais dans une fonction ni un gestionnaire",
   );
   const portails = appels(lignes, /\bouvrirLePortail\(/).filter(
     ([f, , l]) => f !== "src/coquille/reserve-portail.mjs" || !/function|ouvrirLePortail:/.test(l),

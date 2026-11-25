@@ -926,9 +926,13 @@ décision n'est rouvert.
    portails partagent un état de révocation monotone et une anomalie de contrôleur qui ne se défait
    pas » reste **éprouvé en unitaire** (`reserve-portail.test.mjs` : second portail, état non
    reculé, anomalie de contrôleur) et sert de garde à tout parcours futur ;
-   `tests/unit/reserve-un-seul-portail.test.mjs` **rougit** si un second appelant du portail
-   apparaît dans une même page — il faudra alors l'éprouver en E2E. Aucun crochet de test n'est
-   ajouté à la production. **Modification proposée au critère 13c** : « après un changement de
-   contrôleur, zéro nouveau Worker et zéro requête de démarrage dans la même page (éprouvé) ; une
-   nouvelle ouverture dans la même page n'existant pas, le critère porte sur le rechargement, qui
-   repasse par le portail normal ».
+   `tests/unit/reserve-un-seul-portail.test.mjs` est un **cliquet de l'accident, pas une preuve** :
+   il balaie un périmètre de fichiers et des formes textuelles sur une seule ligne (`.ouvrir()`,
+   `ouvrirLePortail(`, `creerCanalDeConfiance(`), exige que l'unique ouverture soit à la colonne 0
+   (niveau du module, sans analyse syntaxique), et rougit si un nouvel appelant ÉVIDENT apparaît —
+   il faudra alors l'éprouver en E2E. Il ne voit pas un appel renommé, coupé sur plusieurs lignes,
+   dynamique ou hors périmètre : l'absence de tout second appelant repose sur la lecture du code
+   ci-dessus. Aucun crochet de test n'est ajouté à la production. **Modification proposée au critère
+   13c** : « après un changement de contrôleur, zéro nouveau Worker et zéro requête de démarrage
+   dans la même page (éprouvé) ; une nouvelle ouverture dans la même page n'existant pas, le critère
+   porte sur le rechargement, qui repasse par le portail normal ».

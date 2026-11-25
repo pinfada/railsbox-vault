@@ -3123,11 +3123,21 @@ et qu'aucune parallélisation ne raccourcit : une borne de temps se paie en temp
 
 **Le chiffre, corrigé le 9 septembre 2026 (#170).** Cette page annonçait « trente minutes » pendant
 que `ci.yml` en portait **vingt-cinq** : la page disait une intention, le fichier tenait la règle,
-et c'est le fichier qui décide. Le plafond est désormais de **vingt-huit minutes**, et il est écrit
-ici tel qu'il est là-bas. Le motif du relèvement est lui aussi une mesure : le dernier run de la
+et c'est le fichier qui décide. Le plafond était alors de **vingt-huit minutes**, et il est écrit
+ici tel qu'il était là-bas. Le motif du relèvement est lui aussi une mesure : le dernier run de la
 branche de #170 avant que la suite des fins d'onglet entre dans le gate a tenu en **20 min 42 s** —
 l'exécutant partagé décide de bien plus que les attentes annoncées —, et cette suite ajoute environ
 55 s.
+
+**Le chiffre, relevé de 28 à 36 minutes le 25 novembre 2026 (#299, D1h-b).** Même règle, même motif
+: le fichier décide, `ci.yml` porte **trente-six minutes** (`Vérifications du produit`) et elles
+sont écrites ici telles qu'elles sont là-bas. La mesure : les projets `reserve-*` (une origine
+contrôlable, un navigateur neuf par épreuve, trois moteurs) ajoutent **≈ 3 min** à la suite
+navigateur (9 min 06 s pour `--repeat-each=3`, en local). Les runs de la PR ont tenu 23 min 17 s, 25
+min 32 s, 27 min 07 s, puis le quatrième a été TUÉ au plafond de 28 min : la suite navigateur avait
+rendu (537 passés en 21 min 18 s) et le plafond a coupé `test:apparence`. Le run suivant, au plafond
+relevé, a tenu 24 min 29 s. Trente-six minutes laissent huit minutes de marge sur un exécutant qui
+varie de quatre, et le plafond mord encore.
 
 **Deux, et pas trois.** Une troisième épreuve vérifiait que la valeur PAR DÉFAUT de dix minutes
 n'était pas atteinte plus tôt. Elle a été retirée avant la fusion, et le dire vaut mieux que la
