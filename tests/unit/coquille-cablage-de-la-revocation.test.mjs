@@ -454,3 +454,101 @@ test("[C2-1′] le miroir du constat suit l'instantané accepté : faux coffre f
   await p.repondreALInventaire({ feuilleEprouvee: true });
   assert.equal(p.rapport.feuilleEprouvee, true);
 });
+
+// --- #308 : les constats que C1 + C2 ferment ensemble, sur le câblage réel -----------------------------
+
+async function jusquAuDoute(p) {
+  await p.jusquAP();
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  p.clic("revocation-oui");
+  p.attentes.revoquerEnUrgence[0].rejeter(Object.assign(new Error("x"), { code: "VAULT_TEST" }));
+  await tourner();
+  assert.equal(p.cablage.etat().phase, "I");
+}
+
+test("[#308 n°10] l'avertissement d'incertitude SURVIT à la navigation permise : il n'est jamais effacé par un clic", async () => {
+  const p = monterLeCablage();
+  await jusquAuDoute(p);
+  assert.match(p.doc.getElementById("affichage-region").textContent, /peut-être/);
+  p.cablage.appliquer({ type: "changer-d-etape" });
+  await tourner();
+  assert.match(p.doc.getElementById("affichage-region").textContent, /peut-être/);
+  assert.equal(p.cablage.appliquer({ type: "revenir-a-l-application" }).accepte, true);
+  await tourner();
+  assert.match(p.doc.getElementById("affichage-region").textContent, /peut-être/);
+  assert.equal(p.journal.revenu, 1);
+});
+
+test("[#308 n°11] après un doute, aucune nouvelle révocation : « Révoquer… » n'existe plus, et la table refuse", async () => {
+  const p = monterLeCablage();
+  await jusquAuDoute(p);
+  assert.equal(p.doc.getElementById("revoquer-en-urgence"), null);
+  const resultat = p.cablage.appliquer({ type: "demander-la-revocation" });
+  assert.equal(resultat.accepte, false);
+  assert.match(p.doc.getElementById("affichage-annonce").textContent, /Rouvrez votre coffre/);
+  assert.equal(p.messages.filter((m) => m === "revoquerEnUrgence").length, 1);
+});
+
+test("[#308 n°12] une relecture ÉCHOUÉE après un succès : « révocation faite, mais à relire » — aucune ancienne donnée", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  p.clic("revocation-oui");
+  p.attentes.revoquerEnUrgence[0].resoudre(SUCCES);
+  await tourner();
+  p.attentes.inventaire
+    .at(-1)
+    .rejeter(Object.assign(new Error("relecture"), { code: "VAULT_TEST" }));
+  await tourner();
+  assert.equal(p.cablage.etat().phase, "RE");
+  assert.match(p.texte(), /La révocation a été faite\. Mais votre coffre n'a pas pu relire/);
+  assert.equal(p.cablage.lirePublic(), null, "les moyens d'avant ne sont plus lisibles");
+  assert.equal(p.cablage.lireLeConstat(), null, "le constat d'avant non plus");
+  assert.equal(p.doc.getElementById("revoquer-en-urgence"), null);
+});
+
+test("[#308 n°13] une relecture ÉCHOUÉE SANS révocation ne dit JAMAIS « la révocation a été faite »", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  p.cablage.modifier(() => Promise.resolve());
+  await tourner();
+  p.attentes.inventaire
+    .at(-1)
+    .rejeter(Object.assign(new Error("relecture"), { code: "VAULT_TEST" }));
+  await tourner();
+  assert.equal(p.cablage.etat().phase, "SE");
+  assert.match(p.texte(), /Votre coffre doit être relu/);
+  assert.doesNotMatch(p.texte(), /La révocation a été faite|révoqué/i);
+});
+
+test("[#308 n°14] après une relecture échouée, aucune valeur par défaut ne réactive de données périmées", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  p.cablage.modifier(() => Promise.resolve());
+  await tourner();
+  p.attentes.inventaire.at(-1).rejeter(new Error("relecture"));
+  await tourner();
+  const observation = p.cablage.projection();
+  assert.equal(observation.vue.moyens, null);
+  assert.equal(observation.vue.nombreDeCodes, null);
+  assert.equal(observation.vue.feuilleEprouvee, null);
+  assert.equal(observation.gestes["demander-la-revocation"].ouvert, false);
+});
+
+test("[#308 n°9] un geste fermé par la table ne dépend d'aucun rendu : le refus est SYNCHRONE, même avant la republication", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  const oui = p.doc.getElementById("revocation-oui");
+  // Premier clic : part (V). Le bouton est encore dans le DOM — aucun rendu n'a eu lieu —, et le second
+  // clic sur le MÊME nœud est refusé par la table, de façon synchrone.
+  oui.click();
+  assert.equal(p.cablage.etat().phase, "V");
+  // `dispatchEvent` arrive même sur un nœud que le masquage a rendu inatteignable à la main.
+  oui.dispatchEvent(new p.doc.Evenement("click"));
+  assert.equal(p.messages.filter((m) => m === "revoquerEnUrgence").length, 1);
+  assert.match(p.doc.getElementById("affichage-annonce").textContent, /en cours/);
+});

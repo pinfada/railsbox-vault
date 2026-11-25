@@ -311,3 +311,94 @@ test("[R-9] le focus resté dans le contenu remplacé revient au repère stable"
   await publier(page, 1);
   expect(await page.evaluate(() => document.activeElement?.id)).toBe("parcours-titre");
 });
+
+test("[calibrage] du réveil du rendeur à l'estampille : la latence reste très sous DELAI_DU_RENDEUR_MS, sur chaque moteur", async ({
+  page,
+  browserName,
+}, info) => {
+  await page.route("**/main.mjs", (route) =>
+    route.fulfill({ status: 200, contentType: "text/javascript", body: "" }),
+  );
+  await page.goto(new URL("/index.html", SHELL_ORIGIN).toString());
+  const mesures = await page.evaluate(async () => {
+    const { creerLeCablage } = await import("/src/coquille/cablage-de-la-revocation.mjs");
+    const { DELAI_DU_RENDEUR_MS } = await import("/src/coquille/rendeur-de-la-vue.mjs");
+    const { TYPES_KEK } = await import("/src/vm/enveloppe/identite-enveloppe.mjs");
+    const octets = (graine, longueur) =>
+      Array.from({ length: longueur }, (_, i) =>
+        ((graine + i * 7) & 0xff).toString(16).padStart(2, "0"),
+      ).join("");
+    const emplacements = [
+      {
+        typeKek: TYPES_KEK.phrase,
+        identifiantEmplacement: octets(1, 8),
+        parametresHex: octets(9, 24),
+      },
+    ];
+    for (let i = 0; i < 7; i += 1) {
+      emplacements.push({
+        typeKek: TYPES_KEK.recuperation,
+        identifiantEmplacement: octets(40 + i, 8),
+      });
+    }
+    const inventaire = {
+      type: "vault.coquille.inventaire-prive-reponse",
+      refus: null,
+      present: true,
+      feuilleEprouvee: true,
+      identifiantVolume: "coffre",
+      versionEnveloppe: 3,
+      emplacements,
+    };
+    const conteneur = document.getElementById("affichage");
+    const cablage = creerLeCablage({
+      doc: document,
+      conteneur,
+      regionDErreur: document.getElementById("affichage-erreur"),
+      annonce: document.getElementById("affichage-annonce"),
+      repereDeFocus: document.getElementById("parcours-titre"),
+      demander: async () => structuredClone(inventaire),
+      rapport: {},
+      publierLeRapport: () => {},
+      indice: false,
+      noterLIndice: () => Promise.resolve(),
+      refleter: () => {},
+      surRevocationAcquittee: () => {},
+      surTerminer: () => {},
+      surRevenir: () => {},
+    });
+    const attendre = (predicat) => cablage.attendre(predicat);
+    cablage.demarrer();
+    await attendre((etat) => etat.phase === "FC");
+    cablage.coffreOuvert("recuperation");
+    await attendre((etat) => etat.phase === "P");
+    // Chaque transition est suivie d'UNE publication ; on mesure du geste à l'estampille correspondante.
+    const durees = [];
+    for (let i = 0; i < 300; i += 1) {
+      const occurrence = cablage.etat().occurrence + 1;
+      const depart = performance.now();
+      cablage.appliquer({ type: i % 2 === 0 ? "demander-la-revocation" : "annuler" });
+      while (conteneur.getAttribute("data-occurrence") !== String(occurrence)) {
+        await new Promise((rendre) => setTimeout(rendre, 0));
+      }
+      durees.push(performance.now() - depart);
+    }
+    durees.sort((a, b) => a - b);
+    return {
+      delaiDuRendeurMs: DELAI_DU_RENDEUR_MS,
+      n: durees.length,
+      p50: durees[Math.floor(durees.length * 0.5)],
+      p99: durees[Math.floor(durees.length * 0.99)],
+      max: durees.at(-1),
+    };
+  });
+  await info.attach(`calibrage-du-rendeur-${browserName}.json`, {
+    body: JSON.stringify(mesures, null, 2),
+    contentType: "application/json",
+  });
+  expect(mesures.n).toBe(300);
+  // Le délai n'est jamais atteint par un rendu SAIN : une marge de dix fois sur le pire cas mesuré.
+  expect(mesures.max, `pire latence mesurée sur ${browserName}`).toBeLessThan(
+    mesures.delaiDuRendeurMs / 10,
+  );
+});
