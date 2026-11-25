@@ -223,3 +223,50 @@ test("[R-9] un nouvel appel à `memoriserLeFocus` oublie le précédent : le foc
   publier(p, 3, "e3", "oui");
   assert.equal(p.doc.activeElement, p.repereDeFocus, "le focus hors du conteneur n'est pas repris");
 });
+
+test("[R-9] une confirmation qui s'ouvre prend le focus ; le focus déjà dans son groupe n'est pas volé", () => {
+  const p = page();
+  publier(p, 1, "e1", "revoquer");
+  p.conteneur.querySelector("#revoquer").focus();
+  const confirmation = (occ) => {
+    const fragment = p.doc.createDocumentFragment();
+    const groupe = p.doc.createElement("div");
+    groupe.setAttribute("role", "group");
+    for (const id of ["annuler", "oui"]) {
+      const b = p.doc.createElement("button");
+      b.id = id;
+      if (id === "annuler") b.setAttribute("data-focus-initial", "");
+      groupe.append(b);
+    }
+    fragment.append(groupe);
+    p.affichage.effets.remplacerLeContenu(fragment);
+    p.affichage.effets.estamper(occ, { empreinte: `e${occ}` });
+  };
+  confirmation(2);
+  assert.equal(p.doc.activeElement.id, "annuler", "la confirmation prend le focus sur « Annuler »");
+  p.conteneur.querySelector("#oui").focus();
+  confirmation(3);
+  assert.equal(p.doc.activeElement.id, "oui", "le focus déjà dans le groupe reste où il est");
+});
+
+test("[R-9] après la fermeture d'une confirmation, le focus revient au geste qui l'avait ouverte, s'il est offert", () => {
+  const p = page();
+  const contenu = (occ, { ferme = false } = {}) => {
+    const fragment = p.doc.createDocumentFragment();
+    const retour = p.doc.createElement("button");
+    retour.id = "revoquer";
+    retour.setAttribute("data-focus-retour", "");
+    if (ferme) retour.setAttribute("aria-disabled", "true");
+    fragment.append(retour);
+    p.affichage.effets.remplacerLeContenu(fragment);
+    p.affichage.effets.estamper(occ, { empreinte: `e${occ}` });
+  };
+  publier(p, 1, "e1", "annuler");
+  p.conteneur.querySelector("#annuler").focus();
+  contenu(2);
+  assert.equal(p.doc.activeElement.id, "revoquer");
+  publier(p, 3, "e3", "oui");
+  p.conteneur.querySelector("#oui").focus();
+  contenu(4, { ferme: true });
+  assert.equal(p.doc.activeElement, p.repereDeFocus, "un geste fermé ne reçoit pas le focus");
+});

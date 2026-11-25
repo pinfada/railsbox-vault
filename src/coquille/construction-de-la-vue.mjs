@@ -162,7 +162,7 @@ function ecritLesGestes(doc, vue, projection) {
       libelle: "Révoquer tous les autres moyens d'ouvrir ce coffre",
       geste: "demander-la-revocation",
       projection,
-      attributs: { "data-danger": "" },
+      attributs: { "data-danger": "", "data-focus-retour": "" },
     }),
   );
   revocation.append(demande);

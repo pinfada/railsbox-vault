@@ -53,14 +53,24 @@ function masquerLeConteneur(conteneur) {
   return false;
 }
 
-/** R-9 : le focus rendu au même nœud (retrouvé par son identifiant), sinon au repère stable. */
+/**
+ * R-9 : le focus ne se perd jamais dans un nœud remplacé. Dans l'ordre : le même nœud, retrouvé par son
+ * identifiant — sauf si une confirmation vient de s'ouvrir, où il va à sa sortie sûre (`data-focus-initial`,
+ * « Annuler ») ; sinon le geste qui avait ouvert ce qui vient de se fermer (`data-focus-retour`, s'il
+ * est encore offert) ; sinon le repère stable.
+ */
 function rendreLeFocus(ctx) {
   const { conteneur, repereDeFocus, focus } = ctx;
   if (focus.avant === null) return;
   const identifiant = focus.avant;
   focus.avant = null;
   const meme = identifiant === "" ? null : conteneur.querySelector(`#${identifiant}`);
-  (meme ?? conteneur.querySelector("[data-focus-initial]") ?? repereDeFocus)?.focus();
+  const initial = conteneur.querySelector("[data-focus-initial]");
+  const dansLeMemeGroupe = meme !== null && initial?.closest('[role="group"]')?.contains(meme);
+  const ouvrant = conteneur.querySelector("[data-focus-retour]");
+  const retour = ouvrant?.getAttribute("aria-disabled") === "true" ? null : ouvrant;
+  const cible = initial !== null && !dansLeMemeGroupe ? initial : (meme ?? retour ?? repereDeFocus);
+  cible?.focus();
 }
 
 function memoriserLeFocus(ctx) {

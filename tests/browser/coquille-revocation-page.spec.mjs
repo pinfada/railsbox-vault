@@ -153,12 +153,20 @@ test("[deux temps] « Révoquer… » n'envoie rien ; « Annuler » ferme ; « O
 
   await page.click("#revocation-annuler");
   await expect(page.locator("#revocation-confirmation")).toHaveCount(0);
+  await expect(
+    page.locator("#revoquer-en-urgence"),
+    "le focus revient au geste ouvrant",
+  ).toBeFocused();
   await expect(annonce(page)).toContainText("dans cette séance");
   expect(await envois(page, TYPES_PRIVILEGIES.revoquerEnUrgence)).toHaveLength(0);
 
   await page.click("#revoquer-en-urgence");
-  await page.dispatchEvent("#revocation-oui", "click");
-  await page.dispatchEvent("#revocation-oui", "click").catch(() => {});
+  // Un double clic : le second arrive sur le même nœud, dans le même tour, avant tout rendu.
+  await page.evaluate(() => {
+    const oui = document.getElementById("revocation-oui");
+    oui.click();
+    oui.click();
+  });
   await expect(page.locator("#portabilite-etat")).toContainText("portabilite:revoque:", {
     timeout: DELAI,
   });
@@ -296,11 +304,24 @@ test("[D4] après rechargement, l'indice persisté n'ouvre que « aucun geste de
   });
   await page.goto(new URL("/index.html?etape=9", SHELL_ORIGIN).toString());
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
+  // Chaque publication du conteneur est relevée : ce que la personne a pu LIRE, état après état.
+  await page.evaluate(() => {
+    window.__publications = [];
+    const c = document.getElementById("affichage");
+    new MutationObserver(() => {
+      if (c.hasAttribute("data-vue")) window.__publications.push(c.textContent);
+    }).observe(c, { attributes: true, attributeFilter: ["data-vue", "data-occurrence"] });
+  });
   await ouvrirParLaPhrase(page);
-  const fin = page.locator("#affichage-fin");
-  await expect(fin).toBeVisible({ timeout: DELAI });
-  await expect(fin).toContainText("Aucun geste de révocation n'a été fait dans cette séance");
-  const corps = await page.locator("#affichage").textContent();
-  expect(corps).not.toMatch(/La révocation a été faite|révoqué\b/i);
-  await expect(page.getByRole("heading", { level: 2, name: "Parcours terminé" })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => window.__publications.length), { timeout: DELAI })
+    .toBeGreaterThan(1);
+  const lues = await page.evaluate(() => window.__publications);
+  expect(
+    lues.some((texte) =>
+      texte.includes("Aucun geste de révocation n'a été fait dans cette séance"),
+    ),
+    "la fin offerte par l'indice ne dit que « aucun geste dans cette séance »",
+  ).toBe(true);
+  for (const texte of lues) expect(texte).not.toMatch(/La révocation a été faite|révoqué\b/i);
 });

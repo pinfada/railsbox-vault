@@ -411,7 +411,15 @@ export function creerParcoursDeLaPage({
     etat.ecran = ecranId;
     // Une réussite ne reste pas affichée hors contexte (#266 m6) : elle accompagne l'écran où son
     // geste mène, puis s'efface au changement d'écran suivant.
-    if (precedent !== ecranId && etat.changementsDepuisLaReussite !== null) {
+    // Les écrans que l'ÉTAT impose (lecture, modification, révocation en vol) sont des passages, pas des
+    // destinations : une réussite dite avant eux survit jusqu'à l'écran où son geste mène.
+    const passage = (id) => id === "chargement" || id === "etat-du-coffre";
+    if (
+      precedent !== ecranId &&
+      !passage(precedent) &&
+      !passage(ecranId) &&
+      etat.changementsDepuisLaReussite !== null
+    ) {
       etat.changementsDepuisLaReussite += 1;
       if (etat.changementsDepuisLaReussite > 1) {
         dire("parcours-reussite", "");
@@ -511,10 +519,10 @@ export function creerParcoursDeLaPage({
    */
   function retenirLesIndices(ecranId) {
     if (!etat.progressionLue) return;
-    const constat = revocation.lireLeConstat()?.feuilleEprouvee === true;
-    if (etat.coffre === COFFRE.ouvert && constat !== etat.progression.feuilleEprouvee) {
-      pas("feuille", constat);
-    }
+    // Le constat n'est RETENU que connu : « inconnu » (lecture en cours ou en échec, coffre mort) n'est pas
+    // « non éprouvée », et n'efface pas l'indice d'une feuille déjà éprouvée.
+    const constat = revocation.lireLeConstat()?.feuilleEprouvee ?? null;
+    if (constat !== null && constat !== etat.progression.feuilleEprouvee) pas("feuille", constat);
     const fin = ecranId === "termine-sans-attestation" || ecranId === "termine-sans-revoquer";
     if (fin && !etat.progression.visiteTerminee) pas("visite-terminee");
   }
