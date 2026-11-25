@@ -1795,6 +1795,18 @@ export const MUTATIONS = Object.freeze([
       "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n",
     epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
   },
+  // #231, revue de la PR #305 (relecteur 2, seconde passe) : la condition qui CHOISIT la politique de
+  // création dans `relireLaPhrase`. Un inventaire INCONNU a `present: false` : sans `inconnu !== true`, la
+  // politique de création (longueur minimale, `new-password`, constat et conseil de choix) revient dès
+  // la relecture d'un inventaire dont on ne sait rien.
+  {
+    nom: "un inventaire INCONNU n'est pas un coffre à créer : aucune politique de création",
+    garde: "relireLaPhrase — `inventaire.inconnu !== true` dans le choix de la création (#231)",
+    fichier: INTERFACE,
+    avant: "  const creation = !inventaire.present && inventaire.inconnu !== true;\n",
+    apres: "  const creation = !inventaire.present;\n",
+    epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
+  },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,
 ]);
