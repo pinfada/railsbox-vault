@@ -92,6 +92,12 @@ function brancherLesGestes(ctx) {
     const cible = evenement.target?.closest?.("[data-geste]");
     if (cible === null || cible === undefined) return;
     dire(ctx, ctx.revocation.appliquer({ type: cible.getAttribute("data-geste") }));
+  }); // Échap annule la confirmation ouverte — et ne dit rien d'un geste qui n'a pas lieu d'être : la TABLE
+  // répond d'abord (`accepte`), l'annonce « geste refusé » n'est pas la réponse à une touche sans objet.
+  conteneur.addEventListener("keydown", (evenement) => {
+    if (evenement.key !== "Escape" || !ctx.revocation.accepte("annuler")) return;
+    evenement.preventDefault();
+    dire(ctx, ctx.revocation.appliquer({ type: "annuler" }));
   });
 }
 

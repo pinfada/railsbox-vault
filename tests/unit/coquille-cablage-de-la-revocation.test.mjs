@@ -552,3 +552,27 @@ test("[#308 n°9] un geste fermé par la table ne dépend d'aucun rendu : le ref
   assert.equal(p.messages.filter((m) => m === "revoquerEnUrgence").length, 1);
   assert.match(p.doc.getElementById("affichage-annonce").textContent, /en cours/);
 });
+
+test("[DoR 4] Échap annule la confirmation ouverte ; sans confirmation, la touche ne dit rien", async () => {
+  const p = monterLeCablage();
+  await p.jusquAP();
+  const echap = () => new p.doc.Evenement("keydown", { key: "Escape" });
+  p.conteneur.dispatchEvent(echap());
+  assert.equal(p.cablage.etat().phase, "P");
+  assert.equal(
+    p.doc.getElementById("affichage-annonce").textContent,
+    "",
+    "aucune annonce sans objet",
+  );
+  p.clic("revoquer-en-urgence");
+  await tourner();
+  assert.equal(p.cablage.etat().phase, "C");
+  const evenement = echap();
+  p.doc.getElementById("revocation-annuler").dispatchEvent(evenement);
+  assert.equal(p.cablage.etat().phase, "P", "Échap depuis un bouton de la confirmation annule");
+  assert.equal(evenement.defaultPrevented, true);
+  assert.match(p.doc.getElementById("affichage-annonce").textContent, /dans cette séance/);
+  assert.equal(p.messages.filter((m) => m === "revoquerEnUrgence").length, 0);
+  p.conteneur.dispatchEvent(new p.doc.Evenement("keydown", { key: "a" }));
+  assert.equal(p.cablage.etat().phase, "P");
+});

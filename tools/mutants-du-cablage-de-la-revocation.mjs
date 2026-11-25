@@ -812,6 +812,22 @@ const CABLAGE_MUTANTS = [
   ),
   m(
     CABLAGE,
+    '    if (evenement.key !== "Escape" || !ctx.revocation.accepte("annuler")) return;',
+    '    if (evenement.key !== "Escape") return;',
+    "Échap affiche « geste refusé » quand aucune confirmation n'est ouverte",
+    "brancherLesGestes — la table répond avant l'annonce",
+    EPREUVE_CABLAGE,
+  ),
+  m(
+    CABLAGE,
+    '    if (evenement.key !== "Escape" || !ctx.revocation.accepte("annuler")) return;',
+    '    if (evenement.key !== "Enter" || !ctx.revocation.accepte("annuler")) return;',
+    "Échap n'annule plus la confirmation",
+    "brancherLesGestes — la touche Échap",
+    EPREUVE_CABLAGE,
+  ),
+  m(
+    CABLAGE,
     "    indice: liaison.indice,",
     "    indice: false,",
     "l'indice initial n'atteint pas le magasin",
