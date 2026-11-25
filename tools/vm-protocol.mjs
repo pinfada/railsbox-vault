@@ -169,6 +169,16 @@ async function measureFaults({ V86, artifacts }) {
         let guest;
         const started = performance.now();
         try {
+          // 120 s : NE PAS RACCOURCIR (#243). Deux cas (`ecriture-partielle-persistante`, `handle-perdu`)
+          // atteignent ce délai à chaque run (13 runs verts : 120 001 à 120 023 ms, `guestTimedOut`
+          // vrai). Le noyau ne s'est pas figé : il rejoue la commande après chaque délai de garde ATA
+          // (~30 s) et abandonne vers 186 s (mesuré avec un délai de 900 s, 25/11/2026 : `dd:
+          // /dev/sda: Input/output error`, `rc=1`, 6 fautes tirées sur 6 pour la première). Le délai
+          // de 120 s COUPE donc l'épreuve en cours de route, et ce qu'il laisse observer en dépend :
+          // 4 fautes tirées sur 6 à 120 s (« 4 × `VAULT_STORAGE_PARTIAL_WRITE` » de
+          // docs/spikes/0004-backend-de-blocs-v86.md) — à 60 s, ~2 (extrapolé : ~30 s par rejeu). Le raccourcir affaiblirait la
+          // preuve ; le relever à ~200 s la renforcerait (verdict `rc=1` au lieu de « blocage ») pour
+          // ~+130 s au total, décision laissée au propriétaire.
           guest = await session.shell(testCase.command, { label: testCase.label, timeout: 120000 });
           // Le journal du noyau dit ce que le guest a réellement vu du support.
           const kernel = await session.shell("dmesg | tail -6", { label: "dmesg", timeout: 60000 });
