@@ -26,16 +26,20 @@ gem "activesupport", "8.1.4.1"
 
 gem "sqlite3", "= 2.10.2"
 
-# Puma 8.0.3 et non 6.6.1 : les versions 5.5.0 à 7.2.0 et 8.0.0 à 8.0.1 étaient exposées à
-# CVE-2026-47736 et CVE-2026-47737 (analyseur PROXY protocol v1), corrigées en 8.0.2. La 8.0.3
-# corrige sept avis suivants, relevés par `bundler-audit` le 17/11/2026 : GHSA-86xc-wrr9-xmmq (TLS
-# de pumactl), GHSA-jm4r-w4xx-qxw7 (arrêt gracieux), GHSA-m5xw-3hrw-qcmf (file du reactor),
-# GHSA-r885-m39c-939g (`ssl_cipher_filter`), GHSA-rf6g-xhmp-gm7v (boucle d'accept sans descripteurs),
-# GHSA-x646-wp7c-h9mg et GHSA-xw3h-pgr9-3vg7 (client qui cesse de lire). La fixture n'active ni TLS
-# ni `proxy_protocol` — elle écoute sur 127.0.0.1 dans le guest — donc elle n'est pas exploitable,
-# mais une dépendance vulnérable ne se tait pas : elle se corrige. Voir `SECURITY.md`, section
-# « Analyse de secrets ».
-gem "puma", "= 8.0.3"
+# Puma 8.1.2 (version installée, 24/11/2026) : elle corrige GHSA-4v6q-hvv7-49h9 (épuisement
+# mémoire avec des connexions SSL) et GHSA-rhww-p99c-hgj9 (analyseur HTTP de JRuby), qui touchent
+# 8.1.0 et 8.1.1, ainsi que 8.0.3 (corrigée à partir de 8.0.4).
+# Historique : la 8.0.2 a corrigé CVE-2026-47736 et CVE-2026-47737 (analyseur PROXY protocol v1,
+# versions 5.5.0 à 7.2.0 et 8.0.0 à 8.0.1) ; la 8.0.3, sept avis relevés par `bundler-audit` le
+# 17/11/2026 : GHSA-86xc-wrr9-xmmq (TLS de pumactl), GHSA-jm4r-w4xx-qxw7 (arrêt gracieux),
+# GHSA-m5xw-3hrw-qcmf (file du reactor), GHSA-r885-m39c-939g (`ssl_cipher_filter`),
+# GHSA-rf6g-xhmp-gm7v (boucle d'accept sans descripteurs), GHSA-x646-wp7c-h9mg et
+# GHSA-xw3h-pgr9-3vg7 (client qui cesse de lire).
+# La fixture n'active ni TLS ni `proxy_protocol` et n'écoute que sur 127.0.0.1 dans le guest : cela
+# réduit l'exposition, sans établir à soi seul qu'aucun de ces avis n'est exploitable (par exemple
+# l'épuisement de descripteurs vise toute écoute TCP). Une dépendance vulnérable se corrige donc.
+# Voir `SECURITY.md`, section « Analyse de secrets ».
+gem "puma", "8.1.2"
 
 # Bootsnap ne change ni le comportement ni le code : il met en cache ce que le
 # démarrage recalcule à chaque fois — la résolution du `$LOAD_PATH` et la
@@ -47,4 +51,4 @@ gem "puma", "= 8.0.3"
 #
 # `require: false` : le chargement se fait dans `config/boot.rb`, avant Rails,
 # ce qui est le seul endroit où il sert à quelque chose.
-gem "bootsnap", "1.26.0", require: false
+gem "bootsnap", "1.26.2", require: false
