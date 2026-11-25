@@ -435,6 +435,8 @@ function liaisonFeinte(journal, { rendu = {}, demander = null } = {}) {
       },
       rapport: {},
       publier: () => {},
+      // La table de la révocation n'est pas l'objet de ces épreuves : elle laisse passer (#265).
+      accepteLeVerrouillage: () => true,
       avantVerrouillage: (declencheur) => journal.push(`avant:${declencheur}`),
       apresRefusDOrdre: (code) => journal.push(`refus-d-ordre:${code}`),
       apresRefusDeVerrouillage: (code, declencheur) => journal.push(`refus:${code}:${declencheur}`),

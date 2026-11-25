@@ -49,18 +49,18 @@ test("[obligatoire] sans fonction de fermeture du lien, l'acquit ne se construit
 });
 
 test("la ligne ne dit « revoque » qu'APRÈS la publication du relevé (revue de la PR #208, constat 7)", () => {
+  const journal = [];
   const ligne = {
     set textContent(valeur) {
       journal.push(`ligne:${valeur}`);
     },
   };
-  const journal = [];
-  const { acquit } = monter({ noeudDeLigne: ligne });
+  const { acquit } = monter({
+    noeudDeLigne: ligne,
+    publier: () => journal.push("publie"),
+  });
   acquit(SUCCES);
-  assert.ok(
-    journal.indexOf("ligne:portabilite:revoque:1-retires:1-restant") >
-      journal.indexOf("publie:true"),
-  );
+  assert.deepEqual(journal, ["publie", "ligne:portabilite:revoque:1-retires:1-restant"]);
 });
 
 test("[lien réel] avec les gestes de portabilité, l'acquit ferme le lien de sauvegarde offert", () => {

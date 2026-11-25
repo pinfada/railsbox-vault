@@ -424,3 +424,12 @@ Fermés par C1 seul : 2, 4, 7, 8, 11 ; 6 est un processus.
   (`refusPendantUnGesteLong`) ; la table de C1 range tout refus reçu après l'envoi dans le doute
   (L4), et la page dit alors « peut-être » à tort — **sur-prudent, jamais faux dans l'autre sens**.
   Suivi : #319.
+- **C2-L8 (revue de #321).** Deux liaisons de la page, qui n'étaient mutées par personne, vivent
+  désormais dans `src/` : `brancherLeCycleSurLaRevocation` (le verrouillage consulte la table ;
+  `brancherLesGestesDuCycle` REFUSE de se brancher sans cette décision, et seul un `true` franc
+  laisse passer) et `creerLAcquit` (relevé, fermeture du lien d'archive — obligatoire —, ligne
+  d'état). Une sauvegarde n'est pas offerte quand la page ne sait pas ce que le coffre contient («
+  inconnu » n'est jamais « sans risque ») : elle est refusée sous le code de l'ordre. Reste dans la
+  glue de `public/` : la garde `pont.portabilite?.retirerLeLien()` (aucun lien n'existe avant le
+  branchement des gestes de portabilité) et le passage des fonctions, exigés par les balayages
+  statiques.

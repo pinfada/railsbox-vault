@@ -162,3 +162,25 @@ test("[C2-13] `masquer()` relit ce qu'il a écrit : il ne rend jamais `true` san
   assert.match(texte, /hasAttribute\("data-vue"\)/);
   assert.match(texte, /conteneur\.hidden === true/);
 });
+
+test("[#321 point 2] la page branche le cycle PAR la liaison de `src/`, et l'acquit par `creerLAcquit`", () => {
+  const cycle = codeSeul(lire("public/coquille/cycle-de-la-page.mjs"));
+  assert.match(cycle, /brancherLeCycleSurLaRevocation\(/);
+  assert.doesNotMatch(
+    cycle,
+    /brancherLesGestesDuCycle/,
+    "aucun appel direct, sans la décision de la table",
+  );
+  const revocation = codeSeul(lire("public/coquille/revocation-de-la-page.mjs"));
+  assert.match(revocation, /creerLAcquit\(/);
+  assert.doesNotMatch(
+    revocation,
+    /portabilite-etat"\)\.textContent\s*=/,
+    "la ligne d'état est dite par l'acquit",
+  );
+  // Seul le module de liaison (et les épreuves) appellent `brancherLesGestesDuCycle`.
+  assert.deepEqual(fichiersQuiContiennent(/brancherLesGestesDuCycle\(/), [
+    "src/coquille/cycle-sur-la-revocation.mjs",
+    "src/coquille/gestes-du-cycle.mjs",
+  ]);
+});

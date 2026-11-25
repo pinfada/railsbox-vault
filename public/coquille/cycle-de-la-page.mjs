@@ -7,7 +7,7 @@
 // branchement que par le RELEVÉ et par le pont que `main.mjs` lui passe.
 
 import { ISSUES_DETAPE, journalDuCycle } from "/src/coquille/cycle-de-vie.mjs";
-import { brancherLesGestesDuCycle } from "/src/coquille/gestes-du-cycle.mjs";
+import { brancherLeCycleSurLaRevocation } from "/src/coquille/cycle-sur-la-revocation.mjs";
 import { brancherLesGestesDePortabilite } from "/src/coquille/gestes-de-portabilite.mjs";
 import { brancherLeGesteDeMiseAJour } from "/src/coquille/geste-de-mise-a-jour.mjs";
 import { ETATS_DU_VOLUME } from "/src/coquille/etat-de-la-coquille.mjs";
@@ -240,15 +240,15 @@ export function creerCycle({
     await pont.revocation.attendre((etat) => etat.phase !== "F0" && etat.phase !== "FL");
     await pont.canal.demanderLEtat();
     rapport.journal.push("interface-de-deverrouillage-montee");
-    const gestes = brancherLesGestesDuCycle({
+    const gestes = brancherLeCycleSurLaRevocation({
+      // La table de la révocation tranche aussi le verrouillage (e14) : la liaison est dans `src/`, mutée.
+      revocation: pont.revocation,
       racine: document,
       demander: pont.canal.demanderAuWorker,
       cycle,
       rapport,
       publier,
       ...pont.verrouillage.gestesDeVerrouillage(),
-      // La TABLE de la révocation tranche aussi (e14) : ni pendant l'envoi, ni pendant une modification.
-      accepteLeVerrouillage: () => pont.revocation.appliquer({ type: "verrouiller" }).accepte,
     });
     pont.verrouillage.definirGesteDeVerrouillage(gestes.verrouillerLeCoffre);
     miseAJour = brancherLeGesteDeMiseAJour({

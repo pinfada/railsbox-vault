@@ -5,6 +5,7 @@
 // PARESSEUSE : aucun de ces modules n'existe encore quand celui-ci est assemblé). Le magasin, le rendeur,
 // l'affichage et les gestionnaires sont dans `src/coquille/`, où la campagne de mutation les rejoue.
 
+import { creerLAcquit } from "/src/coquille/acquit-de-la-revocation.mjs";
 import { creerLeCablage } from "/src/coquille/cablage-de-la-revocation.mjs";
 
 /**
@@ -25,23 +26,15 @@ export function creerLaRevocationDeLaPage({ rapport, publier, pont }) {
     indice: false,
     noterLIndice: () => pont.parcours.noterLaRevocation(),
     refleter: (donnees, identifiantVolume) => pont.interface?.refleter(donnees, identifiantVolume),
-    surRevocationAcquittee: (rendu) => {
-      rapport.portabilite ??= { sauvegarde: null, restauration: null, revocation: null };
-      rapport.portabilite.revocation = {
-        versionEnveloppe: rendu.versionEnveloppe,
-        restants: rendu.restants,
-        retires: rendu.retires,
-        nombreRetires: rendu.nombreRetires,
-        nombreRestants: rendu.nombreRestants,
-        copieDeSauvegardeRetiree: rendu.copieDeSauvegardeRetiree,
-      };
-      // L'archive que CETTE page tient encore porte l'ancienne page de récupération : le lien qui la
-      // remet au navigateur est fermé (revue de la PR #208, constat 4).
-      pont.portabilite?.retirerLeLien();
-      publier();
-      noeud("portabilite-etat").textContent =
-        `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`;
-    },
+    // Le relevé, le lien d'archive fermé, la ligne d'état : `src/coquille/acquit-de-la-revocation.mjs`.
+    surRevocationAcquittee: creerLAcquit({
+      rapport,
+      publier,
+      // Aucune archive n'est offerte avant que les gestes de portabilité soient branchés : sans eux, il n'y a
+      // pas de lien à fermer. Le test de l'acquit exige la fonction ; seule cette garde est ici.
+      retirerLeLien: () => pont.portabilite?.retirerLeLien(),
+      noeudDeLigne: noeud("portabilite-etat"),
+    }),
     surTerminer: () => pont.parcours.terminerSansRevoquer(),
     surRevenir: () => pont.parcours.revenirALApplication(),
     apresPublication: () => pont.parcours?.appliquerLesBlocs(),

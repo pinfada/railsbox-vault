@@ -19,6 +19,7 @@
 import { AVERTISSEMENT_SANS_RECUPERATION } from "./feuille-de-recuperation.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { modifierEtAttendre } from "./modification-d-enveloppe.mjs";
+import { normaliserLInventaire } from "./reponse-de-la-revocation.mjs";
 import { ARCHIVE_ERROR_CODES } from "../vm/archive-errors.mjs";
 import { IMPORT_ERROR_CODES } from "../vm/import-errors.mjs";
 
@@ -95,6 +96,26 @@ export function brancherLesGestesDePortabilite(liaison) {
   });
 }
 
+/** Le refus d'une sauvegarde demandée quand la page ne sait pas ce que le coffre contient. */
+const SAUVEGARDE_SANS_INVENTAIRE = Object.freeze({
+  code: CODES_REFUS_COQUILLE.etapeHorsOrdre,
+  message:
+    "La page ne sait pas encore ce que contient votre coffre : une sauvegarde sans moyen de récupération " +
+    "pourrait ne plus se restaurer. Patientez un instant, ou rouvrez le coffre, puis recommencez.",
+});
+
+/**
+ * Relit l'inventaire POUR CE GESTE, quand la porte est fermée : le résultat n'est jamais stocké (il ne devient
+ * donnée de la page que par le magasin), il ne sert qu'à décider d'avertir avant l'archive. Un refus du Worker
+ * est rendu tel quel (code typé) ; une réponse qui n'est pas un inventaire valide vaut « inconnu ».
+ */
+async function relireSansLeMagasin(contexte) {
+  const reponse = await contexte.demander("inventaire", {});
+  const normalise = normaliserLInventaire(reponse, { ouvert: false });
+  if (!normalise.ok || normalise.donnees.public.refus !== null) throw SAUVEGARDE_SANS_INVENTAIRE;
+  return normalise.donnees.public;
+}
+
 /**
  * SAUVEGARDER. L'absence de moyen de récupération est DITE avant l'archive, jamais refusée : c'est
  * le choix de l'utilisateur, et une archive locale reste une archive.
@@ -104,9 +125,12 @@ async function sauvegarderLeCoffre(contexte) {
   dire("portabilite-refus", "");
   dire("portabilite-avertissement", "");
   try {
-    // Ce que la page sait des codes vient du magasin (C2-1′) : `null` tant qu'elle ne le sait pas.
-    const donnees = contexte.lirePublic();
-    if (donnees?.present === true && donnees.nombreDeCodes === 0) {
+    // Ce que la page sait des codes vient du magasin (C2-1′). « Inconnu » ne veut JAMAIS dire « sans
+    // risque » : une sauvegarde sans moyen de récupération peut se faire refuser à la restauration. Porte
+    // fermée (lecture en cours, échec, doute), l'inventaire est RELU pour ce seul geste ; si cette lecture
+    // échoue ou n'est pas valide, la sauvegarde n'est pas offerte — la page le dit.
+    const donnees = contexte.lirePublic() ?? (await relireSansLeMagasin(contexte));
+    if (donnees.present === true && donnees.nombreDeCodes === 0) {
       dire("portabilite-avertissement", AVERTISSEMENT_SANS_RECUPERATION);
     }
     dire("portabilite-etat", "portabilite:sauvegarde-en-cours");

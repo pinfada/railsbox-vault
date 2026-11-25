@@ -25,6 +25,10 @@ const ECRAN = `${SRC}ecran-de-la-revocation.mjs`;
 const MODIF = `${SRC}modification-d-enveloppe.mjs`;
 const TEXTES = `${SRC}textes-de-la-revocation.mjs`;
 const INTERFACE = `${SRC}interface-de-deverrouillage.mjs`;
+const LIAISON_DU_CYCLE = `${SRC}cycle-sur-la-revocation.mjs`;
+const GESTES_DU_CYCLE = `${SRC}gestes-du-cycle.mjs`;
+const ACQUIT = `${SRC}acquit-de-la-revocation.mjs`;
+const PORTABILITE = `${SRC}gestes-de-portabilite.mjs`;
 
 const T = "tests/unit/coquille-";
 const EPREUVE_RENDEUR = `${T}rendeur-de-la-vue.test.mjs`;
@@ -34,6 +38,9 @@ const EPREUVE_VUE = `${T}construction-de-la-vue.test.mjs`;
 const EPREUVE_ECRAN = `${T}ecran-de-la-revocation.test.mjs`;
 const EPREUVE_MODIF = `${T}modification-d-enveloppe.test.mjs`;
 const EPREUVE_TEXTES = `${T}textes-de-la-revocation.test.mjs`;
+const EPREUVE_LIAISON_DU_CYCLE = `${T}cycle-sur-la-revocation.test.mjs`;
+const EPREUVE_ACQUIT = `${T}acquit-de-la-revocation.test.mjs`;
+const EPREUVE_PORTABILITE = `${T}portabilite.test.mjs`;
 const EPREUVE_INTERFACE = `${T}interface-et-revocation.test.mjs`;
 
 /** `[fichier, avant, apres, nom, garde, epreuve]` → une entrée de la campagne. */
@@ -936,6 +943,138 @@ const INTERFACE_MUTANTS = [
   ),
 ];
 
+/** La liaison du cycle sur la table, l'acquit, la sauvegarde sans inventaire (revue de #321). */
+const LIAISON_MUTANTS = [
+  m(
+    LIAISON_DU_CYCLE,
+    '    accepteLeVerrouillage: () => revocation.appliquer({ type: "verrouiller" }).accepte === true,',
+    "    accepteLeVerrouillage: () => true,",
+    "la liaison transmet un accord permanent : le verrouillage passe pendant l'envoi d'une révocation",
+    "brancherLeCycleSurLaRevocation — la décision de la table",
+    EPREUVE_LIAISON_DU_CYCLE,
+  ),
+  m(
+    LIAISON_DU_CYCLE,
+    '    accepteLeVerrouillage: () => revocation.appliquer({ type: "verrouiller" }).accepte === true,',
+    '    accepteLeVerrouillage: () => revocation.appliquer({ type: "changer-d-etape" }).accepte === true,',
+    "la liaison interroge un autre événement que « verrouiller »",
+    "brancherLeCycleSurLaRevocation — e14",
+    EPREUVE_LIAISON_DU_CYCLE,
+  ),
+  m(
+    LIAISON_DU_CYCLE,
+    "    ...liaison,\n    // Après l'étalement : la liaison de l'appelant ne peut pas contourner la table.\n    accepteLeVerrouillage: () => revocation.appliquer({ type: \"verrouiller\" }).accepte === true,",
+    '    accepteLeVerrouillage: () => revocation.appliquer({ type: "verrouiller" }).accepte === true,\n    ...liaison,',
+    "la liaison de l'appelant l'emporte sur la table",
+    "brancherLeCycleSurLaRevocation — la table n'est pas contournable",
+    EPREUVE_LIAISON_DU_CYCLE,
+  ),
+  m(
+    GESTES_DU_CYCLE,
+    '  if (typeof liaison?.accepteLeVerrouillage !== "function") {',
+    "  if (false) {",
+    "le cycle se branche sans la décision de la table (accord par défaut)",
+    "brancherLesGestesDuCycle — la décision est OBLIGATOIRE",
+    EPREUVE_LIAISON_DU_CYCLE,
+  ),
+  m(
+    GESTES_DU_CYCLE,
+    "  const refuseParLaTable = accepteLeVerrouillage() !== true;",
+    "  const refuseParLaTable = accepteLeVerrouillage() === false;",
+    "une réponse de la table autre qu'un `true` franc vaut accord",
+    "refusDOrdre — seul `true` laisse passer",
+    EPREUVE_LIAISON_DU_CYCLE,
+  ),
+  m(
+    ACQUIT,
+    "    retirerLeLien();\n",
+    "",
+    "le lien d'archive reste offert après la révocation (l'archive porte l'ancienne page de récupération)",
+    "creerLAcquit — la fermeture du lien",
+    EPREUVE_ACQUIT,
+  ),
+  m(
+    ACQUIT,
+    '  if (typeof retirerLeLien !== "function") {',
+    "  if (false) {",
+    "l'acquit se construit sans fonction de fermeture du lien",
+    "creerLAcquit — la fermeture est OBLIGATOIRE",
+    EPREUVE_ACQUIT,
+  ),
+  m(
+    ACQUIT,
+    "    retirerLeLien();\n    // Le relevé est PUBLIÉ avant que la ligne d'état le dise (revue de la PR #208, constat 7).\n    publier();",
+    "    retirerLeLien();",
+    "le relevé de l'acquit n'est pas publié",
+    "creerLAcquit — la publication",
+    EPREUVE_ACQUIT,
+  ),
+  m(
+    ACQUIT,
+    "    publier();\n    noeudDeLigne.textContent",
+    "    noeudDeLigne.textContent = `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`;\n    publier();\n    noeudDeLigne.textContent",
+    "la ligne « revoque » est dite AVANT la publication du relevé",
+    "creerLAcquit — l'ordre publier puis dire",
+    EPREUVE_ACQUIT,
+  ),
+  m(
+    ACQUIT,
+    "      nombreRestants: rendu.nombreRestants,\n      copieDeSauvegardeRetiree: rendu.copieDeSauvegardeRetiree,",
+    "      nombreRestants: rendu.nombreRestants,",
+    "le relevé de l'acquit ne dit plus si la copie de sauvegarde a été retirée",
+    "creerLAcquit — le relevé",
+    EPREUVE_ACQUIT,
+  ),
+  m(
+    PORTABILITE,
+    "    const donnees = contexte.lirePublic() ?? (await relireSansLeMagasin(contexte));",
+    "    const donnees = contexte.lirePublic() ?? { present: false, nombreDeCodes: 0 };",
+    "une porte fermée vaut « rien à signaler » : la sauvegarde est offerte sans relire l'inventaire",
+    "sauvegarderLeCoffre — « inconnu » n'est jamais « sans risque »",
+    EPREUVE_PORTABILITE,
+  ),
+  m(
+    PORTABILITE,
+    "  if (!normalise.ok || normalise.donnees.public.refus !== null) throw SAUVEGARDE_SANS_INVENTAIRE;",
+    "  if (!normalise.ok) throw SAUVEGARDE_SANS_INVENTAIRE;",
+    "un inventaire refusé par le Worker vaut « connu » : la sauvegarde est offerte",
+    "relireSansLeMagasin — le refus d'inventaire",
+    EPREUVE_PORTABILITE,
+  ),
+  m(
+    PORTABILITE,
+    "  if (!normalise.ok || normalise.donnees.public.refus !== null) throw SAUVEGARDE_SANS_INVENTAIRE;",
+    "  if (normalise.donnees.public.refus !== null) throw SAUVEGARDE_SANS_INVENTAIRE;",
+    "une réponse qui n'est pas un inventaire valide vaut « connu »",
+    "relireSansLeMagasin — la réponse validée",
+    EPREUVE_PORTABILITE,
+  ),
+  m(
+    PORTABILITE,
+    '  const reponse = await contexte.demander("inventaire", {});',
+    "  const reponse = {};",
+    "la relecture n'interroge pas le Worker",
+    "relireSansLeMagasin — la lecture",
+    EPREUVE_PORTABILITE,
+  ),
+  m(
+    PORTABILITE,
+    "    if (donnees.present === true && donnees.nombreDeCodes === 0) {",
+    "    if (donnees.present === true && donnees.nombreDeCodes === 99) {",
+    "la sauvegarde sans moyen de récupération n'est plus avertie",
+    "sauvegarderLeCoffre — l'avertissement avant l'archive",
+    EPREUVE_PORTABILITE,
+  ),
+  m(
+    PORTABILITE,
+    "    if (donnees.present === true && donnees.nombreDeCodes === 0) {",
+    "    if (donnees.nombreDeCodes === 0) {",
+    "l'avertissement est dit pour un coffre qui n'existe pas",
+    "sauvegarderLeCoffre — le coffre présent",
+    EPREUVE_PORTABILITE,
+  ),
+];
+
 /** `modifierEtAttendre` : l'issue revient, le lanceur ne part que par `modifier`. */
 const MODIF_MUTANTS = [
   m(
@@ -1007,6 +1146,7 @@ export const MUTATIONS_DU_CABLAGE = Object.freeze([
   ...CABLAGE_MUTANTS,
   ...ECRAN_MUTANTS,
   ...INTERFACE_MUTANTS,
+  ...LIAISON_MUTANTS,
   ...MODIF_MUTANTS,
   ...TEXTES_MUTANTS,
 ]);

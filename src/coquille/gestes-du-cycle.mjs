@@ -50,12 +50,19 @@ import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
  *                    conclure: (etape: string, issue: string, motif?: string | null) => void },
  *           rapport: Record<string, unknown>, publier: () => void,
  *           avantVerrouillage?: (declencheur: string) => void,
- *           accepteLeVerrouillage?: () => boolean,
+ *           accepteLeVerrouillage: () => boolean,
  *           apresRefusDOrdre?: (code: string) => void,
  *           apresRefusDeVerrouillage?: (code: string | null, declencheur: string) => void,
  *           apresVerrouillage: (declencheur: string) => void }} liaison
  */
 export function brancherLesGestesDuCycle(liaison) {
+  // Pas de valeur par défaut permissive : un cycle branché sans la décision de la table laisserait passer le
+  // verrouillage pendant une révocation ou une modification (revue de #321).
+  if (typeof liaison?.accepteLeVerrouillage !== "function") {
+    throw new TypeError(
+      "« accepteLeVerrouillage » est obligatoire : une fonction qui rend un booléen.",
+    );
+  }
   // Un DÉMARRAGE EN VOL est retenu ici, et nulle part ailleurs : c'est ce module qui sait qu'un
   // geste est parti et que sa réponse n'est pas revenue. Il refuse un second démarrage (#215) et
   // un verrouillage demandé PENDANT un boot, sous le code de l'ORDRE (voir `verrouiller`).
@@ -326,8 +333,10 @@ async function reprendre(contexte) {
  */
 function refusDOrdre({ enVol, dire, apresRefusDOrdre, accepteLeVerrouillage }, declencheur) {
   // La TABLE de la révocation tranche aussi (#265, C2-2) : pas de verrouillage pendant l'envoi d'une
-  // révocation ni pendant une modification de l'enveloppe — le rechargement couperait l'écriture.
-  const refuseParLaTable = accepteLeVerrouillage?.() === false;
+  // révocation ni pendant une modification de l'enveloppe — le rechargement couperait l'écriture. Sa
+  // décision est OBLIGATOIRE (voir `brancherLesGestesDuCycle`) et seul un `true` franc laisse passer :
+  // une réponse absente ou autre que `true` est un refus, jamais un accord par défaut.
+  const refuseParLaTable = accepteLeVerrouillage() !== true;
   if (enVol?.demarrage !== true && !refuseParLaTable) return null;
   const code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
   dire(`cycle:verrouillage-refuse:${code}`);
