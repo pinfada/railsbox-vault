@@ -191,6 +191,9 @@ export function creerLeCablage(liaison) {
     etat: () => revocation.etat(),
     projection: () => revocation.projection(),
     lirePublic: () => lirePublic(revocation.etat()),
+    // ÉCHAFAUDAGE du commit rouge (revue de #321) : le contrat est posé, le comportement ne l'est pas encore.
+    relireLInventaire: () => ({ demandee: false }),
+    causeDeLEchec: () => null,
     lireLeConstat: () => lireLeConstat(revocation.etat()),
     identifiantDuVolume: () => ctx.identifiantVolume,
     terminer: () => revocation.terminer(),
