@@ -422,3 +422,60 @@ test("chaque geste PUBLIE son relevé avant de dire son état final (revue #208,
     assert.notEqual(precedent.publie[cle], null, `« ${texte} » : le relevé publié ne le porte pas`);
   }
 });
+
+// --- Revue de #321, point 1 : « inconnu » ne veut jamais dire « sans risque » -----------------------------
+
+function portabilite({ lirePublic }) {
+  const demandes = [];
+  const noeuds = new Map();
+  const noeud = (id) => {
+    if (!noeuds.has(id))
+      noeuds.set(id, {
+        id,
+        textContent: "",
+        hidden: false,
+        ecouteurs: [],
+        addEventListener(_t, f) {
+          this.ecouteurs.push(f);
+        },
+      });
+    return noeuds.get(id);
+  };
+  const offerts = [];
+  const rapport = {};
+  const gestes = brancherLesGestesDePortabilite({
+    racine: { querySelector: (s) => noeud(s.replace("#", "")) },
+    demander: async (type) => {
+      demandes.push(type);
+      return { taille: 3, archive: {}, applicationArretee: false };
+    },
+    modifier: () => ({ accepte: false }),
+    lirePublic,
+    rapport,
+    publier() {},
+    enregistrer: (fichier) => offerts.push(fichier),
+  });
+  return { gestes, demandes, offerts, noeud, rapport };
+}
+
+test("[#321 point 1] porte FERMÉE (lecture en cours, échec, doute) : la sauvegarde n'est PAS offerte, et la page dit pourquoi", async () => {
+  const { gestes, demandes, offerts, noeud, rapport } = portabilite({ lirePublic: () => null });
+  const rendu = await gestes.sauvegarder();
+  assert.deepEqual(demandes, [], "aucune sauvegarde demandée au Worker");
+  assert.deepEqual(offerts, [], "aucune archive offerte");
+  assert.equal(rendu.refus, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+  assert.equal(rapport.portabilite.sauvegarde.refus, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+  assert.match(noeud("portabilite-refus").textContent, /VAULT_COQUILLE_ETAPE_HORS_ORDRE/);
+  assert.match(noeud("portabilite-etat").textContent, /sauvegarde-refusee/);
+});
+
+test("[#321 point 1] porte ouverte SANS moyen de récupération : l'avertissement précède l'archive ; avec un code, aucun avertissement", async () => {
+  const sans = portabilite({ lirePublic: () => ({ present: true, nombreDeCodes: 0 }) });
+  await sans.gestes.sauvegarder();
+  assert.deepEqual(sans.demandes, ["sauvegarder"]);
+  assert.match(sans.noeud("portabilite-avertissement").textContent, /récupération/i);
+  const avec = portabilite({ lirePublic: () => ({ present: true, nombreDeCodes: 1 }) });
+  await avec.gestes.sauvegarder();
+  assert.equal(avec.noeud("portabilite-avertissement").textContent, "");
+  assert.equal(avec.offerts.length, 1);
+});
