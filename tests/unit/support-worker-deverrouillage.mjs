@@ -39,7 +39,9 @@ let instances = 0;
 const chargerLeModule = () =>
   import(`../../public/runtime-worker-deverrouillage.mjs?instance=${(instances += 1)}`);
 const { ETATS_DU_VOLUME } = await import("../../src/coquille/etat-de-la-coquille.mjs");
-const { ETATS_DE_L_EMPLACEMENT } = await import("../../src/coquille/portabilite-du-coffre.mjs");
+const { ETATS_DE_L_EMPLACEMENT, constaterLEmplacement } =
+  await import("../../src/coquille/portabilite-du-coffre.mjs");
+const { EN_TETE_OCTETS } = await import("../../src/vm/volume-chiffre-format.mjs");
 const { IDENTIFIANT_DU_COFFRE } = await import("../../src/coquille/identites-du-coffre.mjs");
 const { derivateurRecuperation } =
   await import("../../src/vm/derivation/derivateur-recuperation.mjs");
@@ -89,7 +91,7 @@ export const kekDeLaPage = (octets = KEK) => importerCleDeDeverrouillage(octets)
  *
  * @param {{ banc?: object, emplacement?: string }} options
  */
-export async function workerDeverrouillage({ banc = magasin(), emplacement = "coffre" } = {}) {
+export async function workerDeverrouillage({ banc = magasin() } = {}) {
   const { brancherLeDeverrouillage, deverrouiller } = await chargerLeModule();
   const reponses = [];
   const refus = [];
@@ -127,7 +129,14 @@ export async function workerDeverrouillage({ banc = magasin(), emplacement = "co
     repondre: (type, correlation, corps) => reponses.push({ type, correlation, corps }),
     repondreCode: (code, correlation) => reponses.push({ code, correlation }),
     repondreRefus: (erreur, correlation) => refus.push({ erreur, correlation }),
-    constater: async () => emplacement,
+    // Le VRAI constat de l'emplacement, sur le magasin : sous le verrou, il se refait à chaque appel.
+    constater: () =>
+      constaterLEmplacement({
+        observer: banc.stat,
+        lireEnTete: async (nom) =>
+          banc.store.sizeOf(nom) > 0 ? banc.store.snapshot(nom).subarray(0, EN_TETE_OCTETS) : null,
+        lireVoisin: async (nom) => banc.lire(nom),
+      }),
     annoncerLaBarriere: () => {},
     exigerUnVolumeAtteignable: () => {},
     volume: "coquille",

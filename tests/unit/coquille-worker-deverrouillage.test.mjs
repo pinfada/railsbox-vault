@@ -11,7 +11,9 @@ import {
   poserUneEnveloppeV1,
   workerDeverrouillage,
 } from "./support-worker-deverrouillage.mjs";
-import { poserLeVolumeCoquille } from "./support-coffre-de-la-coquille.mjs";
+import { installerLeDisque, poserLeVolumeCoquille } from "./support-coffre-de-la-coquille.mjs";
+import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
+import { manifestSidecarName } from "../../src/vm/opfs-sync-access.mjs";
 import { IDENTIFIANT_DU_VOLUME_COQUILLE } from "../../src/coquille/identites-du-coffre.mjs";
 import { revoquerToutSauf } from "../../src/vm/enveloppe-de-cle.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "../../src/coquille/identites-du-coffre.mjs";
@@ -172,7 +174,7 @@ async function fermer(w) {
 }
 
 test("CRÉATION : le handle du volume est pris AVANT l'enveloppe, et c'est LUI que l'ouvreur reçoit", async () => {
-  const w = await workerDeverrouillage({ emplacement: "vide" });
+  const w = await workerDeverrouillage();
 
   await w.deverrouiller(await messageDePhrase());
 
@@ -188,8 +190,8 @@ test("CRÉATION : le handle du volume est pris AVANT l'enveloppe, et c'est LUI q
 
 test("CRÉATION entre deux onglets : B retardé APRÈS son constat, A crée et ferme — B est refusé, l'enveloppe de A est intacte, A rouvre", async () => {
   const banc = magasin();
-  const b = await workerDeverrouillage({ banc, emplacement: "vide" });
-  const a = await workerDeverrouillage({ banc, emplacement: "vide" });
+  const b = await workerDeverrouillage({ banc });
+  const a = await workerDeverrouillage({ banc });
 
   // B a constaté « pas d'enveloppe » ; il est retenu à sa première prise de handle.
   const retenue = b.retenir("*");
@@ -217,8 +219,8 @@ test("CRÉATION entre deux onglets : B retardé APRÈS son constat, A crée et f
 
 test("CRÉATION entre deux onglets : A tient encore le volume — B est refusé BUSY, l'enveloppe de A est intacte", async () => {
   const banc = magasin();
-  const b = await workerDeverrouillage({ banc, emplacement: "vide" });
-  const a = await workerDeverrouillage({ banc, emplacement: "vide" });
+  const b = await workerDeverrouillage({ banc });
+  const a = await workerDeverrouillage({ banc });
 
   const retenue = b.retenir("*");
   const issueB = b.deverrouiller(await messageDePhrase({ kek: AUTRE_KEK })).then(
@@ -260,7 +262,7 @@ test("une enveloppe v1 REMPLACÉE entre les deux passes — même KEK, autre cl�
 });
 
 test("CRÉATION : un échec AVANT l'ouvreur rend le verrou pris — jamais un handle orphelin", async () => {
-  const w = await workerDeverrouillage({ emplacement: "vide" });
+  const w = await workerDeverrouillage();
   // Fermer le volume précédent échoue : `ouvrirLeVolume` lève avant que l'ouvreur ait reçu le verrou.
   w.interne.backend = {
     close: async () => {
@@ -274,4 +276,98 @@ test("CRÉATION : un échec AVANT l'ouvreur rend le verrou pris — jamais un ha
   w.interne.backend = null;
   assert.equal(erreur?.code, "ECHEC_DE_FERMETURE");
   assert.equal(w.banc.store.isOpen(VOLUME), false, "le verrou de la création est rendu");
+});
+
+// --- La création RECONSTATE l'emplacement sous le verrou (revue de la PR #314, constat 1) ----------------
+
+/** Une restauration INTERROMPUE : le disque est versé, ni manifeste ni enveloppe — le coffre n'est pas né. */
+async function restaurationInterrompue(banc) {
+  await installerLeDisque(banc);
+  await banc.retirer(manifestSidecarName("application"));
+}
+
+test("CRÉATION face à une restauration INTERROMPUE survenue pendant l'attente du handle : refusée, aucune écriture", async () => {
+  const banc = magasin();
+  const b = await workerDeverrouillage({ banc });
+  // B a constaté un emplacement VIDE, puis attend le handle ; A restaure, s'interrompt avant l'enveloppe.
+  const retenue = b.retenir("*");
+  const issue = b.deverrouiller(await messageDePhrase({ kek: AUTRE_KEK })).then(
+    () => ({}),
+    (erreur) => ({ erreur }),
+  );
+  await retenue.atteint;
+  await restaurationInterrompue(banc);
+  const disque = octets(banc, "application");
+  retenue.relacher();
+  const { erreur } = await issue;
+
+  assert.equal(
+    erreur?.code,
+    CODES_REFUS_COQUILLE.restaurationInterrompue,
+    String(erreur?.code ?? erreur),
+  );
+  assert.equal(banc.store.sizeOf(ENVELOPPE), 0, "aucune enveloppe n'est écrite");
+  assert.equal(banc.store.sizeOf(VOLUME), 0, "aucun volume ne naît");
+  assert.deepEqual(octets(banc, "application"), disque, "le disque versé est intact");
+  assert.equal(banc.store.isOpen(VOLUME), false, "le verrou est rendu");
+  assert.equal(b.interne.etat, ETATS_DU_VOLUME.verrouille);
+});
+
+test("CRÉATION face au disque d'un AUTRE coffre apparu pendant l'attente : refusée, aucune écriture", async () => {
+  const banc = magasin();
+  const b = await workerDeverrouillage({ banc });
+  const retenue = b.retenir("*");
+  const issue = b.deverrouiller(await messageDePhrase({ kek: AUTRE_KEK })).then(
+    () => ({}),
+    (erreur) => ({ erreur }),
+  );
+  await retenue.atteint;
+  await installerLeDisque(banc);
+  // Le manifeste d'un AUTRE volume : le disque n'est pas celui d'un coffre de la coquille.
+  const { serializeManifest, parseManifest } = await import("../../src/vm/volume-manifest.mjs");
+  const lu = parseManifest(banc.lire(manifestSidecarName("application")));
+  const manifeste = { ...lu, volume: { ...lu.volume, id: "ff".repeat(16) } };
+  await banc.ecrire(manifestSidecarName("application"), serializeManifest(manifeste));
+  retenue.relacher();
+  const { erreur } = await issue;
+
+  assert.equal(
+    erreur?.code,
+    CODES_REFUS_COQUILLE.disqueDUnAutreCoffre,
+    String(erreur?.code ?? erreur),
+  );
+  assert.equal(banc.store.sizeOf(ENVELOPPE), 0);
+  assert.equal(banc.store.isOpen(VOLUME), false);
+});
+
+test("CRÉATION : la clé de volume tirée est EFFACÉE quand la prise du handle est rejetée", async () => {
+  const w = await workerDeverrouillage();
+  // La clé de volume est tirée par `crypto.getRandomValues` : c'est le tampon qu'on retient.
+  const vrai = crypto.getRandomValues.bind(crypto);
+  const tirages = [];
+  crypto.getRandomValues = (tampon) => {
+    const rendu = vrai(tampon);
+    if (rendu instanceof Uint8Array && rendu.length === 32) tirages.push(rendu);
+    return rendu;
+  };
+  // Un autre détenteur tient déjà le volume : la prise du handle est rejetée.
+  const autre = await w.banc.store.openHandle(VOLUME);
+  let erreur;
+  try {
+    erreur = await w.deverrouiller(await messageDePhrase()).then(
+      () => null,
+      (e) => e,
+    );
+  } finally {
+    crypto.getRandomValues = vrai;
+    autre.close();
+  }
+  assert.equal(erreur?.code, "VAULT_STORAGE_BUSY", String(erreur?.code ?? erreur));
+  const cle = tirages.find((t) => t.length === 32 && t.every((o) => o === 0));
+  assert.ok(cle, "une clé de 32 octets a été tirée puis effacée");
+  assert.equal(
+    tirages.filter((t) => t.some((o) => o !== 0)).length,
+    0,
+    "aucun tirage de 32 octets ne reste en clair dans le tas",
+  );
 });
