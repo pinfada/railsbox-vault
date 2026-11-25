@@ -124,11 +124,18 @@ n'offre pas… », avec le conseil de changer de navigateur : une affirmation qu
 - **La sonde de capacités** (`src/compat/`) range ce rejet en `error`, donc le verdict Vault de
   WebKit en `candidat` : suivi par #306. Le produit et la sonde ne se contredisent pas, mais ne se
   recoupent pas non plus.
-- **Non muté, et dit** : `app-inter.mjs`, le banc et l'interface de déverrouillage (branchement DOM,
-  navigateur seul). Le geste qui ATTEINT l'OPFS à la levée est éprouvé par le Worker chargé tel quel
-  (un double de racine dont l'accès est compté) et par ses mutants. **Le passkey** n'est pas rejoué
-  après une panne : l'inventaire relu propose les moyens du coffre par le même chemin que la phrase
-  et le code (`moyensProposes`), mais aucun authentificateur virtuel n'est piloté ici.
+- **Muté, et ce qui ne l'est pas, dit** : la garde de l'interface de déverrouillage sur un
+  inventaire refusé ou INCONNU (`ouvrirParLaPhrase`) est mutée, et tuée par
+  `tests/unit/coquille-interface-inventaire-refuse.test.mjs`, qui monte la VRAIE `monterLInterface`
+  sur un document minimal et exécute le geste (phrase présentée, clic) : aucune dérivation ne part,
+  le champ de phrase n'est pas vidé, le refus d'inventaire prime sur la politique de création. **Non
+  mutés** : `app-inter.mjs` et le banc (branchement DOM, navigateur seul) ; les deux AUTRES gardes
+  de même forme de l'interface (`ouvrirPar`, `ouvrirParLaPasskey`), dont celle d'`ouvrirPar` masque
+  la première pour la seule dérivation. Le geste qui ATTEINT l'OPFS à la levée est éprouvé par le
+  Worker chargé tel quel (un double de racine dont l'accès est compté) et par ses mutants. **Le
+  passkey** n'est pas rejoué après une panne : l'inventaire relu propose les moyens du coffre par le
+  même chemin que la phrase et le code (`moyensProposes`), mais aucun authentificateur virtuel n'est
+  piloté ici.
 
 ## Alternatives rejetées
 

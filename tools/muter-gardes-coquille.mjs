@@ -80,6 +80,7 @@ const EPREUVE_SONDE = "tests/unit/vm-sonde-du-stockage.test.mjs";
 const RACINE_OPFS = "public/spike/origin/racine-opfs.mjs";
 const TEMOINS_OPFS = "tests/support/temoins-opfs.mjs";
 const EPREUVE_TEMOINS = "tests/unit/temoins-opfs.test.mjs";
+const EPREUVE_INTERFACE_INVENTAIRE = "tests/unit/coquille-interface-inventaire-refuse.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -1776,6 +1777,23 @@ export const MUTATIONS = Object.freeze([
       "  const parNom = PANNES_DE_LECTURE_PAR_NOM[cause.name];\n  return parNom === undefined ? null : { verdict: VERDICTS_DU_STOCKAGE.panne, code: parNom };",
     apres: "  return null;",
     epreuves: [EPREUVE_SONDE],
+  },
+  // #231, revue de la PR #305 (relecteur 2) : la garde de l'interface sur un inventaire refusé ou INCONNU,
+  // éprouvée en exécutant `monterLInterface` sur un document minimal. Les deux autres lignes identiques
+  // (`ouvrirPar`, `ouvrirParLaPasskey`) ne sont PAS mutées ici, et la garde de `ouvrirPar` MASQUE celle-ci
+  // pour la dérivation : ce qui les distingue est le champ de phrase conservé et la priorité du refus
+  // d'inventaire sur la politique de création.
+  {
+    nom: "un inventaire refusé ou inconnu ne juge aucune phrase et ne vide pas le champ",
+    garde:
+      "ouvrirParLaPhrase — la garde sur `inventaire.refus`, avant la politique de phrase (#231)",
+    fichier: INTERFACE,
+    avant:
+      "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n" +
+      "  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);\n",
+    apres:
+      "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n",
+    epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,

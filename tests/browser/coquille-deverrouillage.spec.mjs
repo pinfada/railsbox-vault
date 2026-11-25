@@ -43,7 +43,11 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
-import { motifDeRefusDeCapacite, etatsSansVolume } from "../support/refus-de-capacite.mjs";
+import {
+  motifDeRefusDeCapacite,
+  etatsSansVolume,
+  moteurDe,
+} from "../support/refus-de-capacite.mjs";
 
 import { ATTENTE_MESUREE } from "../../src/coquille/attente-annoncee.mjs";
 import { DELAI_PASSKEY_MS } from "../../src/coquille/moyens-de-deverrouillage.mjs";
@@ -231,7 +235,7 @@ async function attendreLaFinDuGeste(page) {
   await expect
     .poll(async () => (await releve(page)).etat, { timeout: DELAI })
     .not.toBe(ETATS_DU_VOLUME.verrouille);
-  if (etatsSansVolume(page).includes((await releve(page)).etat)) {
+  if (moteurDe(page) === "webkit" && etatsSansVolume(page).includes((await releve(page)).etat)) {
     await expect(page.locator("#deverrouillage-refus")).toContainText(
       motifDeRefusDeCapacite(page),
       {
@@ -256,7 +260,6 @@ async function porte(page) {
   await page.locator("#saisie-phrase").fill(PHRASE);
   await page.locator("#ouvrir-par-phrase").click();
   await attendreLaFinDuGeste(page);
-  return !etatsSansVolume(page).includes((await releve(page)).etat);
 }
 
 /**
@@ -273,8 +276,11 @@ async function porte(page) {
  * suite ne puisse l'oublier.
  */
 async function exigerLaLimiteDuMoteur(page, info, nom) {
+  // Le moteur de la FIXTURE décide, jamais l'état lu : sous Chromium et Firefox, `false` et le
+  // scénario COMPLET — un volume hors d'atteinte y fait échouer l'épreuve (revue de la PR #305).
+  if (moteurDe(page) !== "webkit") return false;
   const rapport = await releve(page);
-  if (!etatsSansVolume(page).includes(rapport.etat)) return false;
+  expect(etatsSansVolume(page)).toContain(rapport.etat);
   await attacher(info, `limite-${nom}`, {
     moteur: info.project.name,
     etat: rapport.etat,
@@ -376,7 +382,10 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
     .poll(
       async () => {
         const vu = await releve(page);
-        return etatsSansVolume(page).includes(vu.etat) || vu.journal.includes("volume-ouvert");
+        return (
+          (moteurDe(page) === "webkit" && etatsSansVolume(page).includes(vu.etat)) ||
+          vu.journal.includes("volume-ouvert")
+        );
       },
       { timeout: DELAI },
     )
@@ -399,8 +408,9 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
   expect(annonces.some((texte) => texte.includes("coûteuse"))).toBe(true);
   expect(annonces.some((texte) => texte.includes("Dérivation en cours"))).toBe(true);
 
-  if (etatsSansVolume(page).includes(rapport.etat)) {
-    // WebKit : l'état DIT l'absence — l'OPFS synchrone manque au Worker —, et le geste n'est pas
+  if (moteurDe(page) === "webkit") {
+    expect(etatsSansVolume(page)).toContain(rapport.etat);
+    // WebKit éphémère (le moteur de la fixture) : l'état DIT l'absence — l'OPFS synchrone manque au Worker —, et le geste n'est pas
     // compté comme un échec de phrase. L'annonce a tout de même été faite, ci-dessus : la coquille
     // ne sait pas d'avance que ce moteur répondra vite.
     // La mesure est posée APRÈS la peinture de l'annonce (`surMesure("annonce")` suit `await

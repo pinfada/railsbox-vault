@@ -25,8 +25,12 @@ export const codesDeRefusDeCapacite = (page) =>
 /** Pour `toContainText` : l'un ou l'autre des codes admis par ce moteur. */
 export const motifDeRefusDeCapacite = (page) => new RegExp(codesDeRefusDeCapacite(page).join("|"));
 
-/** Les états d'un volume qu'AUCUN geste ne peut ouvrir pour l'instant, pour ce moteur. */
+/**
+ * Les états d'un volume qu'AUCUN geste ne peut ouvrir pour l'instant, pour ce moteur.
+ *
+ * **Vide sous Chromium et Firefox** (revue de la PR #305, relecteur 2) : ces moteurs ouvrent un volume,
+ * une épreuve qui y trouve la capacité absente ou indéterminée doit ÉCHOUER, pas se terminer par une
+ * sortie anticipée. Seul le contexte WebKit éphémère — le moteur de la fixture — admet ces états.
+ */
 export const etatsSansVolume = (page) =>
-  estWebkit(page)
-    ? [ETATS_DU_VOLUME.indisponible, ETATS_DU_VOLUME.indetermine]
-    : [ETATS_DU_VOLUME.indisponible];
+  estWebkit(page) ? [ETATS_DU_VOLUME.indisponible, ETATS_DU_VOLUME.indetermine] : [];

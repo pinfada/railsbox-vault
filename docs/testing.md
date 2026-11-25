@@ -123,14 +123,14 @@ et les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les 
 fabriqué » et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en
 bout en bout ; le retour arrière, en unitaire.
 
-La campagne `coquille` gagne **cinquante-sept mutants** avec #231 (18/11/2026, après la revue
-complète de la PR #305), tous tués, **186/186** pour la campagne. Huit portent sur la SONDE du
-stockage (`src/vm/sonde-du-stockage.mjs` : la borne et le réessai, le délai, le classement
-`indetermine` jamais `absente`, le code précis d'une panne), deux sur la traduction en
-`VAULT_STORAGE_INDETERMINE` (`opfs-sync-access.mjs`), dix-neuf sur la MACHINE de capacité
-(`src/coquille/capacite-du-stockage.mjs` : chaque ligne de la table des transitions, l'état publié,
-les refus par état — `UNSUPPORTED` seulement pour une absence établie —, `peutOuvrir`,
-`reessayable`) et sur le BRANCHEMENT de `public/runtime-worker.mjs`, que
+La campagne `coquille` gagne **cinquante-huit mutants** avec #231 (18/11/2026, après la revue
+complète de la PR #305), tous tués, **525/525** pour la campagne entière (elle porte aussi la table
+de la révocation, #310). Huit portent sur la SONDE du stockage (`src/vm/sonde-du-stockage.mjs` : la
+borne et le réessai, le délai, le classement `indetermine` jamais `absente`, le code précis d'une
+panne), deux sur la traduction en `VAULT_STORAGE_INDETERMINE` (`opfs-sync-access.mjs`), dix-neuf sur
+la MACHINE de capacité (`src/coquille/capacite-du-stockage.mjs` : chaque ligne de la table des
+transitions, l'état publié, les refus par état — `UNSUPPORTED` seulement pour une absence établie —,
+`peutOuvrir`, `reessayable`) et sur le BRANCHEMENT de `public/runtime-worker.mjs`, que
 `tests/unit/coquille-worker-sonde-opfs.test.mjs` charge TEL QUEL — un résolveur de modules ramène
 les importations `/src/…` à `src/`, `navigator.storage` est un double dont `getDirectory()` suit un
 script et dont la racine compte ses accès : l'attente de la sonde par le canal et par la poignée
@@ -139,12 +139,15 @@ l'inventaire INCONNU, le refus typé, le retour à `verrouille` avec un geste qu
 quatre sur la racine des témoins du spike et la fouille du banc
 (`public/spike/origin/racine-opfs.mjs`), sept sur la comparaison des témoins
 (`tests/support/temoins-opfs.mjs`), deux sur le parcours (`coffreObserve` et `ecranCourant`
-reconnaissent l'inventaire inconnu). **Non muté, et dit :** le branchement DOM du spike
-(`app-inter.mjs`), du banc et de l'interface de déverrouillage (« Réessayer »), éprouvable par le
-seul navigateur — `apps-frontiere.spec.mjs`, `deverrouillage-frontiere.spec.mjs` et
-`coquille-stockage-indetermine.spec.mjs` (Chromium et Firefox : coffre existant, rejet posé dans le
-Worker, au démarrage ou après une sonde réussie, reprise sans rechargement ; WebKit éphémère : la
-seule conduite de l'écran, la reprise d'un coffre n'y étant pas mesurée).
+reconnaissent l'inventaire inconnu), un sur la garde de l'interface de déverrouillage (un inventaire
+refusé ou inconnu ne juge aucune phrase, `coquille-interface-inventaire-refuse.test.mjs` monte la
+vraie `monterLInterface`). **Non muté, et dit :** le branchement DOM du spike (`app-inter.mjs`), du
+banc et le reste de l'interface de déverrouillage (« Réessayer », les gardes de `ouvrirPar` et de la
+passkey), éprouvable par le seul navigateur — `apps-frontiere.spec.mjs`,
+`deverrouillage-frontiere.spec.mjs` et `coquille-stockage-indetermine.spec.mjs` (Chromium et Firefox
+: coffre existant, rejet posé dans le Worker, au démarrage ou après une sonde réussie, reprise sans
+rechargement ; WebKit éphémère : la seule conduite de l'écran, la reprise d'un coffre n'y étant pas
+mesurée).
 
 Les deux campagnes qui tenaient déjà `conduiteApresLaMort` et `conduiteApresLeVerrouillage`
 (`cycle-de-vie`, `verrouillage`) suivent l'état `indetermine` : leur mutant « un moteur INDISPONIBLE

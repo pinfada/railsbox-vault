@@ -19,7 +19,11 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
-import { motifDeRefusDeCapacite, etatsSansVolume } from "../support/refus-de-capacite.mjs";
+import {
+  motifDeRefusDeCapacite,
+  etatsSansVolume,
+  moteurDe,
+} from "../support/refus-de-capacite.mjs";
 
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
@@ -92,9 +96,14 @@ async function ouvrirLaCoquille(page, origine = SHELL_ORIGIN) {
   });
 }
 
-/** WebKit : l'état DIT l'absence, et le geste de sauvegarde rend son refus typé. */
+/**
+ * WebKit éphémère SEUL (le moteur de la fixture, jamais ce que la page affiche) : l'état DIT la
+ * limite, et le geste de sauvegarde rend son refus typé. Sous Chromium et Firefox, rend `false` et
+ * le scénario COMPLET est exigé : un volume qui n'y serait pas atteignable fait échouer l'épreuve.
+ */
 async function exigerLaLimiteDuMoteur(page) {
-  if (!etatsSansVolume(page).includes((await releve(page)).etat)) return false;
+  if (moteurDe(page) !== "webkit") return false;
+  expect(etatsSansVolume(page)).toContain((await releve(page)).etat);
   await page.click("#sauvegarder-le-coffre");
   await expect(page.locator("#portabilite-refus")).toContainText(motifDeRefusDeCapacite(page), {
     timeout: DELAI,

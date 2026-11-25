@@ -111,7 +111,8 @@ test("aucune ligne de test ne lit `etatsSansVolume` pour décider sans porte du 
     const lignes = (await readFile(chemin, "utf8")).split("\n");
     lignes.forEach((ligne, index) => {
       if (!/\b(?:etatsSansVolume|ETATS_SANS_VOLUME)\b/.test(ligne)) return;
-      if (/^\s*(?:import\b|\/\/|\*)/.test(ligne)) return;
+      // Les spécificateurs d'un `import { … }` coupé sur plusieurs lignes ne décident de rien.
+      if (/^\s*(?:import\b|\/\/|\*|\w+,\s*$)/.test(ligne)) return;
       if (/\bexpect\(|\bexpect\s*$/.test(ligne) || PORTE_DU_MOTEUR.test(ligne)) return;
       // Les arguments d'un `expect(` coupé sur deux lignes : la mention suit un `expect([`.
       const precedente = lignes[index - 1] ?? "";
