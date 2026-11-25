@@ -894,15 +894,41 @@ décision n'est rouvert.
    Chromium, campagne `reserve` du lanceur (`tools/muter-gardes-reserve.mjs`). Ajoutées après la
    première relecture, **vertes d'emblée** (elles servent de garde de non-régression) : redémarrage
    du navigateur sur **profil persistant**, origine arrêtée, déverrouillage et boot (E2E, critère 1)
-   ; après un changement de contrôleur, zéro nouveau Worker (sonde de comptage à **témoin positif**
-   et **témoin de mordant**) et zéro requête de démarrage, puis le rechargement — seul chemin
-   existant de « nouvelle ouverture » — repasse par le portail normal (E2E, critère 13c) ; retrait
-   **interrompu entre la suppression des caches et la désinscription**, puis geste suivant (unitaire
-   et 3 moteurs, critère 7). **Limite écrite** : la sonde est désactivée pendant les vrais boots
-   (elle fait mourir le Worker de confiance pendant un boot réel, cause non cherchée) ; l'invariant
-   « un second portail d'une même page ne crée aucun Worker » n'est éprouvé qu'en unitaire, aucun
-   second portail n'existant dans une page du produit.
+   ; après un changement de contrôleur, dans la même page, zéro nouveau Worker (sonde de comptage à
+   **témoin positif** et **témoin de mordant**) et zéro requête de démarrage (E2E, critère 13c) —
+   **la « nouvelle ouverture dans la même page » n'existe pas dans le produit : écart déclaré, point
+   9** ; retrait **interrompu entre la suppression des caches et la désinscription**, puis geste
+   suivant (unitaire et 3 moteurs, critère 7). **Limite écrite** : la sonde est désactivée pendant
+   les vrais boots (elle fait mourir le Worker de confiance pendant un boot réel, cause non
+   cherchée).
 8. **Limites inchangées et écrites** : Safari réel, éviction réelle, navigation privée réelle,
    hébergeur réel ; boot Rails Chromium seul ; l'origine applicative n'est pas dans la réserve ;
    TOFU et origine hostile avant le jalon 6 ; `tests/browser/reserve-messages.spec.mjs` ignorée sous
    Chromium (exception par projet, raison mesurée).
+9. **ÉCART DÉCLARÉ au critère 5 (« second portail de la même page ») et au critère 13c — en attente
+   de la décision du mainteneur.** Le produit n'appelle le portail **qu'une fois par document** ; il
+   n'existe aucun parcours de seconde ouverture dans la même page, donc l'E2E ne peut pas en
+   emprunter un. Preuve (code, hors commentaires) : le Worker de confiance n'est construit qu'à
+   `public/coquille/canal-de-confiance.mjs:65`, par `creerCanalDeConfiance`, dont le seul appelant
+   est le rappel de `public/main.mjs:211` ; le portail (`ouvrirLePortail`,
+   `public/coquille/reserve-de-la-page.mjs:84`) n'est ouvert que par `public/main.mjs:213`
+   (`pont.canal = await reserve.ouvrir();`, au niveau du module, évalué une fois par document).
+   Verrouiller, rouvrir après la mort du Worker et la préparation de la première visite
+   **rechargent** la page (`public/coquille/verrouillage-et-fins-d-onglet.mjs:44`,
+   `public/coquille/cycle-de-la-page.mjs:168`, `public/coquille/reserve-de-la-page.mjs:52` et `:92`
+   ; ADR 0031, décision 1 : verrouiller EST la fermeture propre suivie du rechargement) : un nouveau
+   document, un nouvel état — l'anomalie de contrôleur, par page, n'y survit pas. Les gestes de
+   réessai (phrase ou code faux, déverrouillage) passent par le canal déjà établi
+   (`demanderAuWorker`), jamais par le portail ; aucun autre `new Worker` n'est un Worker de
+   confiance (`src/coquille/derivation-dans-la-page.mjs:104` est le Worker de dérivation, sans clé
+   de volume). La phrase du § 7, « un coffre verrouillé puis rouvert dans la même fenêtre repasse
+   par lui », se lit donc « dans un nouveau document de la même fenêtre ». L'invariant « tous les
+   portails partagent un état de révocation monotone et une anomalie de contrôleur qui ne se défait
+   pas » reste **éprouvé en unitaire** (`reserve-portail.test.mjs` : second portail, état non
+   reculé, anomalie de contrôleur) et sert de garde à tout parcours futur ;
+   `tests/unit/reserve-un-seul-portail.test.mjs` **rougit** si un second appelant du portail
+   apparaît dans une même page — il faudra alors l'éprouver en E2E. Aucun crochet de test n'est
+   ajouté à la production. **Modification proposée au critère 13c** : « après un changement de
+   contrôleur, zéro nouveau Worker et zéro requête de démarrage dans la même page (éprouvé) ; une
+   nouvelle ouverture dans la même page n'existant pas, le critère porte sur le rechargement, qui
+   repasse par le portail normal ».
