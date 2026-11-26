@@ -81,7 +81,8 @@ jobs:
   # installation ; elles ne s'ajoutent plus. `npm run check` reste la suite complète en local.
   #
   # Moitié 1 : la suite navigateur (`npm run check:navigateur`), en DEUX tranches Playwright
-  # (`--shard`) : la mesure du premier run de #328 l'a donnée à 22 min 45 s en un seul job (installation 4
+  # (`--shard`, passé à `npm run test:browser` : derrière l'alias `check:navigateur`, npm prendrait
+  # `--shard` pour une de ses options et ne le transmettrait pas) : la mesure du premier run de #328 l'a donnée à 22 min 45 s en un seul job (installation 4
   # min 47 s, suite 17 min 49 s), au-dessus de la moitié du plafond de 36 min.
   check-navigateur:
     name: Vérifications du produit (navigateur ${{ matrix.shard }}/2)
@@ -112,7 +113,7 @@ jobs:
       # `xvfb-run` : voir le commentaire historique du job « parcours » ci-dessous — la mesure du
       # bfcache de #170 exige un Chromium FENÊTRÉ, donc un affichage.
       - name: Vérifications
-        run: xvfb-run --auto-servernum npm run check:navigateur -- --shard=${{ matrix.shard }}/2
+        run: xvfb-run --auto-servernum npm run test:browser -- --shard=${{ matrix.shard }}/2
 
       - name: Stabilité des navigations Firefox
         if: always()

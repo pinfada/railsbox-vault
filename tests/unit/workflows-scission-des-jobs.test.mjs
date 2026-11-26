@@ -135,7 +135,7 @@ test("`npm run check` rejoue exactement l'union des deux moitiés, sans rien per
     ?.groups.l.split(",")
     .map(Number);
   assert.deepEqual(tranches, [1, 2], "la matrice des tranches Playwright");
-  assert.match(navigateur, /npm run check:navigateur -- --shard=\$\{\{ matrix\.shard \}\}\/2/u);
+  assert.match(navigateur, /npm run test:browser -- --shard=\$\{\{ matrix\.shard \}\}\/2/u);
   const parcours = bloc("check-parcours");
   assert.match(parcours, /npm run check:statique/u);
   assert.match(parcours, /npm run check:parcours/u);
