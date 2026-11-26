@@ -25,13 +25,18 @@ export async function attendreLEtat(page, etat) {
   await expect.poll(async () => (await releve(page)).etat, { timeout: DELAI }).toBe(etat);
 }
 
-/** WebKit : pas d'OPFS synchrone dans un Worker, la coquille publie `indisponible`. */
-export async function sansOpfsSynchrone(page) {
-  // Depuis le lot F (#305, ADR 0047), le rejet de `getDirectory()` en contexte éphémère WebKit rend
-  // `indetermine` (stockage inaccessible pour l'instant), et non plus `indisponible` : les deux
-  // disent qu'aucun volume ne peut s'ouvrir ici, ce que cette limite de moteur exige.
-  const { etat } = await releve(page);
-  return etat === ETATS_DU_VOLUME.indisponible || etat === ETATS_DU_VOLUME.indetermine;
+/**
+ * WebKit éphémère : l'état INITIAL est `indetermine`, exactement.
+ *
+ * Depuis le lot F (#305, ADR 0047), le rejet de `getDirectory()` dans une session éphémère WebKit n'est
+ * plus classé `indisponible` (absence établie, terminale) mais `indetermine` (stockage inaccessible pour
+ * l'instant, cause non établie). L'aide exige donc `indetermine` et RIEN d'autre : accepter aussi
+ * `indisponible` laisserait passer le classement terminal erroné que #305 corrige. Elle ne mesure que
+ * l'état publié au chargement ; un geste relance la sonde (ADR 0047, décision 5) et son verdict se lit
+ * après le geste.
+ */
+export async function stockageIndetermine(page) {
+  return (await releve(page)).etat === ETATS_DU_VOLUME.indetermine;
 }
 
 // --- Le point d'arrêt -------------------------------------------------------------------------------

@@ -19,7 +19,8 @@
 // libre : c'est la revalidation qui refuse), ou A tient encore son volume (c'est le verrou qui refuse).
 //
 // L'archive vient d'un AUTRE contexte (un autre OPFS, même serveur) ; la course se joue dans le contexte
-// de l'épreuve, deux onglets d'une même origine. WebKit : pas d'OPFS synchrone, la limite est exigée.
+// de l'épreuve, deux onglets d'une même origine. WebKit (session éphémère) : seul
+// l'ÉTAT INITIAL est mesuré — indéterminé (ADR 0047), aucun volume ouvert ; la course n'y est pas jouée.
 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,7 +44,7 @@ import {
   pauseAtteinte,
   releve,
   reprendre,
-  sansOpfsSynchrone,
+  stockageIndetermine,
   verrouiller,
 } from "./support-course-onglets.mjs";
 
@@ -71,10 +72,13 @@ async function restaurationRetenue(context) {
   return { a, b };
 }
 
-test("WebKit : sans OPFS synchrone, la limite est exigée", async ({ page, browserName }) => {
-  test.skip(browserName !== "webkit", "mesure propre aux moteurs sans OPFS synchrone");
+test("WebKit éphémère : l'état initial est indéterminé, aucun volume n'est ouvert", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "webkit", "mesure propre à la session éphémère WebKit");
   await ouvrirLaCoquille(page);
-  expect(await sansOpfsSynchrone(page)).toBe(true);
+  expect(await stockageIndetermine(page)).toBe(true);
 });
 
 test("RESTAURATION : B suspendu, A crée et ferme — B est refusé, l'enveloppe de A est intacte, son code ouvre", async ({

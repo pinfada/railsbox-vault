@@ -20,8 +20,9 @@
 // copie de `opfs-sync-access.mjs` dont `openOpfsSyncAccess` attend un signal quand l'épreuve l'a
 // armé (`tools/harnais-point-d-arret.mjs`) — le « point d'arrêt d'épreuve », sur les trois moteurs.
 //
-// **WebKit** n'offre pas l'OPFS synchrone dans un Worker : la coquille y publie `indisponible`, et la
-// limite est EXIGÉE, pas sautée.
+// **WebKit (session éphémère)** : la course n'y est pas jouée. L'épreuve mesure l'état initial —
+// `indetermine` (lot F, ADR 0047 : le rejet de `getDirectory()` n'y est plus classé « indisponible ») —
+// puis le refus qu'un geste reçoit quand la sonde relancée reste indéterminée.
 
 import { expect, test } from "../support/test.mjs";
 
@@ -42,7 +43,7 @@ import {
   releve,
   reprendre,
   revoquerPuisVerrouiller,
-  sansOpfsSynchrone,
+  stockageIndetermine,
 } from "./support-course-onglets.mjs";
 
 /** Met en place la course jusqu'à la pause de B : A tient le coffre, B attend avant le handle. */
@@ -63,14 +64,25 @@ async function courseJusquALaPause(context) {
   return { a, b, feuille };
 }
 
-test("WebKit : sans OPFS synchrone, la limite est exigée", async ({ page, browserName }) => {
-  test.skip(browserName !== "webkit", "mesure propre aux moteurs sans OPFS synchrone");
+test("WebKit éphémère : l'état initial est indéterminé, et un geste reçoit le refus d'une capacité indéterminée", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "webkit", "mesure propre à la session éphémère WebKit");
   await ouvrirLaCoquille(page);
-  expect(await sansOpfsSynchrone(page)).toBe(true);
+  expect(await stockageIndetermine(page)).toBe(true);
+  // Un geste relance la sonde (ADR 0047, décision 5) : si elle reste indéterminée, le geste reçoit
+  // `VAULT_STORAGE_INDETERMINE` — jamais `UNSUPPORTED`, réservé à une absence établie — et l'état reste
+  // `indetermine`. Aucun volume n'est ouvert.
   await page.click("#sauvegarder-le-coffre");
-  await expect(page.locator("#portabilite-refus")).toContainText(STORAGE_ERROR_CODES.unsupported, {
-    timeout: DELAI,
-  });
+  await expect(page.locator("#portabilite-refus")).toContainText(
+    STORAGE_ERROR_CODES.indeterminate,
+    { timeout: DELAI },
+  );
+  await expect(page.locator("#portabilite-refus")).not.toContainText(
+    STORAGE_ERROR_CODES.unsupported,
+  );
+  expect((await releve(page)).etat).toBe(ETATS_DU_VOLUME.indetermine);
 });
 
 test("C5 : B retardé entre l'enveloppe et le handle est REFUSÉ quand A a révoqué sa clé", async ({

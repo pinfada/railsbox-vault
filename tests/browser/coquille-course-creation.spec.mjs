@@ -11,7 +11,8 @@
 // d'écrire l'enveloppe, y revalide que l'enveloppe est absente, et le PASSE à l'ouvreur — aucun trou
 // entre l'enveloppe et la naissance du volume.
 //
-// WebKit : pas d'OPFS synchrone dans un Worker, la limite est exigée.
+// WebKit (session éphémère) : seul l'ÉTAT INITIAL est mesuré — indéterminé (ADR 0047), aucun volume
+// ouvert. Un geste relancerait la sonde ; la course elle-même n'y est pas jouée.
 
 import { expect, test } from "../support/test.mjs";
 
@@ -32,7 +33,7 @@ import {
   pauseAtteinte,
   releve,
   reprendre,
-  sansOpfsSynchrone,
+  stockageIndetermine,
   verrouiller,
 } from "./support-course-onglets.mjs";
 
@@ -50,10 +51,13 @@ async function creationRetenue(context) {
   return { a, b };
 }
 
-test("WebKit : sans OPFS synchrone, la limite est exigée", async ({ page, browserName }) => {
-  test.skip(browserName !== "webkit", "mesure propre aux moteurs sans OPFS synchrone");
+test("WebKit éphémère : l'état initial est indéterminé, aucun volume n'est ouvert", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "webkit", "mesure propre à la session éphémère WebKit");
   await ouvrirLaCoquille(page);
-  expect(await sansOpfsSynchrone(page)).toBe(true);
+  expect(await stockageIndetermine(page)).toBe(true);
 });
 
 test("CRÉATION : B suspendu, A crée et ferme — B est refusé, l'enveloppe de A est intacte, son code ouvre", async ({
