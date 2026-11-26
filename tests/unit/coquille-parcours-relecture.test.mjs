@@ -13,6 +13,7 @@ import {
 } from "../../src/coquille/conduites-du-parcours.mjs";
 import { CONSEIL_DE_REOUVERTURE } from "../../src/coquille/interface-de-deverrouillage.mjs";
 import { ECRANS, ETAPES, MESSAGES } from "../../src/coquille/parcours.mjs";
+import { LIMITES } from "../../src/coquille/limites-de-cette-version.mjs";
 import { evaluerPhrase } from "../../src/coquille/politique-de-phrase.mjs";
 import {
   CHEMIN_DE_LA_RELECTURE,
@@ -109,5 +110,25 @@ test("CONSTAT 10 : la limite de Firefox est écrite de la même phrase dans les 
     "docs/testing.md",
   ]) {
     assert.ok(aPlat(await lire(document)).includes(phrase), `${document} ne porte pas la phrase`);
+  }
+});
+
+test("#195 : la relecture reproduit les limites dites à l'entrée, mot pour mot, avec leur page de détail", async () => {
+  const page = aPlat(await readFile(CHEMIN_DE_LA_RELECTURE, "utf8"));
+  assert.ok(page.includes(aPlat(LIMITES.titre)), "le titre des limites");
+  for (const { titre, texte } of LIMITES.limites) {
+    assert.ok(page.includes(aPlat(titre)), `${titre} : titre absent de la relecture`);
+    assert.ok(page.includes(aPlat(texte)), `${titre} : texte absent de la relecture`);
+  }
+  assert.ok(page.includes(LIMITES.detail.lien), "le lien de détail");
+});
+
+test("#195 : la relecture renvoie à la séance (consignes, grille, conduite)", async () => {
+  const page = await readFile(CHEMIN_DE_LA_RELECTURE, "utf8");
+  for (const fichier of ["consignes.md", "grille.md", "conduite.md"]) {
+    assert.ok(
+      page.includes(`seance-de-relecture/${fichier}`),
+      `${fichier} n'est pas lié depuis la relecture`,
+    );
   }
 });
