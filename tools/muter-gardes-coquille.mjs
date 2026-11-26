@@ -89,6 +89,8 @@ const EPREUVE_WORKER_DEVERROUILLAGE = "tests/unit/coquille-worker-deverrouillage
 const EPREUVE_COURSE_PORTABILITE = "tests/unit/coquille-portabilite-course.test.mjs";
 const PORTABILITE_DU_WORKER = "public/portabilite-du-worker.mjs";
 const EPREUVE_SOUS_LE_HANDLE = "tests/unit/vm-ouverture-sous-le-handle.test.mjs";
+const LIMITES_DE_LA_VERSION = "src/coquille/limites-de-cette-version.mjs";
+const EPREUVE_LIMITES = "tests/unit/coquille-limites-affichage.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -2086,6 +2088,32 @@ export const MUTATIONS = Object.freeze([
       "    verrou = await ouvrirLeHandle(volume);\n",
     apres: "  const verrou = await ouvrirLeHandle(volume);\n" + "  try {\n",
     epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  // La règle d'affichage des limites de la version (#195, revue de la PR #332) : à la création, et nulle
+  // part ailleurs. La page applique le verdict de `limitesAffichees` ; l'épreuve joue la fonction.
+  {
+    nom: "les limites de la version ne reviennent pas à la réouverture (#195)",
+    garde: "ECRANS_DES_LIMITES — la liste des écrans qui les montrent",
+    fichier: LIMITES_DE_LA_VERSION,
+    avant: 'export const ECRANS_DES_LIMITES = Object.freeze(["creer"]);',
+    apres: 'export const ECRANS_DES_LIMITES = Object.freeze(["creer", "rouvrir"]);',
+    epreuves: [EPREUVE_LIMITES],
+  },
+  {
+    nom: "les limites de la version se disent à la création (#195)",
+    garde: "ECRANS_DES_LIMITES — la création n'est pas retirée de la liste",
+    fichier: LIMITES_DE_LA_VERSION,
+    avant: 'export const ECRANS_DES_LIMITES = Object.freeze(["creer"]);',
+    apres: "export const ECRANS_DES_LIMITES = Object.freeze([]);",
+    epreuves: [EPREUVE_LIMITES],
+  },
+  {
+    nom: "les limites de la version sont décidées par l'écran, non montrées partout (#195)",
+    garde: "limitesAffichees — la condition sur l'écran",
+    fichier: LIMITES_DE_LA_VERSION,
+    avant: "  return ECRANS_DES_LIMITES.includes(ecranId);\n",
+    apres: "  return true;\n",
+    epreuves: [EPREUVE_LIMITES],
   },
 ]);
 

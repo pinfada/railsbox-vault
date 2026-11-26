@@ -86,6 +86,9 @@ for (const theme of ["light", "dark"]) {
 
     await verrouillerEtRecharger(page);
     await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
+    // À la réouverture, la promesse reste, les limites ne reviennent pas (#195, `limitesAffichees`).
+    await expect(page.locator("#promesse")).toBeVisible();
+    await expect(page.locator("#limites")).toBeHidden();
     await verifierAux(page, testInfo, "etape-5-rouvrir", DEUX_LARGEURS);
     // « J'ai oublié ma phrase » est un bouton actif : son contour doit se voir (constat 11).
     const perdu = await page.locator("#parcours-phrase-perdue").evaluate((noeud) => ({

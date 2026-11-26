@@ -69,5 +69,15 @@ export const LIMITES = Object.freeze({
   }),
 });
 
-/** Squelette de l'épreuve rouge : l'implémentation naïve montre les limites partout. */
-export const limitesAffichees = () => true;
+/**
+ * Les écrans qui montrent les limites : la CRÉATION, et elle seule. Les limites se disent avant que la
+ * personne crée quoi que ce soit ; à la réouverture elle les a déjà lues, et le champ de la phrase doit
+ * rester à l'écran (ADR 0043, R1-bis). Elles sont écrites dans la promesse de l'entrée : cet écran est
+ * donc aussi un écran de `ECRANS_DE_L_ENTREE` (épreuve `coquille-limites-de-l-entree.test.mjs`).
+ */
+export const ECRANS_DES_LIMITES = Object.freeze(["creer"]);
+
+/** Vrai si l'écran montre les limites. La page applique ce verdict, elle ne le décide pas. */
+export function limitesAffichees(ecranId) {
+  return ECRANS_DES_LIMITES.includes(ecranId);
+}
