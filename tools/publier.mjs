@@ -30,6 +30,15 @@
 //      ramène ce cas à un avertissement, pour les contextes — bancs, `npm run check` — qui n'ont
 //      pas besoin de l'émulateur et ne prétendent pas publier.
 //
+//   7  LIMITE D'HÉBERGEUR dépassée (`--verifier <arbre> --profil <hébergeur>`) : un fichier trop gros,
+//      trop de fichiers, trop de règles `_headers`. L'arbre est conforme à son inventaire ; c'est
+//      l'hébergeur qui le refuserait. Contrôlé APRÈS les écarts (1), l'épinglage (5) et
+//      l'incomplétude (6) : un arbre altéré n'est pas jugé sur sa taille. Profils :
+//      `tools/publier-limites-hebergeur.mjs`.
+//
+// `--avec-image` (construction) publie aussi le descripteur et tout ce qu'il nomme sous
+// `/artifacts/` (`tools/publier-image.mjs`) : c'est le mode de `publication.yml`, pas de `npm run check`.
+//
 // #106 n'ajoute AUCUN code à ce contrat, et deux entrées mal formées y sont rangées explicitement :
 // une `--sortie` refusée et une `--commit <ref>` non résoluble sont des USAGES invalides (3). Un
 // arbre construit depuis un arbre de travail SALE reste, lui, CONFORME (0) : `--verifier` l'annonce
@@ -68,6 +77,12 @@ import {
   verifierEpinglageV86,
 } from "./publier-sources.mjs";
 import { produireLaReserve } from "./publier-reserve.mjs";
+import { CHEMIN_DU_DESCRIPTEUR, copierLImage } from "./publier-image.mjs";
+import {
+  controlerLesLimites,
+  decrireLesLimites,
+  profilNomme,
+} from "./publier-limites-hebergeur.mjs";
 import { REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 export const CODES = Object.freeze({
@@ -78,6 +93,7 @@ export const CODES = Object.freeze({
   sourceAbsente: 4,
   epinglageRompu: 5,
   incomplet: 6,
+  limitesHebergeur: 7,
 });
 
 const SORTIE_PAR_DEFAUT = "artifacts/publication";
@@ -329,10 +345,15 @@ async function construireArbre(arbre, options) {
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination, { recursive: true });
 
+  // Sous `--avec-image`, le descripteur est copié avec l'image (obligatoire, lu sur le disque) : il ne
+  // passe plus par la source OPTIONNELLE, qui le lirait au commit — où il n'est pas versionné.
+  const avecImage = options.avecImage === true && arbre.nom === "coquille";
   const absentes = await materialiser({
     racine: REPOSITORY_ROOT,
     reference: options.reference,
-    sources: arbre.sources,
+    sources: avecImage
+      ? arbre.sources.filter(({ depuis }) => depuis !== CHEMIN_DU_DESCRIPTEUR)
+      : arbre.sources,
     destination,
   });
   if (arbre.placeTenante) {
@@ -357,6 +378,9 @@ async function construireArbre(arbre, options) {
       plancher: options.plancher,
     });
   }
+  // L'image est copiée APRÈS la réserve : elle n'y entre pas (le magasin OPFS la range, ADR 0044) et la
+  // réserve relit tout l'arbre en mémoire — plus de 200 Mio de plus pour rien.
+  const image = avecImage ? await copierLImage({ racine: REPOSITORY_ROOT, destination }) : null;
   await exigerPolitiqueUniforme(arbre, destination, options);
 
   const epinglage = await fusionnerEpinglages(destination, empreinte, epinglagesAttendus(arbre));
@@ -376,7 +400,7 @@ async function construireArbre(arbre, options) {
   // #22, et un nom qui n'en désigne qu'un enverrait chercher le défaut au mauvais endroit.
   inventaire.epinglage = epinglage;
   await ecrireInventaire(destination, inventaire);
-  return { destination, inventaire, absentes, epinglage };
+  return { destination, inventaire, absentes, epinglage, image };
 }
 
 /**
@@ -432,7 +456,7 @@ export async function fusionnerEpinglages(racine, empreinte, attendus) {
   };
 }
 
-function decrireArbre({ destination, inventaire, absentes, epinglage }) {
+function decrireArbre({ destination, inventaire, absentes, epinglage, image }) {
   const lignes = [
     `Arbre « ${inventaire.arbre} » → ${destination}`,
     `  origine        ${inventaire.origine}`,
@@ -457,6 +481,11 @@ function decrireArbre({ destination, inventaire, absentes, epinglage }) {
   }
   for (const absente of absentes) {
     lignes.push(`  absente        ${absente} (npm run vm:fetch la récupère)`);
+  }
+  if (image !== null && image !== undefined) {
+    lignes.push(
+      `  image          ${image.chemins.length} fichiers, ${(image.octets / 1024 / 1024).toFixed(1)} Mio (--avec-image)`,
+    );
   }
   return lignes.join("\n");
 }
@@ -574,7 +603,7 @@ function decrireEcarts(ecarts) {
   return lignes.join("\n");
 }
 
-async function verifier(racine, { tolererIncomplet }) {
+async function verifier(racine, { tolererIncomplet, profil = null }) {
   let resultat;
   try {
     resultat = await verifierArbre(racine);
@@ -614,14 +643,33 @@ async function verifier(racine, { tolererIncomplet }) {
   // `complet: false` n'est PAS un écart d'empreintes : l'arbre est exactement ce que son inventaire
   // décrit. C'est en revanche un arbre qu'on ne doit pas déployer, et rendre 0 ici laisserait une
   // chaîne de publication conclure « conforme » sur un runtime absent.
-  if (inventaire.complet === false) return verdictIncomplet(tolererIncomplet);
-  return CODES.conforme;
+  if (inventaire.complet === false) {
+    const verdict = verdictIncomplet(tolererIncomplet);
+    if (verdict !== CODES.conforme) return verdict;
+  }
+  return profil === null ? CODES.conforme : verdictDesLimites(racine, inventaire.arbre, profil);
+}
+
+/**
+ * Les limites de l'HÉBERGEUR, mesurées sur le DISQUE (et non sur l'inventaire : il peut mentir).
+ * Un avertissement ne change pas le code ; un dépassement rend 7 et nomme chaque fichier.
+ */
+async function verdictDesLimites(racine, arbre, nomProfil) {
+  const resultat = await controlerLesLimites(racine, profilNomme(nomProfil));
+  process.stdout.write(`${decrireLesLimites(nomProfil, arbre, resultat)}\n`);
+  if (resultat.depassements.length === 0) return CODES.conforme;
+  process.stderr.write(
+    `LIMITE D'HÉBERGEUR dépassée (${nomProfil}) : ${resultat.depassements.length} dépassement(s). ` +
+      "L'arbre est conforme à son inventaire, mais cet hébergeur le refuserait.\n",
+  );
+  return CODES.limitesHebergeur;
 }
 
 const AIDE = `node tools/publier.mjs [--commit <ref>] [--sortie <dir>] [--tolerer-incomplet]
                       [--origine-coquille <url>] [--origine-application <url>]
                       [--sequence <n>] [--plancher <n>]
-node tools/publier.mjs --verifier <arbre> [--tolerer-incomplet]
+                      [--avec-image]
+node tools/publier.mjs --verifier <arbre> [--tolerer-incomplet] [--profil <hébergeur>]
 `;
 
 async function principal(argv) {
@@ -632,7 +680,11 @@ async function principal(argv) {
 
   const tolererIncomplet = argv.includes("--tolerer-incomplet");
   const aVerifier = lireOption(argv, "verifier");
-  if (aVerifier !== null) return verifier(resolve(aVerifier), { tolererIncomplet });
+  if (aVerifier !== null) {
+    const profil = lireOption(argv, "profil");
+    if (profil !== null) profilNomme(profil);
+    return verifier(resolve(aVerifier), { tolererIncomplet, profil });
+  }
 
   // Les deux entrées destructrices sont validées AVANT que quoi que ce soit ne soit effacé : une
   // référence illisible ne doit pas emporter la publication précédente au passage (#106).
@@ -661,6 +713,7 @@ async function principal(argv) {
     origineApplication,
     banc,
     tolererIncomplet,
+    avecImage: argv.includes("--avec-image"),
   });
 }
 
