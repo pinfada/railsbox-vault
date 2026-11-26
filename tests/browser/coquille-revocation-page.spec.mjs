@@ -75,12 +75,8 @@ async function ouvrirLaCoquille(page, requete = "?vue=complete") {
   // Le saut n'est admis que pour le contexte WebKit ÉPHÉMÈRE, identifié par le MOTEUR DE LA FIXTURE
   // (`etatsSansVolume`, tests/support/refus-de-capacite.mjs) et jamais par ce que la page affiche :
   // sous Chromium et Firefox, la liste est vide, et un état sans volume fait ÉCHOUER l'épreuve.
-  if (etatsSansVolume(page).includes(etat)) {
-    test.skip(
-      true,
-      `WebKit éphémère (moteur ${moteurDe(page)}) : état « ${etat} » (OPFS synchrone absent, ou getDirectory() rejeté en session éphémère, #231) : aucun coffre ne s'y ouvre (mesuré)`,
-    );
-  }
+  const raison = `WebKit éphémère (moteur ${moteurDe(page)}) : état « ${etat} » (OPFS synchrone absent, ou getDirectory() rejeté en session éphémère, #231) : aucun coffre ne s'y ouvre (mesuré)`;
+  test.skip(etatsSansVolume(page).includes(etat), raison);
   expect(
     [ETATS_DU_VOLUME.indisponible, ETATS_DU_VOLUME.indetermine].includes(etat),
     `${moteurDe(page)} doit ouvrir un coffre : un état « ${etat} » est un échec, pas un saut`,
