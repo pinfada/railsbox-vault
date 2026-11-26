@@ -206,7 +206,7 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
-test("la direction utilitaire est servie localement et le focus clavier reste visible", async ({
+test("la scène est servie localement et le focus clavier reste visible", async ({
   page,
   browserName,
 }) => {
@@ -216,13 +216,14 @@ test("la direction utilitaire est servie localement et le focus clavier reste vi
   await expect(
     page.getByRole("heading", { name: "Créer votre coffre", exact: true }),
   ).toBeVisible();
-  const style = await page.locator("main").evaluate((node) => {
-    const css = getComputedStyle(node);
-    return { bord: css.borderTopWidth, rayon: css.borderTopLeftRadius, ombre: css.boxShadow };
-  });
-  expect(style.bord).toBe("1px");
-  expect(style.rayon).toBe("0px");
-  expect(style.ombre).toContain("6px 6px");
+  // La scène de l'ADR 0050 : le fond pétrole de la page, et le laiton du filet de l'en-tête. Deux
+  // couleurs de la feuille locale : si elle n'est pas servie, aucune des deux n'est là.
+  const style = await page.locator("main").evaluate((node) => ({
+    fond: getComputedStyle(node).backgroundColor,
+    icone: getComputedStyle(node.querySelector("header svg")).color,
+  }));
+  expect(style.fond).toBe("rgb(7, 21, 25)");
+  expect(style.icone).toBe("rgb(231, 198, 126)");
   await page.keyboard.press(tab);
   await expect(page.getByRole("link", { name: "Aller au parcours" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -240,7 +241,7 @@ test("la direction utilitaire est servie localement et le focus clavier reste vi
   ).toBeFocused();
 });
 
-test("la direction utilitaire et le focus clavier sur l'écran « stockage inaccessible » (WebKit éphémère)", async ({
+test("la scène et le focus clavier sur l'écran « stockage inaccessible » (WebKit éphémère)", async ({
   page,
   browserName,
 }) => {
@@ -252,13 +253,14 @@ test("la direction utilitaire et le focus clavier sur l'écran « stockage inacc
     exact: true,
   });
   await expect(inaccessible).toBeVisible();
-  const style = await page.locator("main").evaluate((node) => {
-    const css = getComputedStyle(node);
-    return { bord: css.borderTopWidth, rayon: css.borderTopLeftRadius, ombre: css.boxShadow };
-  });
-  expect(style.bord).toBe("1px");
-  expect(style.rayon).toBe("0px");
-  expect(style.ombre).toContain("6px 6px");
+  // La scène de l'ADR 0050 : le fond pétrole de la page, et le laiton du filet de l'en-tête. Deux
+  // couleurs de la feuille locale : si elle n'est pas servie, aucune des deux n'est là.
+  const style = await page.locator("main").evaluate((node) => ({
+    fond: getComputedStyle(node).backgroundColor,
+    icone: getComputedStyle(node.querySelector("header svg")).color,
+  }));
+  expect(style.fond).toBe("rgb(7, 21, 25)");
+  expect(style.icone).toBe("rgb(231, 198, 126)");
   await page.keyboard.press(tab);
   await expect(page.getByRole("link", { name: "Aller au parcours" })).toBeFocused();
   await page.keyboard.press("Enter");
