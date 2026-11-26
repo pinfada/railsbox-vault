@@ -259,9 +259,21 @@ un job navigateur approcherait 22 min, sous son plafond de 25 min mais PAS sous 
 scission enlève la somme des deux moitiés d'un seul job ; elle ne supprime pas la variance de
 l'installation (non traitée ici).
 
-**Limites.** La présence des lots est gardée par un cliquet sur `ci.yml` et par le résultat agrégé
-de la matrice, pas par un décompte des artefacts à l'exécution. Les durées par lot dépendent de
-l'exécutant (#243).
+**Attestations (relecture 2 de #329).** Le résultat agrégé d'une matrice ne prouve pas que chaque
+entrée a été jouée. Chaque lot de mutation dépose donc une attestation
+(`tools/attestations-ci.mjs attester mutations` : son numéro, les entrées jouées, ses comptes ;
+envoi en `if-no-files-found: error`), et chaque tranche navigateur la sienne (`attester navigateur`,
+tirée des `stats` du rapport Playwright). Les jobs agrégés (« Campagnes de mutation », « Qualité et
+tests ») téléchargent tout et lancent `verifier` : il EXIGE exactement les lots de `LOTS` et les
+tranches 1 à 2, chacun UNE fois, non vide (au moins un mutant, une épreuve réussie), sans survivant
+ni épreuve en échec, sinon code 1. `tests/unit/attestations-ci.test.mjs` fait échouer l'agrégation
+pour un lot manquant, en double, inattendu, vide, avec un survivant ou des entrées différentes. Une
+sélection vide (`--campagnes=,,`), une tranche valide mais vide et une table vide sont refusées
+(code non nul), au lieu de rendre 0/0.
+
+**Limites.** Les durées par lot dépendent de l'exécutant (#243). Une attestation prouve le comptage
+déposé par le lot, pas son exactitude : un lot qui écrirait une attestation fausse la passerait ;
+les artefacts d'un run ne se mélangent pas à ceux d'un autre.
 
 **Réarmer une campagne qui a dérivé.** Un mutant SURVIVANT (« le texte muté ne fait plus rougir
 l'épreuve ») reçoit l'épreuve qui le tue — jamais un retrait pour faire passer le score. Un mutant
