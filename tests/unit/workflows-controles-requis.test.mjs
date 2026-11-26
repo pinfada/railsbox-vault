@@ -13,19 +13,30 @@ const code = gate.match(/node --input-type=module <<'JS'\n(?<code>[\s\S]*?)\n\s+
   .code;
 assert.ok(code, "Le code réellement exécuté dans le workflow doit être éprouvé.");
 
-test("le contrôle déjà requis attend les tests, les deux couvertures, les courses entre onglets et les audits", () => {
+test("le contrôle déjà requis attend les tranches navigateur, les couvertures, les courses entre onglets et les audits", () => {
   assert.match(gate, /^ {4}name: Qualité et tests$/mu);
-  assert.match(gate, /^ {4}needs: \[check, couverture, courses, audits\]$/mu);
+  assert.match(
+    gate,
+    /^ {4}needs: \[check-navigateur, check-parcours, couverture, courses, audits\]$/mu,
+  );
   assert.match(gate, /^ {4}if: \$\{\{ always\(\) \}\}$/mu);
   assert.match(gate, /VAULT_RESULTATS_CI: \$\{\{ toJSON\(needs\) \}\}/u);
   assert.match(ci, /^ {2}audits:\n {4}uses: \.\/\.github\/workflows\/security.yml$/mu);
   assert.match(ci, /node: \[22, 24\]/u);
 });
 
-const reussis = () =>
-  Object.fromEntries(
-    ["check", "couverture", "courses", "audits"].map((nom) => [nom, { result: "success" }]),
-  );
+test("le job des courses entre onglets existe, joue la configuration dédiée et son résultat est exigé", () => {
+  const bloc = ci.match(/^ {2}courses:\n(?<bloc>[\s\S]*?)(?=^ {2}\w[\w-]*:)/mu)?.groups.bloc;
+  assert.ok(bloc, "Le job `courses` doit exister.");
+  assert.match(bloc, /^ {4}name: Courses entre onglets \(Chromium, Firefox, WebKit\)$/mu);
+  assert.match(bloc, /run: npm run test:course-onglets$/mu);
+  assert.match(bloc, /npx playwright install --with-deps chromium firefox webkit/u);
+  // Exigé par son résultat : aucune condition ne peut le faire sauter sans faire échouer le gate.
+  assert.doesNotMatch(bloc, /^ {4}if:/mu);
+});
+
+const ATTENDUS = ["check-navigateur", "check-parcours", "couverture", "courses", "audits"];
+const reussis = () => Object.fromEntries(ATTENDUS.map((nom) => [nom, { result: "success" }]));
 function executer(resultats) {
   return spawnSync(process.execPath, ["--input-type=module", "--eval", code], {
     env: { ...process.env, VAULT_RESULTATS_CI: JSON.stringify(resultats) },
@@ -34,12 +45,12 @@ function executer(resultats) {
   });
 }
 
-test("le gate accepte uniquement quatre contrôles réussis", () => {
+test("le gate accepte uniquement cinq contrôles réussis", () => {
   const resultat = executer(reussis());
   assert.equal(resultat.status, 0, resultat.stderr);
 });
 
-for (const nom of ["check", "couverture", "courses", "audits"]) {
+for (const nom of ATTENDUS) {
   for (const etat of ["failure", "cancelled", "skipped", "", undefined]) {
     test(`le gate refuse ${nom} : ${etat ?? "absent"}`, () => {
       const resultats = reussis();
