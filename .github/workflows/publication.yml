@@ -428,15 +428,20 @@ jobs:
           node tools/publier.mjs --verifier artifacts/publication/application
 
       # La GARDE de l'environnement, AVANT l'étape qui reçoit les secrets : `environment: production` ne
-      # protège rien en soi (GitHub crée un environnement absent, sans règle). Cette étape n'a que le jeton
-      # du workflow (`contents: read`), qui lit l'environnement ; elle refuse s'il n'a aucun relecteur requis.
-      - name: Garde de l'environnement production (relecteur requis)
+      # protège rien en soi (GitHub crée un environnement absent, sans règle). Elle exige (1) un relecteur
+      # requis dans l'environnement ET (2) une approbation `approved` de CE run pour `production` : une règle
+      # ajoutée après le démarrage du job ne vaut pas approbation. Cette étape n'a que le jeton du workflow
+      # (`contents: read` suffit pour les deux lectures, mesuré) ; une lecture qui échoue donne `{}` / `[]`,
+      # donc un refus.
+      - name: Garde de l'environnement production (relecteur requis, approbation de ce run)
         env:
           GH_TOKEN: ${{ github.token }}
           VAULT_DEPOT: ${{ github.repository }}
+          VAULT_RUN: ${{ github.run_id }}
         run: |
           gh api "repos/$VAULT_DEPOT/environments/production" > environnement.json || echo '{}' > environnement.json
-          node tools/publier-garde-environnement.mjs < environnement.json
+          gh api "repos/$VAULT_DEPOT/actions/runs/$VAULT_RUN/approvals" > approbations.json || echo '[]' > approbations.json
+          node tools/publier-garde-environnement.mjs environnement.json approbations.json
 
       # UN seul appel pour les DEUX arbres : tous deux et leurs projets sont contrôlés AVANT le premier
       # envoi, et un échec sur l'un donne zéro appel. L'application d'abord : la coquille la cadre, et une

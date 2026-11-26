@@ -129,3 +129,12 @@ test("une réponse illisible ou absente est refusée (la garde échoue FERMÉE)"
     "sans argument",
   );
 });
+
+test("un environnement protégé mais AUCUN fichier d'approbations en argument : refus", async (t) => {
+  const dossier = await mkdtemp(join(tmpdir(), "garde-"));
+  t.after(() => rm(dossier, { recursive: true, force: true }));
+  await writeFile(join(dossier, "env.json"), JSON.stringify(protege));
+  const r = spawnSync(process.execPath, [OUTIL, join(dossier, "env.json")], { encoding: "utf8" });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /approbation/);
+});

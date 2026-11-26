@@ -64,6 +64,12 @@ test("deployer : UN seul appel d'envoi pour les DEUX arbres, précédé de la ga
     "aucune permission de job : contents: read hérité",
   );
   assert.match(publication, /^permissions:\n {2}contents: read$/mu);
+  assert.match(
+    etape,
+    /\|\| echo '\[\]' > approbations\.json/u,
+    "lecture en échec = aucune approbation",
+  );
+  assert.match(etape, /\|\| echo '\{\}' > environnement\.json/u, "lecture en échec = aucune règle");
   assert.doesNotMatch(bloc, /--profil/u, "le profil d'envoi n'est pas un choix");
 });
 

@@ -431,21 +431,24 @@ jobs après `publier` :
   l'inventaire des arbres, mesure les limites et affiche, pour chaque origine, le projet, la
   commande exacte `npx --yes wrangler@<version épinglée> pages deploy …` et les dépassements. Elle
   n'envoie rien (`RIEN N'A ÉTÉ ENVOYÉ.`). Un dépassement y est **rapporté**, pas masqué.
-- `deployer` (si `envoyer` est vrai) : `environment: production`, puis une **garde** : l'étape
-  `publier-garde-environnement.mjs` lit les règles de l'environnement avec le jeton du workflow
-  (`contents: read` suffit : mesuré le 26/11/2026) et **refuse sans relecteur requis**, avant
-  l'étape qui reçoit les secrets. Puis **un seul appel** d'envoi pour les deux arbres : noms de
-  projet et limites des DEUX sont contrôlés avant le premier envoi (un échec sur l'un donne zéro
-  appel), puis l'application part avant la coquille. Sans les secrets, l'étape d'envoi s'arrête en
-  répétition à blanc et le dit.
+- `deployer` (si `envoyer` est vrai) : `environment: production`, puis une **garde** exécutée avant
+  l'étape qui reçoit les secrets (`tools/publier-garde-environnement.mjs`, jeton du workflow,
+  `contents: read` suffit : mesuré le 26/11/2026). Elle exige (a) un **relecteur requis** dans la
+  configuration de l'environnement et (b) une approbation `approved` pour `production` **de ce run**
+  (`GET /actions/runs/{run_id}/approvals`) : une règle ajoutée après le démarrage du job satisfait
+  (a) sans que ce run ait attendu quiconque, seul (b) le voit. Elle échoue fermée. Puis **un seul
+  appel** d'envoi pour les deux arbres : noms de projet et limites des DEUX sont contrôlés avant le
+  premier envoi (un échec sur l'un donne zéro appel), puis l'application part avant la coquille.
+  Sans les secrets, l'étape d'envoi s'arrête en répétition à blanc et le dit.
 
 **`environment: production` ne protège rien par lui-même.** GitHub **crée** un environnement absent,
 sans aucune règle : le job partirait sans approbation. La protection humaine tient à la
 configuration ci-dessous, que la garde ne vérifie qu'en partie. **Limites de la garde** : elle ne
-voit que les relecteurs requis ; le jeton du workflow **ne lit pas les secrets**, elle ne peut donc
-pas vérifier que les secrets sont limités à l'environnement ni qu'aucun secret de dépôt du même nom
-n'existe ; et elle n'a pas été éprouvée sur un environnement protégé réel (elle échoue **fermée** :
-une réponse d'une autre forme est un refus).
+voit que les relecteurs requis et l'approbation de ce run ; le jeton du workflow **ne lit pas les
+secrets**, elle ne peut donc pas vérifier que les secrets sont limités à l'environnement ni qu'aucun
+secret de dépôt du même nom n'existe ; et la **forme** de ses deux réponses n'a pas été vue sur un
+environnement protégé réel (la sonde n'a rendu que `[]` ; elle lit la forme documentée de l'API et
+échoue fermée).
 
 #### Ce que le mainteneur doit créer lui-même (rien n'est créé par ce dépôt)
 

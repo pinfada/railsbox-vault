@@ -90,8 +90,23 @@ export function fichiersDeLImage(descripteur) {
     brut("vgaBios"),
   ];
   if (descripteur.precedent !== undefined) liste.push(servi(descripteur.precedent.paquet));
-  const vus = new Set();
-  return liste.filter(({ nom }) => !vus.has(nom) && vus.add(nom));
+  // Un NOM désigne UN fichier : deux déclarations du même nom doivent être IDENTIQUES (taille servie, empreinte,
+  // taille et empreinte décompressées). Le dédoublonnage par le seul nom laissait un paquet courant et un
+  // paquet précédent de même nom, d'empreintes différentes, ne vérifier que le premier — alors que le
+  // descripteur les accepte. C'est le publieur qui refuse.
+  const vus = new Map();
+  for (const fichier of liste) {
+    const signature = JSON.stringify([fichier.octets, fichier.sha256, fichier.decompresse]);
+    const deja = vus.get(fichier.nom);
+    if (deja !== undefined && deja !== signature) {
+      throw sourceAbsente(
+        `Descripteur applicatif : déclarations contradictoires pour ${fichier.nom} (même nom, tailles ou ` +
+          "empreintes différentes). Un nom désigne un seul fichier.",
+      );
+    }
+    vus.set(fichier.nom, signature);
+  }
+  return liste.filter(({ nom }, index) => liste.findIndex((f) => f.nom === nom) === index);
 }
 
 /**
