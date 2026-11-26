@@ -941,12 +941,13 @@ application qui s'appuierait sur l'expiration pour déconnecter ne le serait pas
 de bout en bout que sous CHROMIUM, Rails n'ayant jamais répondu dans le guest sous Firefox (v86 y
 tourne six fois moins vite : un boot Rails y demande environ dix minutes, et le silence du pont
 observé à quinze minutes reste inexpliqué) ; et rien n'est su de ce qu'il fait d'une application
-Rails autre que celle de référence. **Aucun Service Worker sur l'origine de confiance** : le refus
-de l'ADR 0030 décision 4 est inchangé (une révision est décidée par
-l'[ADR 0048](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
-mais **n'est pas en vigueur** avant D1h-b : voir § « Aucun Service Worker sur l'origine de confiance
-»), et celui de la coquille de cadre vit sur l'origine APPLICATIVE, où l'ADR 0002 l'autorise
-nommément — il n'ouvre aucune voie vers la coquille que le port restreint n'ouvre déjà.
+Rails autre que celle de référence. **Aucun autre Service Worker que celui de la réserve sur
+l'origine de confiance** : le refus de l'ADR 0030 décision 4 est RÉVISÉ par
+l'[ADR 0048](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md),
+en vigueur depuis D1h-b (#299) — un seul Service Worker, généré et épinglé, sert la réserve hors
+connexion : voir § « Aucun Service Worker sur l'origine de confiance ». Celui de la coquille de
+cadre vit sur l'origine APPLICATIVE, où l'ADR 0002 l'autorise nommément — il n'ouvre aucune voie
+vers la coquille que le port restreint n'ouvre déjà.
 
 | Invariant                              | Statut                  | Réserve, quand il y en a une                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Épreuve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | -------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1090,20 +1091,17 @@ restent assumés et écrits.**
 
 ## Aucun Service Worker sur l'origine de confiance
 
-> **État au 18/11/2026.** Cette section porte **deux rédactions**. La **règle en vigueur** est celle
-> du 07/09/2026 (ci-dessous, inchangée) : **aucun Service Worker n'existe sur l'origine de
-> confiance.** Le mainteneur a décidé le 18/11/2026
-> ([#299](https://github.com/pinfada/railsbox-vault/issues/299), option (b)) qu'**un seul** Service
-> Worker de la coquille servira la réserve hors connexion ;
+> **État depuis la fusion de D1h-b (#299).** Cette section porte **deux rédactions**. La **règle EN
+> VIGUEUR** est la rédaction **révisée du 18/11/2026**, ci-dessous : **aucun autre Service Worker
+> que celui de la réserve n'existe sur l'origine de confiance**. Le mainteneur a décidé le
+> 18/11/2026 ([#299](https://github.com/pinfada/railsbox-vault/issues/299), option (b)) qu'**un
+> seul** Service Worker de la coquille sert la réserve hors connexion ;
 > l'[ADR 0048](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
-> la décrit et la **révise**. La rédaction révisée est donnée plus bas : **elle n'est PAS en
-> vigueur**. Elle le devient à la fusion de la tranche **D1h-b** (l'implémentation, qui ferme #299).
-> À cette fusion, la rédaction du 07/09/2026 passe en historique et celle-ci devient la règle. Tant
-> que D1h-b n'est pas fusionnée, aucun Service Worker n'est publié, et
-> `tests/unit/coquille-sans-service-worker.test.mjs` continue de rougir si un appel d'enregistrement
-> apparaît.
+> la décrit et **révise** la décision 4 de l'ADR 0030. La rédaction du 07/09/2026 (« aucun Service
+> Worker ») est conservée plus bas **en historique** : elle n'est plus la règle.
+> `tests/unit/coquille-sans-service-worker.test.mjs` est une **liste blanche**.
 
-### Règle EN VIGUEUR — rédaction du 07/09/2026 (jusqu'à la fusion de D1h-b)
+### HISTORIQUE — rédaction du 07/09/2026 (remplacée par la rédaction révisée ci-dessous, en vigueur depuis D1h-b)
 
 C'est une décision, pas une abstention (#163,
 [ADR 0030](docs/decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md), décision 4). La question
@@ -1132,7 +1130,7 @@ appartient.
 **fenêtres** ; il ne cloisonne aucun stockage, et `SEC-ORIGIN-001` reste démontré par la partition
 d'origine.
 
-### Rédaction RÉVISÉE du 18/11/2026 — « Aucun autre Service Worker que celui de la réserve » (ADR 0048 ; **pas encore en vigueur**)
+### Règle EN VIGUEUR — « Aucun autre Service Worker que celui de la réserve » (rédaction révisée du 18/11/2026, ADR 0048 ; en vigueur depuis D1h-b)
 
 Le refus d'un Service Worker **quelconque** devient le refus de **tout Service Worker autre qu'un
 seul**, `/sw-coquille.mjs`, classique, sans `import`, à la racine, **généré et épinglé dans la
@@ -1190,8 +1188,10 @@ réserve installable (navigation privée de certains navigateurs, modes ou polit
 les SW, quota), la coquille **refuse de démarrer** (`VAULT_COQUILLE_RESERVE_ABSENTE`) : un seul
 chemin de code, la liaison inconditionnelle. Aucun mode « en ligne, sans réserve ».
 
-**Surveillance.** L'absence devient une **liste blanche** : exactement un appelant d'enregistrement
-dans l'arbre `coquille`, exactement un script SW publié ; côté `application`, uniquement
+**Surveillance.** L'absence devient une **liste blanche**
+(`tests/unit/coquille-sans-service-worker.test.mjs`) : exactement un appelant d'enregistrement
+(`src/coquille/reserve-installation.mjs`) dans l'arbre `coquille`, exactement un script SW publié,
+**généré** à la publication (`tools/publier-reserve.mjs`) ; côté `application`, uniquement
 `service-worker-du-cadre.mjs`. Le Service Worker applicatif (ADR 0038) reste sur **son** origine :
 le SW de la coquille n'y voit aucune requête, et le cadre applicatif ne peut pas enregistrer de SW
 sur l'origine de la coquille.
@@ -1202,11 +1202,31 @@ copie. Le retrait est **borné à l'inscription de la coquille et aux caches `re
 le préfixe de cache sont **stables, pas irréversibles** ; la procédure d'évolution est écrite (ADR
 0048 § 11) et **non éprouvée**.
 
-**Non prouvé** : Safari macOS/iOS réel, éviction réelle, règle des 7 jours d'ITP, navigation privée
-réelle, hébergeur réel, boot Rails sous Firefox, déverrouillage et boot sous WebKit (OPFS absent du
-build de test), rechargement forcé, bfcache, la procédure de migration de l'URL. **Le banc n'est pas
-le produit** : le portail typé, l'enregistrement par la page et la liste générée à la publication
-sont livrés par D1h-b, avec une campagne de mutation du source (`reserve`).
+**Ce que D1h-b livre, et comment c'est éprouvé.** Le portail typé (cinq codes
+`VAULT_COQUILLE_RESERVE_*`), l'enregistrement par la page (uniquement dans l'arbre publié : le dépôt
+vivant porte un stub `null`), la liste générée à la publication, l'observateur de fraîcheur
+permanent et l'état de révocation monotone. Éprouvés : le script du SW **exécuté dans un `vm`** et
+le portail avec un `navigator.serviceWorker` factice (`tests/unit/reserve-*.test.mjs`) ; l'**arbre
+publié** sous les en-têtes de production dans trois moteurs (`tests/browser/reserve-*.spec.mjs`,
+projets `reserve-*`, « réseau coupé » = arrêt du serveur) ; l'**E2E**
+(`tests/e2e/hors-ligne.spec.mjs`) : première visite, boot Rails, origine arrêtée, nouvelle
+navigation, boot depuis la réserve, **sans harnais** (le harnais `--harnais-e2e-hors-ligne` et
+`lireDuCacheHttp` de #298 sont retirés) ; la campagne de mutation **`reserve`**
+(`npm run check:mutations`) rejoue les 34 gardes de l'annexe A sur le source : **zéro survivant**,
+aucun mutant déclaré équivalent.
+
+**Non prouvé, et écrit comme tel** : Safari macOS/iOS réel, éviction réelle, règle des 7 jours
+d'ITP, navigation privée réelle, hébergeur réel (`_headers`), boot Rails sous Firefox (baseline du
+dépôt), déverrouillage et boot sous WebKit (OPFS absent du build de test), rechargement forcé,
+bfcache, quota réel hors Chromium, installation sous un vrai réseau lent. **Limites propres à cette
+livraison** : `tests/browser/reserve-messages.spec.mjs` est ignorée sous Chromium (« mesuré :
+Chromium n'expose pas `navigator.serviceWorker` aux Workers dédiés », exception déclarée par projet)
+; le boot hors connexion n'est prouvé que sous Chromium ; l'origine **applicative** n'est pas dans
+la réserve (ADR 0038, hors périmètre) ; la **séquence** de publication est, par défaut, le nombre de
+commits de l'historique (un dépôt superficiel ou une publication de production sans `--sequence <n>`
+retombe sur 1 avec un avertissement : une séquence trop basse est annoncée « version différente ou
+plus ancienne ») ; **TOFU / origine hostile avant le jalon 6** : le bootstrap n'est pas vérifié et
+rien n'y répond avant la signature des paquets.
 
 ## Gates d'utilisation
 
@@ -1697,25 +1717,22 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
 - **Le retour arrière complet de l'OPFS ET du volume ensemble** : l'anti-retour perd sa référence
   (l'ancrage monotone est la question n° 3 de l'ADR 0033, #23).
 - **L'origine qui ment de façon cohérente** et **l'adversaire qui détient la clé du coffre**.
-- **`libv86` n'est pas vérifié au sens où ses octets exécutés seraient ceux qu'on a hachés.** Le
-  module est importé par `import()`, qui refait sa requête : rien ne lie les octets confrontés au
-  manifeste à ceux qui s'exécutent, et le spike `tools/spike-liaison-libv86.mjs` (Chromium, Firefox,
-  WebKit) n'a trouvé, dans un Worker sous la CSP actuelle, aucun mécanisme qui les lie — la carte
-  d'import avec `integrity` n'existe que dans une fenêtre, `import()` n'a pas d'attribut
-  d'intégrité. **`libv86` a la confiance de l'origine, comme tout le code de la coquille** ; la
-  confrontation au manifeste le protège de l'accident, pas d'une origine hostile (ADR 0046 § 6).
-  Décision du mainteneur (#299) : option (b), un Service Worker de la coquille servira la réserve —
-  livré par la tranche suivante D1h (ADR propre, qui révisera § « Aucun Service Worker sur l'origine
-  de confiance », **en vigueur tant que D1h n'est pas fusionnée**) ; rien n'en est livré ici. Hors
-  connexion il est lu du cache HTTP en `only-if-cached` (jamais `force-cache`, qui va au réseau sur
-  un cache vide) — **sauf sous WebKit, qui ignore l'option** (mesuré) : « ne touche pas au réseau »
-  n'est établi que sur Chromium et Firefox. La page ne se recharge pas hors connexion (pas de
-  Service Worker pour l'instant). **En production, le démarrage hors connexion ne fonctionne pas
-  encore** : mesuré sur l'image réelle, avec les en-têtes de production (code de la coquille en
-  `no-cache`), un Worker neuf créé réseau coupé n'importe pas ses modules et le démarrage échoue
-  avant de lire la réserve (`VAULT_COQUILLE_GESTE_ROMPU`). La décision de repli est éprouvée sous un
-  harnais qui donne une fraîcheur au code ; la condition « code disponible sans réseau » sera
-  fournie par D1h (#299, ADR 0046 § 6).
+- **`libv86` : la liaison existe depuis D1h-b, et elle est RELATIVE à la liste du Service Worker.**
+  Avant D1h-b (ADR 0046 § 6, **historique**), `import()` refaisait sa requête et rien ne liait les
+  octets confrontés au manifeste à ceux qui s'exécutent : aucun mécanisme n'existe, dans un Worker
+  sous la CSP (`script-src 'self'`, ni `blob:`), qui les lie (`tools/spike-liaison-libv86.mjs`,
+  trois moteurs). Le Service Worker de la coquille (ADR 0048) est ce mécanisme : `libv86` est dans
+  sa réserve, il en relit et **re-hache** les octets à chaque service, et la `Response` qu'il
+  construit depuis des octets vérifiés est ce que `import()` exécute. **Dans l'arbre publié**, la
+  lecture de `libv86` et son `import()` sont donc servis par la réserve, hors connexion comme en
+  ligne, **sans cache HTTP** (`lireDuCacheHttp` et `only-if-cached`, qui n'étaient pas tenus sous
+  WebKit, sont retirés). La confrontation au manifeste v86 scellé est conservée comme recoupement «
+  `libv86` de la réserve ↔ `v86.wasm` rangé au magasin ». La liaison est **relative** : la liste est
+  dans le script que l'origine sert, donc une origine hostile qui sert un SW hostile n'est arrêtée
+  par rien avant la signature des paquets (jalon 6) ; et **hors de l'arbre publié** (dépôt vivant,
+  `tools/serve.mjs`), `libv86` garde la confiance de l'origine, comme tout le code de la coquille.
+  **En production, le démarrage hors connexion fonctionne** sous les en-têtes de production, prouvé
+  par l'E2E sur l'arbre publié (`tests/e2e/hors-ligne.spec.mjs`, Chromium).
 
 ## Le modèle d'état de la révocation d'urgence : ce qu'il garantit, ce qu'il ne garantit pas (#310, ADR 0049)
 

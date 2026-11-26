@@ -48,6 +48,7 @@ export const CAMPAGNES = Object.freeze([
   { nom: "paquet-applicatif", script: "tools/muter-gardes-paquet-applicatif.mjs" },
   { nom: "persistance", script: "tools/muter-gardes-persistance.mjs" },
   { nom: "recuperation", script: "tools/muter-gardes-recuperation.mjs" },
+  { nom: "reserve", script: "tools/muter-gardes-reserve.mjs" },
   { nom: "revocation-urgence", script: "tools/muter-gardes-revocation-urgence.mjs" },
   { nom: "verrouillage", script: "tools/muter-gardes-verrouillage.mjs" },
 ]);
@@ -120,7 +121,7 @@ export function enMarkdown(lignes, dureeTotaleMs, arreteA) {
   ];
   const bilan = arreteA
     ? `**Arrêtée au premier échec : \`${arreteA}\`.** Les campagnes suivantes n'ont pas été jouées.`
-    : `**${lignes.reduce((s, l) => s + l.tues, 0)}/${lignes.reduce((s, l) => s + l.mutants, 0)} mutants tués sur les onze campagnes, ${formaterDuree(dureeTotaleMs)} au total.**`;
+    : `**${lignes.reduce((s, l) => s + l.tues, 0)}/${lignes.reduce((s, l) => s + l.mutants, 0)} mutants tués sur les ${lignes.length} campagnes, ${formaterDuree(dureeTotaleMs)} au total.**`;
   return ["## Campagnes de mutation", "", ...corps, "", bilan, ""].join("\n");
 }
 

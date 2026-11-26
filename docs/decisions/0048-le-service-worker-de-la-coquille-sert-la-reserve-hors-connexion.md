@@ -1,8 +1,9 @@
 # ADR 0048 — Le Service Worker de la coquille sert la réserve hors connexion
 
-- Statut : **accepté pour la conception, NON EN VIGUEUR** — aucun Service Worker n'existe tant que
-  D1h-b (l'implémentation) n'est pas fusionnée. Jusque-là, la règle « aucun Service Worker sur
-  l'origine de confiance » de `SECURITY.md` (ADR 0030, décision 4) reste celle qui s'applique. La
+- Statut : **accepté, EN VIGUEUR depuis la fusion de D1h-b** (#299 ; voir l'amendement en fin de
+  document). La rédaction ci-dessous du statut est celle de D1h-a : « NON EN VIGUEUR — aucun Service
+  Worker n'existe tant que D1h-b n'est pas fusionnée. Jusque-là, la règle « aucun Service Worker sur
+  l'origine de confiance » de `SECURITY.md` (ADR 0030, décision 4) reste celle qui s'applique. » La
   fusion de cette PR suit la délégation en vigueur (mainteneur, 18/11/2026 au soir) : revue de
   sécurité complète **APPROUVÉE au SHA exact**, contrôles requis verts, limites écrites.
 - Date : 2026-11-18
@@ -755,8 +756,11 @@ l'amendement de l'ADR 0046 § 6 (le texte « `libv86` n'est PAS lié » devient 
    neuf), et **la course à la création** : « vérification suspendue → révocation connue avant la
    reprise → **zéro Worker, zéro clé** » (la vérification complète est suspendue, la révocation est
    observée pendant l'attente, la vérification reprend et rend « tout est bon » : le portail refuse
-   `PERIMEE`), puis la même épreuve sur un **second portail** de la même page (verrouillage,
-   réouverture), l'état de révocation n'ayant pas reculé ;
+   `PERIMEE`), puis le **second portail** : la page n'en appelle qu'**un par document**
+   (verrouiller, rouvrir et la première visite rechargent la page), donc l'état de révocation
+   partagé, non reculé, est éprouvé **en unitaire** sur des portails successifs d'une même page, et
+   gardé par le cliquet `reserve-un-seul-portail` (décision du mainteneur du 26/11/2026, note sous
+   le critère 13) ;
 6. garde fermée : URL inattendue, variantes, redirections, types, destinations, hors origine,
    méthodes ;
 7. retrait par script (onglets actifs, attente, interruption entre caches et désinscription, réseau
@@ -775,10 +779,22 @@ l'amendement de l'ADR 0046 § 6 (le texte « `libv86` n'est PAS lié » devient 
     boot Rails → page rendue ; (b) origine **arrêtée** (+ magasin de #298) → **nouvelle navigation**
     → déverrouillage → boot depuis la réserve ; (c) refus **sans boot**, chacun avec **zéro requête
     de boot** (image, `v86.wasm`) : entrée altérée, supprimée, SW absent, API absente, SW muet,
-    version périmée, retrait, changement de contrôleur, avec les **codes typés du portail**.
-    Chromium pour le boot ; Firefox et WebKit pour ce qui ne dépend pas du guest. Repli si l'E2E ne
-    peut pas servir l'arbre publié avec les deux rôles : `serve.mjs --arbre`, **à décider en
-    D1h-b**.
+    version périmée, retrait, changement de contrôleur — **dans la même page : zéro Worker, zéro
+    requête de démarrage, sonde de comptage à témoin positif et de mordant** —, avec les **codes
+    typés du portail**. Chromium pour le boot ; Firefox et WebKit pour ce qui ne dépend pas du
+    guest. Repli si l'E2E ne peut pas servir l'arbre publié avec les deux rôles :
+    `serve.mjs --arbre`, **à décider en D1h-b**.
+
+> **Décision du mainteneur du 26/11/2026 — « 13c accepté, accord #323 ».** Les critères 5 et 13c
+> sont réécrits ci-dessus avec ce que la preuve établit réellement. Le produit n'a **aucun**
+> parcours de seconde ouverture dans la même page (amendement D1h-b, point 9) : « une nouvelle
+> ouverture dans la même page, refusée après un changement de contrôleur » ne peut donc pas être
+> éprouvée en E2E, et la preuve de remplacement est acceptée : l'**E2E** « zéro Worker, zéro requête
+> de démarrage après un changement de contrôleur, dans la même page », la **garde unitaire** du
+> portail (portails successifs d'une même page : état de révocation partagé, non reculé, anomalie de
+> contrôleur qui ne se défait pas) et le **cliquet** `tests/unit/reserve-un-seul-portail.test.mjs`.
+> Il reste un cliquet de l'accident, pas une preuve (point 9) : si un second appelant du portail
+> apparaît, il rougit et l'E2E de la seconde ouverture devient exigible.
 
 **Preuve.** Unitaires (générateur ; décision pure ; **le script du SW exécuté dans un `vm`** avec
 `caches`/`fetch`/`crypto` factices : altération, manque, installation en échec, activation,
@@ -854,3 +870,83 @@ défi).
 **Hors périmètre.** Signature des paquets (jalon 6), lecture par tranches (D2), mise à jour
 périodique d'une fenêtre ouverte, `Service-Worker-Allowed`, SW de module, SW applicatif,
 `importScripts`, `instantiateStreaming`, `v86.wasm` servi par le SW.
+
+## Amendement D1h-b (24/11/2026) — ce que l'implémentation a décidé, mesuré ou écarté
+
+D1h-b livre l'annexe A. Ce qui suit est ce que l'implémentation a **ajouté ou précisé** ; rien de la
+décision n'est rouvert.
+
+1. **Le contrôleur actif porte lui-même un plancher.** Si le contrôleur **actif** annonce un
+   plancher supérieur à la séquence de la page, la page est révoquée : `RESERVE_PERIMEE`
+   (`plancher`). Cas réel : une version en attente révoquante s'active après la fermeture de tous
+   les clients, puis sert une page de séquence plus ancienne. Mesuré par l'E2E (l'attente devenue
+   active passait le portail), éprouvé en unitaire.
+2. **Délai de grâce de 400 ms** (`delaiDeGraceMs`) après un `update()` résolu sans Worker installant
+   visible. **Mesuré sous Chromium** : `update()` résout _avant_ `updatefound`, et
+   `registration.waiting` n'est pas encore à jour quand `statechange` annonce `installed` ;
+   l'observateur identifie donc le Worker qui vient de passer `installed` **par lui-même**, et le
+   portail attend un instant l'apparition d'une version. Sans cela, le portail décidait avant de
+   voir une révocation déjà publiée (l'observateur permanent l'annonçait alors après coup, sans
+   refuser). Les délais de départ (§ 7 : 3 000, 5 000, 25 000 ms) sont **inchangés** ; ajoutés :
+   réparation 60 000 ms, poignée de main 8 000 ms, grâce 400 ms. Aucun n'a été abaissé.
+3. **`reparer` est implémenté et éprouvé** (n'était pas prototypé) : les entrées manquantes ou
+   altérées sont retéléchargées (`no-store`, `redirect: error`, sans identifiants), **vérifiées**,
+   puis écrites ; il n'active rien ; le portail le déclenche **une seule fois**, puis réessaie.
+4. **Séquence de publication.** `tools/publier.mjs` prend `--sequence <n>` et `--plancher <n>` ; par
+   défaut, la séquence est le **nombre de commits** de la référence (monotone sur `main`). Un dépôt
+   superficiel retombe sur 1, avec un avertissement pour une publication de production. Le module
+   `/coquille/reserve-publiee.mjs` (stub `null` dans le dépôt vivant) est **généré** et fait partie
+   de la liste épinglée.
+5. **Points d'implémentation.** La page ne crée le Worker de confiance **que** par le portail ; le
+   Worker annonce sa séquence par son **dernier import** (`reserve-annonce-du-worker.mjs`), donc
+   seulement une fois tout son graphe évalué ; la CSP et les en-têtes sont rejoués depuis la liste,
+   jamais copiés du réseau.
+6. **E2E : repli `serve.mjs --arbre` non retenu.** `tools/publier-servir.mjs` sert l'arbre publié
+   sous son `_headers`, avec les **deux rôles**, un répertoire `--artefacts` pour `/artifacts/**`
+   (l'image est une obligation d'exploitant, jamais publiée) et un crochet de **surcharge** pour
+   faire mentir une origine ; l'épreuve démarre et **arrête** ses origines pour de vrai.
+7. **Preuves** : unitaire (SW dans un `vm`, portail, générateur), 3 moteurs (`reserve-*`), E2E
+   Chromium, campagne `reserve` du lanceur (`tools/muter-gardes-reserve.mjs`). Ajoutées après la
+   première relecture, **vertes d'emblée** (elles servent de garde de non-régression) : redémarrage
+   du navigateur sur **profil persistant**, origine arrêtée, déverrouillage et boot (E2E, critère 1)
+   ; après un changement de contrôleur, dans la même page, zéro nouveau Worker (sonde de comptage à
+   **témoin positif** et **témoin de mordant**) et zéro requête de démarrage (E2E, critère 13c) —
+   **la « nouvelle ouverture dans la même page » n'existe pas dans le produit : écart décidé le
+   26/11/2026, point 9** ; retrait **interrompu entre la suppression des caches et la
+   désinscription**, puis geste suivant (unitaire et 3 moteurs, critère 7). **Limite écrite** : la
+   sonde est désactivée pendant les vrais boots (elle fait mourir le Worker de confiance pendant un
+   boot réel, cause non cherchée).
+8. **Limites inchangées et écrites** : Safari réel, éviction réelle, navigation privée réelle,
+   hébergeur réel ; boot Rails Chromium seul ; l'origine applicative n'est pas dans la réserve ;
+   TOFU et origine hostile avant le jalon 6 ; `tests/browser/reserve-messages.spec.mjs` ignorée sous
+   Chromium (exception par projet, raison mesurée).
+9. **ÉCART aux critères 5 (« second portail de la même page ») et 13c — DÉCIDÉ par le mainteneur le
+   26/11/2026 (« 13c accepté, accord #323 »).** Le produit n'appelle le portail **qu'une fois par
+   document** ; il n'existe aucun parcours de seconde ouverture dans la même page, donc l'E2E ne
+   peut pas en emprunter un. Preuve (code, hors commentaires) : le Worker de confiance n'est
+   construit qu'à `public/coquille/canal-de-confiance.mjs:65`, par `creerCanalDeConfiance`, dont le
+   seul appelant est le rappel de `public/main.mjs:211` ; le portail (`ouvrirLePortail`,
+   `public/coquille/reserve-de-la-page.mjs:84`) n'est ouvert que par `public/main.mjs:213`
+   (`pont.canal = await reserve.ouvrir();`, au niveau du module, évalué une fois par document).
+   Verrouiller, rouvrir après la mort du Worker et la préparation de la première visite
+   **rechargent** la page (`public/coquille/verrouillage-et-fins-d-onglet.mjs:44`,
+   `public/coquille/cycle-de-la-page.mjs:168`, `public/coquille/reserve-de-la-page.mjs:52` et `:92`
+   ; ADR 0031, décision 1 : verrouiller EST la fermeture propre suivie du rechargement) : un nouveau
+   document, un nouvel état — l'anomalie de contrôleur, par page, n'y survit pas. Les gestes de
+   réessai (phrase ou code faux, déverrouillage) passent par le canal déjà établi
+   (`demanderAuWorker`), jamais par le portail ; aucun autre `new Worker` n'est un Worker de
+   confiance (`src/coquille/derivation-dans-la-page.mjs:104` est le Worker de dérivation, sans clé
+   de volume). La phrase du § 7, « un coffre verrouillé puis rouvert dans la même fenêtre repasse
+   par lui », se lit donc « dans un nouveau document de la même fenêtre ». L'invariant « tous les
+   portails partagent un état de révocation monotone et une anomalie de contrôleur qui ne se défait
+   pas » reste **éprouvé en unitaire** (`reserve-portail.test.mjs` : second portail, état non
+   reculé, anomalie de contrôleur) et sert de garde à tout parcours futur ;
+   `tests/unit/reserve-un-seul-portail.test.mjs` est un **cliquet de l'accident, pas une preuve** :
+   il balaie un périmètre de fichiers et des formes textuelles sur une seule ligne (`.ouvrir()`,
+   `ouvrirLePortail(`, `creerCanalDeConfiance(`), exige que l'unique ouverture soit à la colonne 0
+   (niveau du module, sans analyse syntaxique), et rougit si un nouvel appelant ÉVIDENT apparaît —
+   il faudra alors l'éprouver en E2E. Il ne voit pas un appel renommé, coupé sur plusieurs lignes,
+   dynamique ou hors périmètre : l'absence de tout second appelant repose sur la lecture du code
+   ci-dessus. Aucun crochet de test n'est ajouté à la production. **Décision du mainteneur
+   (26/11/2026)** : les critères 5 et 13c sont réécrits avec ce que la preuve établit (note sous le
+   critère 13 de l'annexe A) ; la preuve de remplacement est acceptée.

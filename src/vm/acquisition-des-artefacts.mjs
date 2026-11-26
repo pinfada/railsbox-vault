@@ -251,43 +251,24 @@ export async function loadRuntime(
 }
 
 /**
- * Importe la classe V86. **Ses octets ne sont PAS liés à ce qui s'exécute** (ADR 0046, constat 3 de la
- * revue de #298) : `libv86` a la confiance de l'ORIGINE, comme tout le code de la coquille.
+ * Importe la classe V86, après l'avoir confrontée au manifeste v86 épinglé.
  *
- * La confrontation au manifeste qui précède l'import est une défense contre l'ACCIDENT — un cache
- * qui garde une version à côté du manifeste d'une autre, un octet retourné en chemin —, pas une
- * liaison : `import()` refait sa propre requête, et aucun mécanisme n'existe, dans un Worker sous la
- * CSP de la coquille (`script-src 'self'`, ni `blob:` ni `unsafe-eval` ; ADR 0013), qui garantisse que
- * les octets exécutés sont ceux qui ont été hachés. Mesuré sur Chromium, Firefox et WebKit :
- * `tools/spike-liaison-libv86.mjs`. `libv86` ne passe pas non plus par le magasin : un module ES ne
- * s'exécute pas depuis l'OPFS sous cette CSP.
+ * **Dans l'arbre publié, la liaison existe** (ADR 0048 § 3, qui amende l'ADR 0046 § 6) : `libv86` est dans
+ * la réserve du Service Worker de la coquille, qui relit ses octets et les RE-HACHE à chaque service ; la
+ * `Response` qu'il construit depuis des octets vérifiés est ce que `import()` exécute dans un Worker, sur
+ * les trois moteurs. Hors connexion, la lecture ci-dessous et l'`import()` sont servis par la réserve, sans
+ * aucun accès au réseau ni au cache HTTP : il n'y a plus de chemin « cache du navigateur ».
+ * La liaison est relative à la liste du SW (ADR 0048 § « Ce que le Service Worker ne protège PAS »).
  *
- * Hors connexion, il est lu DU CACHE HTTP sans toucher au réseau (`only-if-cached`), confronté, puis
- * importé ; absent du cache, c'est le refus typé `VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT`.
+ * La confrontation à `manifeste` est CONSERVÉE : c'est un recoupement « `libv86` de la réserve ↔
+ * manifeste v86 scellé du descripteur », qui protège d'une réserve plus récente que le `v86.wasm` rangé
+ * au magasin. Dans le dépôt vivant (sans réserve), `libv86` reste de confiance d'origine, comme le code de
+ * la coquille (limite de l'ADR 0046 § 6, historique).
  */
-async function importV86(libUrl, { horsConnexion, manifeste }) {
-  const lire = horsConnexion ? lireDuCacheHttp : (url) => fetchBytes(url);
-  await verifierLeModuleV86(libUrl, lire, { manifeste });
+async function importV86(libUrl, { manifeste }) {
+  await verifierLeModuleV86(libUrl, (url) => fetchBytes(url), { manifeste });
   const module = await import(libUrl);
   return module.V86;
-}
-
-/**
- * Lit `libv86` dans le cache HTTP, hors connexion.
- *
- * @param {string} url @param {typeof fetch} [recuperer]
- */
-export async function lireDuCacheHttp(url, recuperer = globalThis.fetch) {
-  try {
-    // `only-if-cached` : le cache ou l'échec, jamais le réseau (`force-cache` y va quand l'entrée manque).
-    // Le navigateur exige `mode: "same-origin"`. WebKit ignore l'option — mesuré, ADR 0046.
-    return await fetchBytes(url, recuperer, { cache: "only-if-cached", mode: "same-origin" });
-  } catch (erreur) {
-    throw artefactAbsentHorsConnexion(
-      "libv86",
-      `n'est pas dans le cache du navigateur (${erreur.message})`,
-    );
-  }
 }
 
 /**
@@ -301,10 +282,7 @@ export function acquerirRuntime(runtime) {
 async function acquerirLesArtefacts(runtime) {
   await exigerContexteExecutable();
   const manifeste = runtime.manifesteV86 ?? (await chargerAdressesV86()).manifeste;
-  const V86 = await importV86(runtime.lib, {
-    horsConnexion: runtime.horsConnexion === true,
-    manifeste,
-  });
+  const V86 = await importV86(runtime.lib, { manifeste });
   const {
     artifacts,
     transferredBytes,

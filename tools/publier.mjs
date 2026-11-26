@@ -37,6 +37,7 @@
 // avec « construit depuis un disque non versionné » — la première est une atteinte à l'intégrité,
 // la seconde une lacune de PROVENANCE — et refuserait au passage tout arbre de développement.
 
+import { execFileSync } from "node:child_process";
 import { mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -66,6 +67,7 @@ import {
   verifierEpinglageArgon2,
   verifierEpinglageV86,
 } from "./publier-sources.mjs";
+import { produireLaReserve } from "./publier-reserve.mjs";
 import { REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 export const CODES = Object.freeze({
@@ -252,6 +254,41 @@ function lireOption(argv, nom, defaut = null) {
 }
 
 /**
+ * La séquence de publication par DÉFAUT : le nombre de commits de l'historique de la référence — monotone sur
+ * `main`, déterministe pour un commit donné. Un dépôt superficiel (`--depth`) ne le sait pas : la séquence
+ * vaut alors 1, et une publication de PRODUCTION le dit (l'exploitant passe `--sequence <n>`). Une séquence
+ * trop basse ferait annoncer « version différente ou plus ancienne » à chaque version suivante (ADR 0048 § 8).
+ */
+function sequenceDepuisLHistorique(reference, banc) {
+  try {
+    const git = (...arguments_) =>
+      execFileSync("git", arguments_, { cwd: REPOSITORY_ROOT, encoding: "utf8" }).trim();
+    if (git("rev-parse", "--is-shallow-repository") === "false") {
+      const compte = Number(git("rev-list", "--count", reference));
+      if (Number.isInteger(compte) && compte >= 1) return compte;
+    }
+  } catch {
+    /* historique illisible : séquence 1, dite ci-dessous */
+  }
+  if (!banc) {
+    process.stderr.write(
+      "AVERTISSEMENT : séquence de publication par défaut = 1 (historique git indisponible ou superficiel). " +
+        "Passez --sequence <n> : elle est monotone, et une valeur trop basse est annoncée « plus ancienne ».\n",
+    );
+  }
+  return 1;
+}
+
+/** Une option entière positive ou nulle, ou `null` si elle est absente. */
+function lireEntier(argv, nom) {
+  const valeur = lireOption(argv, nom);
+  if (valeur === null) return null;
+  if (!/^(0|[1-9][0-9]{0,8})$/.test(valeur))
+    throw new Error(`L'option --${nom} attend un entier positif ou nul.`);
+  return Number(valeur);
+}
+
+/**
  * Un arbre est un BANC dès qu'une de ses deux origines n'est pas `https:`.
  *
  * Le critère est volontairement grossier : il n'essaie pas de deviner l'intention, il constate
@@ -311,6 +348,15 @@ async function construireArbre(arbre, options) {
     rendreFichierHeaders(arbre.nom, options),
     "utf8",
   );
+  // La RÉSERVE du Service Worker de la coquille (#299, ADR 0048) : elle se calcule sur l'arbre déjà
+  // construit, `_headers` compris, et ajoute `/sw-coquille.mjs` et le module de séquence de la page.
+  if (arbre.nom === "coquille") {
+    options.reserve = await produireLaReserve({
+      destination,
+      sequence: options.sequence,
+      plancher: options.plancher,
+    });
+  }
   await exigerPolitiqueUniforme(arbre, destination, options);
 
   const epinglage = await fusionnerEpinglages(destination, empreinte, epinglagesAttendus(arbre));
@@ -574,6 +620,7 @@ async function verifier(racine, { tolererIncomplet }) {
 
 const AIDE = `node tools/publier.mjs [--commit <ref>] [--sortie <dir>] [--tolerer-incomplet]
                       [--origine-coquille <url>] [--origine-application <url>]
+                      [--sequence <n>] [--plancher <n>]
 node tools/publier.mjs --verifier <arbre> [--tolerer-incomplet]
 `;
 
@@ -594,19 +641,25 @@ async function principal(argv) {
   const reference = lireOption(argv, "commit");
   if (reference !== null) exigerReferenceResoluble(REPOSITORY_ROOT, reference);
 
+  const sequence = lireEntier(argv, "sequence");
+  const plancher = lireEntier(argv, "plancher") ?? 0;
   const origineCoquille = lireOption(argv, "origine-coquille", ORIGINE_COQUILLE_PAR_DEFAUT);
   const origineApplication = lireOption(
     argv,
     "origine-application",
     ORIGINE_APPLICATION_PAR_DEFAUT,
   );
+  const banc = estUnBanc({ origineCoquille, origineApplication });
+  const retenue = sequence ?? sequenceDepuisLHistorique(reference ?? "HEAD", banc);
   return construire({
+    sequence: retenue,
+    plancher,
     sortie,
     reference,
     commit: identiteDuCommit(REPOSITORY_ROOT, reference ?? "HEAD"),
     origineCoquille,
     origineApplication,
-    banc: estUnBanc({ origineCoquille, origineApplication }),
+    banc,
     tolererIncomplet,
   });
 }

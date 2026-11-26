@@ -110,7 +110,16 @@ jobs:
     # `playwright.config.mjs` et `playwright.fins-d-onglet.config.mjs` ramène un blocage de 120 s à
     # 60 et un de 300 s à 60, sans rien cacher — l'épreuve échoue quand même, la reprise est comptée,
     # et le compte est publié dans le résumé du job par l'étape ci-dessous.
-    timeout-minutes: 28
+    #
+    # **Portée de 28 à 36 minutes le 25 novembre 2026 (#299, D1h-b), MESURE à l'appui.** Les projets
+    # `reserve-*` (une origine contrôlable, un navigateur neuf par épreuve, trois moteurs) ajoutent
+    # **≈ 3 min** à la suite navigateur (9 min 06 s pour `--repeat-each=3`, en local). Les trois runs de
+    # cette PR ont tenu **23 min 17 s, 25 min 32 s, 27 min 07 s**, puis le quatrième a été TUÉ au plafond à
+    # 28 min : la suite navigateur avait RENDU (537 passés en 21 min 18 s), le plafond a coupé
+    # `test:apparence` (81 épreuves) — aucun blocage, aucune reprise. Vingt-huit minutes ne laissaient plus de
+    # marge sur un exécutant qui varie de quatre minutes ; trente-six en laissent huit, comme #177 le demande,
+    # et le plafond mord encore (un blocage de 60 s par `navigationTimeout` en coûte au plus deux).
+    timeout-minutes: 36
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

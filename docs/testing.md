@@ -102,26 +102,35 @@ job requis « Campagnes de mutation » :
   partiel de l'opération abandonnée (nom partagé, risque de disponibilité, ADR 0046 § 8) — un mutant
   par contrôle ;
 - **`hors-ligne`** (`tools/muter-gardes-hors-ligne.mjs`) : la DÉCISION de démarrer sans l'origine.
-  **72 gardes, 72 tuées** — « injoignable » = un `TypeError` (ni `Error`, ni 5xx, ni portail
-  captif), le sceau et tout ce qu'il couvre (magie, date, longueur, charge), la forme du contenu
-  sous un sceau juste, la clé (non extractible, domaine, identifiant, version dans l'info HKDF)
-  effacée après usage, l'ordre des refus avant tout boot, le rangement après acquisition complète
-  seulement, la réserve « complète » (`reserveTientTout`), les épingles des cinq petits artefacts,
-  le refus de télécharger hors connexion, les redirections classées « réponse de l'origine », les
-  empreintes du boot obligatoires, la lecture de `libv86` en `only-if-cached`, le remplacement du
-  fichier rangé sans reste, et les bornes dans le temps.
+  **70 gardes, 70 tuées** (depuis D1h-b, #299 : les deux mutants de `lireDuCacheHttp` sont retirés
+  avec elle) — « injoignable » = un `TypeError` (ni `Error`, ni 5xx, ni portail captif), le sceau et
+  tout ce qu'il couvre (magie, date, longueur, charge), la forme du contenu sous un sceau juste, la
+  clé (non extractible, domaine, identifiant, version dans l'info HKDF) effacée après usage, l'ordre
+  des refus avant tout boot, le rangement après acquisition complète seulement, la réserve «
+  complète » (`reserveTientTout`), les épingles des cinq petits artefacts, le refus de télécharger
+  hors connexion, les redirections classées « réponse de l'origine », les empreintes du boot
+  obligatoires, le remplacement du fichier rangé sans reste, et les bornes dans le temps ;
+- **`reserve`** (`tools/muter-gardes-reserve.mjs`, #299, ADR 0048 annexe A) : la RÉSERVE du Service
+  Worker de la coquille. Les 34 gardes de l'annexe, retirées **sur le source du produit** — le
+  script `tools/reserve/sw-coquille.js` exécuté dans un `vm`, le portail
+  `src/coquille/reserve-*.mjs` avec un `navigator.serviceWorker` factice, le générateur
+  `tools/publier-reserve.mjs` —, chacune tuée par une épreuve NOMMÉE ; **zéro survivant, aucun
+  mutant déclaré équivalent**. La garde « client `window` » est inatteignable depuis un Worker dédié
+  sous Chromium : son épreuve navigateur (`tests/browser/reserve-messages.spec.mjs`) est ignorée
+  sous ce moteur par `test.skip` déclaré PAR PROJET, et son mutant est tué par l'épreuve unitaire.
 
 **Les niveaux de preuve du lot.** Unitaire (Node, magasin en mémoire) pour le format, le sceau, la
 classification « injoignable », l'anti-retour par la vraie décision de déphasage et le rangement ;
 **intégration navigateur sur les trois moteurs** (`npm run test:browser`, projets
 `frontiere-descripteur-*`) pour WebCrypto et l'OPFS réels ; **bout en bout**
-(`tests/e2e/hors-ligne.spec.mjs`, lot 5 de `reprise.yml`, sous le harnais de la config Playwright
-(`VAULT_E2E_CODE_MAX_AGE`, lue là seulement, qui passe `--harnais-e2e-hors-ligne <s>` au seul
-serveur de la coquille ; `tools/serve.mjs` ne lit aucune variable) : le code de la coquille y est en
-cache, ce que les en-têtes de production ne font pas — #299) pour le démarrage réellement hors ligne
-et les contre-épreuves — descripteur altéré, HTTP 500, portail captif. Les contre-épreuves «
-fabriqué » et « d'un autre coffre » sont prouvées en unitaire et en intégration navigateur, pas en
-bout en bout ; le retour arrière, en unitaire.
+(`tests/e2e/hors-ligne.spec.mjs`, lot 5 de `reprise.yml`) sur l'**ARBRE PUBLIÉ**, servi sous les
+en-têtes de production par `tools/publier-servir.mjs`, **sans harnais** (#299, ADR 0048) : première
+visite, installation du Service Worker, boot Rails, puis origine ARRÊTÉE (jamais `setOffline`),
+nouvelle navigation, déverrouillage et boot depuis la réserve ; contre-épreuves — descripteur
+altéré, HTTP 500, portail captif — et refus du portail (entrée altérée, supprimée, SW absent, API
+absente, SW muet, version périmée, retrait), chacun avec son code typé et **zéro requête de boot**.
+Les contre-épreuves « fabriqué » et « d'un autre coffre » sont prouvées en unitaire et en
+intégration navigateur, pas en bout en bout ; le retour arrière, en unitaire.
 
 La campagne `coquille` gagne **cinquante-neuf mutants** avec #231 (18/11/2026, après la revue
 complète de la PR #305), tous tués, **526/526** pour la campagne entière (elle porte aussi la table
@@ -157,7 +166,7 @@ de `indetermine`. **434/434 mutants tués sur les quatorze campagnes** (`npm run
 18/11/2026) — une première version de ce lot n'avait rejoué que `coquille` en local, et la CI a
 trouvé le survivant de `cycle-de-vie` : le texte muté avait changé.
 
-Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
+Les outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve
 rejouée avant ET après le retrait d'une garde, restauration. Avant #196, rien ne les jouait TOUTES
 ENSEMBLE : six d'entre elles sont rejouées à chaque `npm run test:unit` par une épreuve compagnon
@@ -3114,11 +3123,21 @@ et qu'aucune parallélisation ne raccourcit : une borne de temps se paie en temp
 
 **Le chiffre, corrigé le 9 septembre 2026 (#170).** Cette page annonçait « trente minutes » pendant
 que `ci.yml` en portait **vingt-cinq** : la page disait une intention, le fichier tenait la règle,
-et c'est le fichier qui décide. Le plafond est désormais de **vingt-huit minutes**, et il est écrit
-ici tel qu'il est là-bas. Le motif du relèvement est lui aussi une mesure : le dernier run de la
+et c'est le fichier qui décide. Le plafond était alors de **vingt-huit minutes**, et il est écrit
+ici tel qu'il était là-bas. Le motif du relèvement est lui aussi une mesure : le dernier run de la
 branche de #170 avant que la suite des fins d'onglet entre dans le gate a tenu en **20 min 42 s** —
 l'exécutant partagé décide de bien plus que les attentes annoncées —, et cette suite ajoute environ
 55 s.
+
+**Le chiffre, relevé de 28 à 36 minutes le 25 novembre 2026 (#299, D1h-b).** Même règle, même motif
+: le fichier décide, `ci.yml` porte **trente-six minutes** (`Vérifications du produit`) et elles
+sont écrites ici telles qu'elles sont là-bas. La mesure : les projets `reserve-*` (une origine
+contrôlable, un navigateur neuf par épreuve, trois moteurs) ajoutent **≈ 3 min** à la suite
+navigateur (9 min 06 s pour `--repeat-each=3`, en local). Les runs de la PR ont tenu 23 min 17 s, 25
+min 32 s, 27 min 07 s, puis le quatrième a été TUÉ au plafond de 28 min : la suite navigateur avait
+rendu (537 passés en 21 min 18 s) et le plafond a coupé `test:apparence`. Le run suivant, au plafond
+relevé, a tenu 24 min 29 s. Trente-six minutes laissent huit minutes de marge sur un exécutant qui
+varie de quatre, et le plafond mord encore.
 
 **Deux, et pas trois.** Une troisième épreuve vérifiait que la valeur PAR DÉFAUT de dix minutes
 n'était pas atteinte plus tôt. Elle a été retirée avant la fusion, et le dire vaut mieux que la
