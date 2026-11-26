@@ -82,7 +82,9 @@ test("« Qualité et tests » exige chacun des deux jobs de produit, en plus de 
   const attendus = ["check-navigateur", "check-parcours", "couverture", "audits"];
   assert.match(gate, /^ {4}name: Qualité et tests$/mu);
   assert.match(gate, new RegExp(`^ {4}needs: \\[${attendus.join(", ")}\\]$`, "mu"));
-  assert.ok(code(gate).includes(JSON.stringify(attendus)));
+  assert.ok(
+    code(gate).includes(`const attendus = ${JSON.stringify(attendus).replaceAll(",", ", ")};`),
+  );
   const tous = Object.fromEntries(attendus.map((n) => [n, { result: "success" }]));
   assert.equal(executer(gate, tous).status, 0);
   for (const nom of attendus) {

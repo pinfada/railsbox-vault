@@ -178,15 +178,37 @@ function decrire({ status, signal, memoireEpuisee }) {
 }
 
 /**
- * Rejoue une campagne entière. `mutations` est la table de l'outil appelant ; `etiquette` ne sert
- * qu'à nommer l'atelier temporaire, pour qu'un diagnostic dise de quelle campagne il parle.
+ * Garde la TRANCHE `i/n` d'une table : les mutants dont l'indice vaut `i-1` modulo `n` (#328).
+ *
+ * Elle existe parce qu'une campagne peut, à elle seule, dépasser la moitié du plafond d'un job
+ * (`coquille` : 492 s sur la PR #323). Le modulo répartit les gardes de chaque fichier sur toutes
+ * les tranches plutôt que de livrer à l'une d'elles le bloc le plus lent. Les `n` tranches
+ * partitionnent la table : rien rejoué deux fois, rien oublié — `tests/unit/campagnes-de-mutation-
+ * repartition.test.mjs` le garde. Sans tranche (`undefined`), toute la table est rendue.
+ * Une tranche mal formée LÈVE : jouer une table vide passerait pour une campagne verte.
+ */
+export function filtrerParTranche(mutations, tranche) {
+  if (tranche === undefined || tranche === "") return mutations;
+  const lue = /^([1-9]\d*)\/([1-9]\d*)$/u.exec(tranche);
+  const i = lue ? Number(lue[1]) : 0;
+  const n = lue ? Number(lue[2]) : 0;
+  if (!lue || i > n) {
+    throw new Error(`tranche « ${tranche} » invalide : attendu i/n avec 1 ≤ i ≤ n.`);
+  }
+  return mutations.filter((_, indice) => indice % n === i - 1);
+}
+
+/**
+ * Rejoue une campagne entière, ou la tranche `VAULT_MUTATION_TRANCHE=i/n` de sa table (#328).
+ * `mutations` est la table de l'outil appelant ; `etiquette` ne sert qu'à nommer l'atelier temporaire, pour qu'un diagnostic dise de quelle campagne il parle.
  *
  * @param {{ mutations: Array<object>, etiquette?: string }} plan
  */
 export function campagneDeMutation({ mutations, etiquette = "gardes" }) {
   const atelier = copierLeDepot(etiquette);
   try {
-    return { resultats: mutations.map((mutation) => eprouver(atelier, mutation)) };
+    const retenues = filtrerParTranche(mutations, process.env.VAULT_MUTATION_TRANCHE);
+    return { resultats: retenues.map((mutation) => eprouver(atelier, mutation)) };
   } finally {
     rmSync(atelier, { recursive: true, force: true });
   }

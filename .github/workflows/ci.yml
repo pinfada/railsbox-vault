@@ -20,7 +20,7 @@ jobs:
     # Conserve le nom déjà requis par la protection de main. Un simple `needs`
     # sans `always()` sauterait ce job après un échec, au lieu de le faire échouer.
     name: Qualité et tests
-    needs: [check, couverture, audits]
+    needs: [check-navigateur, check-parcours, couverture, audits]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -32,7 +32,7 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           const resultats = JSON.parse(process.env.VAULT_RESULTATS_CI);
-          const attendus = ["check", "couverture", "audits"];
+          const attendus = ["check-navigateur", "check-parcours", "couverture", "audits"];
           const echecs = attendus.filter((nom) => resultats[nom]?.result !== "success");
           if (echecs.length) {
             console.error("Contrôles absents ou non réussis : " + echecs.join(", "));
@@ -73,8 +73,56 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  check:
-    name: Vérifications du produit
+  # « Vérifications du produit » a été SCINDÉ en deux jobs le 26 novembre 2026 (#328), sans relever
+  # aucun plafond : le job unique a été annulé à 36 min sur `main` (run 45778067983, `5948086`), puis
+  # a tenu 35 min à la relance. MESURE de ce run : l'installation des moteurs a pris 12 min 13 s (3 min
+  # 36 s sur la PR #323, même commit de code) et les vérifications 22 min 24 s dans les deux cas — la
+  # variance est dans l'installation, pas dans les épreuves. Les deux moitiés paient chacune cette
+  # installation ; elles ne s'ajoutent plus. `npm run check` reste la suite complète en local.
+  #
+  # Moitié 1 : lint, format, unitaires et suite navigateur (`npm run check:navigateur`).
+  check-navigateur:
+    name: Vérifications du produit (navigateur)
+    runs-on: ubuntu-latest
+    # MESURE : voir `docs/testing.md`, « La scission du job de produit (#328) ».
+    timeout-minutes: 36
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installation de Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Installation des moteurs de navigateur
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      # `xvfb-run` : voir le commentaire historique du job « parcours » ci-dessous — la mesure du
+      # bfcache de #170 exige un Chromium FENÊTRÉ, donc un affichage.
+      - name: Vérifications
+        run: xvfb-run --auto-servernum npm run check:navigateur
+
+      - name: Stabilité des navigations Firefox
+        if: always()
+        run: node tools/compter-reprises.mjs playwright-report/rapport.json
+
+      - name: Rapport Playwright en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report-navigateur
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Moitié 2 : apparence, compatibilité, fins d'onglet et publication (`npm run check:parcours`).
+  check-parcours:
+    name: Vérifications du produit (parcours)
     runs-on: ubuntu-latest
     # Portée de 20 à 25 minutes le 8 septembre 2026 (#169). Le motif est une DURÉE D'ATTENTE : ce
     # gate porte des épreuves qui mesurent des bornes de TEMPS — trente secondes pour le Worker MUET
@@ -136,15 +184,8 @@ jobs:
       - name: Installation des moteurs de navigateur
         run: npx playwright install --with-deps chromium firefox webkit
 
-      # `xvfb-run` fournit un AFFICHAGE, et il en faut un : la mesure du bfcache de #170 exige un
-      # Chromium FENÊTRÉ, parce que sans fenêtre aucun moteur ne restaure de document — pas même une
-      # page nue — et que la conclusion « jamais restauré » décrirait alors l'exécutant et non le
-      # moteur (constat 2 de la revue de sécurité de la PR #177). Sans `DISPLAY`, le projet
-      # `chromium-fenetre` n'est pas déclaré et le dit sur la sortie standard : un skip nommé, jamais
-      # un silence. `--auto-servernum` prend un numéro d'écran libre ; `xvfb` vient avec
-      # `playwright install --with-deps`. Le reste des suites ne change pas de comportement.
       - name: Vérifications
-        run: xvfb-run --auto-servernum npm run check
+        run: xvfb-run --auto-servernum npm run check:parcours
 
       # #178 n'est plus absorbée par une reprise d'épreuve : la fixture commune ne récupère que la
       # signature « document Firefox complet + page.goto sans réponse » et l'annote. Ce relevé
@@ -154,9 +195,8 @@ jobs:
       - name: Stabilité des navigations Firefox
         if: always()
         run: >
-          node tools/compter-reprises.mjs playwright-report/rapport.json
-          playwright-report/rapport-compat.json playwright-report/rapport-fins-d-onglet.json
-          reports/apparence/resultats.json
+          node tools/compter-reprises.mjs playwright-report/rapport-compat.json
+          playwright-report/rapport-fins-d-onglet.json reports/apparence/resultats.json
 
       - name: Accessibilité, contrastes et captures du parcours
         if: always()
@@ -182,22 +222,28 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-report
+          name: playwright-report-parcours
           path: playwright-report/
           if-no-files-found: ignore
           retention-days: 7
 
-  mutations:
-    name: Campagnes de mutation
+  # « Campagnes de mutation » a été SCINDÉE en lots parallèles le 26 novembre 2026 (#328) : la
+  # séquence complète (16 campagnes, 859 s dans la PR #323, run 45771991219) a été annulée au plafond
+  # de 15 min sur `main`, deux fois (run 45778067983). Le plafond de chaque lot NE BOUGE PAS (15 min).
+  # La répartition (`LOTS` dans `tools/rejouer-les-campagnes.mjs`) est gardée par
+  # `tests/unit/campagnes-de-mutation-repartition.test.mjs` : chaque campagne et chaque tranche une
+  # seule fois. MESURES par lot : voir `docs/testing.md`, « La scission des campagnes de mutation ».
+  mutations-lot:
+    name: Mutations (lot ${{ matrix.lot }})
     runs-on: ubuntu-latest
-    # Job séparé plutôt que branché dans `npm run check` (#196) : les onze campagnes
-    # (`tools/muter-gardes-*.mjs`, lancées en séquence par `tools/rejouer-les-campagnes.mjs`) ont
-    # mesuré entre 5 min 24 s et 8 min 17 s sur un poste de développement selon la charge — largement
-    # au-dessus du seuil de 5 min posé par le superviseur pour les brancher directement dans `check`.
     # Aucune image ni VM ici : chaque campagne ne joue que `node --test` sur des fonctions pures de
-    # `src/`, jamais un navigateur ni v86. Quinze minutes laissent une marge proche du double de la
-    # mesure la plus lente observée, sur le même principe que la marge du job « Qualité et tests ».
+    # `src/`. Quinze minutes pour un lot attendu à ≈ 3 à 4 min : le plafond mord encore, et chaque lot
+    # reste sous la moitié de ce plafond avec la mesure la plus lente observée.
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        lot: [1, 2, 3, 4]
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -212,13 +258,52 @@ jobs:
         run: npm ci
 
       - name: Campagnes de mutation
-        run: npm run check:mutations
+        run:
+          npm run check:mutations -- --lot=${{ matrix.lot }} --rapport=reports/mutations-lot-${{
+          matrix.lot }}.json
 
-      - name: Table des campagnes
+      - name: Table du lot
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: campagnes-de-mutation
-          path: reports/mutations.json
+          name: campagnes-de-mutation-lot-${{ matrix.lot }}
+          path: reports/mutations-lot-${{ matrix.lot }}.json
           if-no-files-found: warn
+          retention-days: 30
+
+  mutations:
+    # Conserve le nom requis par la protection de main : UN seul statut, vert si et seulement si TOUS
+    # les lots ont réussi. Sans `always()`, un lot en échec ferait SAUTER ce job au lieu de le faire
+    # échouer, et le contrôle requis resterait « en attente » ou serait lu comme absent.
+    name: Campagnes de mutation
+    needs: [mutations-lot]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Tous les lots doivent avoir réussi
+        shell: bash
+        env:
+          VAULT_RESULTATS_CI: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'JS'
+          const resultats = JSON.parse(process.env.VAULT_RESULTATS_CI);
+          const attendus = ["mutations-lot"];
+          const echecs = attendus.filter((nom) => resultats[nom]?.result !== "success");
+          if (echecs.length) {
+            console.error("Lots de mutation absents ou non réussis : " + echecs.join(", "));
+            process.exit(1);
+          }
+          console.log("Tous les lots de mutation ont réussi.");
+          JS
+
+      # Un seul artefact `campagnes-de-mutation`, comme avant la scission : les tables des lots y sont
+      # fusionnées (`reports/mutations-lot-N.json`) et les artefacts de lot supprimés.
+      - name: Table des campagnes
+        if: always()
+        uses: actions/upload-artifact/merge@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: campagnes-de-mutation
+          pattern: campagnes-de-mutation-lot-*
+          delete-merged: true
           retention-days: 30
