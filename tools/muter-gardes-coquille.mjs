@@ -81,6 +81,13 @@ const RACINE_OPFS = "public/spike/origin/racine-opfs.mjs";
 const TEMOINS_OPFS = "tests/support/temoins-opfs.mjs";
 const EPREUVE_TEMOINS = "tests/unit/temoins-opfs.test.mjs";
 const EPREUVE_INTERFACE_INVENTAIRE = "tests/unit/coquille-interface-inventaire-refuse.test.mjs";
+const REVALIDATION = "src/coquille/revalidation-sous-le-handle.mjs";
+const OUVERTURE_DU_VOLUME = "src/vm/opfs-volume-ouverture.mjs";
+const EPREUVE_REVALIDATION = "tests/unit/coquille-revalidation-sous-le-handle.test.mjs";
+const EPREUVE_WORKER_DEVERROUILLAGE = "tests/unit/coquille-worker-deverrouillage.test.mjs";
+const EPREUVE_COURSE_PORTABILITE = "tests/unit/coquille-portabilite-course.test.mjs";
+const PORTABILITE_DU_WORKER = "public/portabilite-du-worker.mjs";
+const EPREUVE_SOUS_LE_HANDLE = "tests/unit/vm-ouverture-sous-le-handle.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -786,9 +793,13 @@ export const MUTATIONS = Object.freeze([
     garde: "restaurer — l'ordre des retraits de la réparation (revue #208, constat 3)",
     fichier: "public/portabilite-du-worker.mjs",
     avant:
-      "      await prim.retirer(VOLUME_DE_LA_COQUILLE);\n      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n",
+      "      for (const voisin of voisinsDunVolume(VOLUME_DE_LA_COQUILLE)) await prim.retirer(voisin);\n" +
+      "      await prim.viderLeVolume(verrou);\n" +
+      "      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n",
     apres:
-      "      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n      await prim.retirer(VOLUME_DE_LA_COQUILLE);\n",
+      "      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n" +
+      "      for (const voisin of voisinsDunVolume(VOLUME_DE_LA_COQUILLE)) await prim.retirer(voisin);\n" +
+      "      await prim.viderLeVolume(verrou);\n",
     epreuves: [EPREUVE_PORTABILITE_DU_WORKER],
   },
   {
@@ -1165,9 +1176,9 @@ export const MUTATIONS = Object.freeze([
     nom: "le Worker n'inscrit la preuve qu'APRÈS l'ouverture du volume (#239)",
     garde: "deverrouiller — l'ordre ouvrir, constater, barrière",
     fichier: DEVERROUILLAGE,
-    avant: "    await ouvrirLeVolume(ouverte.dek);\n",
+    avant: "    await ouvrirLeVolume(ouverte);\n",
     apres:
-      "    interne.eprouves = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);\n    await ouvrirLeVolume(ouverte.dek);\n",
+      "    interne.eprouves = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);\n    await ouvrirLeVolume(ouverte);\n",
     epreuves: [EPREUVE_PREUVE],
   },
   {
@@ -1809,6 +1820,280 @@ export const MUTATIONS = Object.freeze([
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,
+  // --- #311, tranche C5 : la course entre onglets au déverrouillage ------------------------------
+  {
+    nom: "la revalidation exige le MÊME emplacement (#311)",
+    garde: "revaliderSousLeHandle — la comparaison de `identifiantEmplacement`",
+    fichier: REVALIDATION,
+    avant:
+      "    sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||\n" +
+      "    !memesOctets(sous.dek, ouverte.dek)\n",
+    apres: "    !memesOctets(sous.dek, ouverte.dek)\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la revalidation exige la MÊME clé de volume (#311)",
+    garde: "revaliderSousLeHandle — la comparaison des octets de la DEK",
+    fichier: REVALIDATION,
+    avant:
+      "    sous.identifiantEmplacement !== ouverte.identifiantEmplacement ||\n" +
+      "    !memesOctets(sous.dek, ouverte.dek)\n",
+    apres: "    sous.identifiantEmplacement !== ouverte.identifiantEmplacement\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "une divergence est REFUSÉE, jamais acceptée en silence (#311)",
+    garde: "revaliderSousLeHandle — le `throw cleRefusee`",
+    fichier: REVALIDATION,
+    avant: "    throw cleRefusee({ volume: identifiantVolume });\n",
+    apres: "",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "l'ancre de version tient en passe 2 (#311)",
+    garde: "revaliderSousLeHandle — `versionMinimale` passée à l'ouverture",
+    fichier: REVALIDATION,
+    avant: "kek: ouverte.kek, versionMinimale: ouverte.versionMinimale };",
+    apres: "kek: ouverte.kek, versionMinimale: null };",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la clé de volume de la passe 2 est effacée (#311)",
+    garde: "revaliderSousLeHandle — le `fill(0)` du `finally`",
+    fichier: REVALIDATION,
+    avant: "    for (const dek of rendues) dek.fill(0);\n",
+    apres: "",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la version publiée est celle de la passe 2, l'autoritaire (#311)",
+    garde: "revaliderSousLeHandle — `ouverte.version = sous.version`",
+    fichier: REVALIDATION,
+    avant: "    ouverte.version = sous.version;\n",
+    apres: "",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la passe 1 n'écrit RIEN : l'écriture est refusée (#311)",
+    garde: "enLectureSeule — le refus de `ecrire`",
+    fichier: REVALIDATION,
+    avant: "allouer: refuser, ecrire: refuser, barriere: refuser",
+    apres: "allouer: refuser, barriere: refuser",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la comparaison des clés ne s'arrête pas à la longueur commune (#311)",
+    garde: "memesOctets — l'écart de longueur",
+    fichier: REVALIDATION,
+    avant: "  let ecart = a.length ^ b.length;\n",
+    apres: "  let ecart = 0;\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "le Worker ouvre l'enveloppe en LECTURE SEULE avant le handle, chemin phrase et passkey (#311)",
+    garde: "ouvrirSousLaPage — `enLectureSeule(support())`",
+    fichier: DEVERROUILLAGE,
+    avant:
+      "    support: enLectureSeule(support()),\n    identifiantVolume: IDENTIFIANT_VOLUME,\n    kek,\n",
+    apres: "    support: support(),\n    identifiantVolume: IDENTIFIANT_VOLUME,\n    kek,\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "le Worker ouvre l'enveloppe en LECTURE SEULE avant le handle, chemin code (#311)",
+    garde: "ouvrirSousLeCode — `enLectureSeule(support())`",
+    fichier: DEVERROUILLAGE,
+    avant: "  return ouvrirParLeCode({\n    support: enLectureSeule(support()),\n",
+    apres: "  return ouvrirParLeCode({\n    support: support(),\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "le Worker passe la revalidation à l'ouvreur (#311)",
+    garde: "ouvrirLeVolume — `sousLeHandle`",
+    fichier: DEVERROUILLAGE,
+    avant:
+      "    sousLeHandle: () =>\n" +
+      "      revaliderSousLeHandle({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME, ouverte }),\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "l'ouvreur appelle le crochet sous le handle (#311)",
+    garde: "saisirLireEtAllouer — `await sousLeHandle?.()`",
+    fichier: OUVERTURE_DU_VOLUME,
+    avant: "    await sousLeHandle?.();\n",
+    apres: "",
+    epreuves: [EPREUVE_SOUS_LE_HANDLE],
+  },
+  {
+    nom: "un refus du crochet RENDS le handle (#311)",
+    garde: "saisirLireEtAllouer — le crochet est DANS le `try` qui abandonne le handle",
+    fichier: OUVERTURE_DU_VOLUME,
+    avant:
+      "    await sousLeHandle?.();\n" +
+      "  } catch (refus) {\n" +
+      "    throw abandonHandle(saisi.handle, name, refus);\n" +
+      "  }\n",
+    apres:
+      "  } catch (refus) {\n" +
+      "    throw abandonHandle(saisi.handle, name, refus);\n" +
+      "  }\n" +
+      "  await sousLeHandle?.();\n",
+    epreuves: [EPREUVE_SOUS_LE_HANDLE],
+  },
+  {
+    nom: "le crochet précède la naissance : aucun en-tête posé sur un refus (#311)",
+    garde: "saisirLireEtAllouer — le crochet avant `poserEnTeteOuRendre`",
+    fichier: OUVERTURE_DU_VOLUME,
+    avant:
+      "    await sousLeHandle?.();\n" +
+      "  } catch (refus) {\n" +
+      "    throw abandonHandle(saisi.handle, name, refus);\n" +
+      "  }\n" +
+      "  if (!saisi.naissance) return { ...saisi, voisinsRetires: Object.freeze([]) };\n" +
+      "  poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);\n",
+    apres:
+      "  } catch (refus) {\n" +
+      "    throw abandonHandle(saisi.handle, name, refus);\n" +
+      "  }\n" +
+      "  if (!saisi.naissance) {\n" +
+      "    await sousLeHandle?.();\n" +
+      "    return { ...saisi, voisinsRetires: Object.freeze([]) };\n" +
+      "  }\n" +
+      "  poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);\n" +
+      "  await sousLeHandle?.();\n",
+    epreuves: [EPREUVE_SOUS_LE_HANDLE],
+  },
+  {
+    nom: "la passe 2 s'ouvre d'abord en LECTURE SEULE : un refus n'écrit jamais (#311, PR #314 constat 2)",
+    garde: "revaliderSousLeHandle — `enLectureSeule(support)` de la première ouverture",
+    fichier: REVALIDATION,
+    avant: "    let sous = await ouvrir({ ...appel, support: enLectureSeule(support) });\n",
+    apres: "    let sous = await ouvrir({ ...appel, support });\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la migration se joue sous le handle, une fois l'identité confirmée (#311)",
+    garde: "revaliderSousLeHandle — la seconde ouverture quand `migration` n'est pas nul",
+    fichier: REVALIDATION,
+    avant: "    if (sous.migration !== null) {\n",
+    apres: "    if (false) {\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "l'identité est confrontée AUSSI après la migration (#311)",
+    garde: "revaliderSousLeHandle — la seconde comparaison",
+    fichier: REVALIDATION,
+    avant:
+      "      rendues.push(sous.dek);\n" +
+      "      exigerLaMemeIdentite(sous, ouverte, identifiantVolume);\n" +
+      "    }\n",
+    apres: "      rendues.push(sous.dek);\n    }\n",
+    epreuves: [EPREUVE_REVALIDATION],
+  },
+  {
+    nom: "la restauration prend le verrou du volume `coquille` avant d'écrire (#311, PR #314 constat 1)",
+    garde: "restaurerSousLeVerrou — `prim.prendreLeVolume()`",
+    fichier: PORTABILITE_DU_WORKER,
+    avant: "  const verrou = await prim.prendreLeVolume();\n",
+    apres: "  const verrou = { close() {} };\n",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "la restauration REVALIDE l'emplacement sous le verrou (#311)",
+    garde: "restaurerSousLeVerrou — le second constat et son refus",
+    fichier: PORTABILITE_DU_WORKER,
+    avant:
+      "    const decision = decisionDeRestauration(await constaterLEmplacement(prim));\n" +
+      "    if (decision.code !== null) throw refus(decision.code);\n" +
+      "    // La RÉPARATION",
+    apres: "    const decision = { code: null, reparer: false };\n    // La RÉPARATION",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "la restauration relâche le verrou APRÈS l'import, jamais avant ni jamais (#311)",
+    garde: "restaurerSousLeVerrou — le `finally` qui ferme le verrou",
+    fichier: PORTABILITE_DU_WORKER,
+    avant: "  } finally {\n    verrou.close();\n  }\n",
+    apres: "  } finally {\n  }\n",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "la réparation vide le volume `coquille` TENU par son handle (#311)",
+    garde: "restaurerSousLeVerrou — `prim.viderLeVolume(verrou)`",
+    fichier: PORTABILITE_DU_WORKER,
+    avant: "      await prim.viderLeVolume(verrou);\n",
+    apres: "",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "un fichier `coquille` de taille nulle n'est pas un volume (#311)",
+    garde: "constaterLEmplacement — `size > 0`",
+    fichier: "src/coquille/portabilite-du-coffre.mjs",
+    avant: "  const coquille = observeCoquille.present && observeCoquille.size > 0;\n",
+    apres: "  const coquille = observeCoquille.present;\n",
+    epreuves: [EPREUVE_COURSE_PORTABILITE],
+  },
+  {
+    nom: "la création prend le handle du volume AVANT d'écrire l'enveloppe (#311, #313)",
+    garde: "creerLeCoffre — `ouvrirLeHandle(volume)` avant `creerEnveloppe`",
+    fichier: DEVERROUILLAGE,
+    avant: "    verrou = await ouvrirLeHandle(volume);\n",
+    apres: "    verrou = { close() {} };\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "la création PASSE son handle à l'ouvreur, sans trou avant la naissance (#311, #313)",
+    garde: "ouvrirLeVolume — `openHandle` rend le verrou de la création",
+    fichier: DEVERROUILLAGE,
+    avant: "      ouverte.verrou = null;\n      return verrou;\n",
+    apres: "      return ouvrirLeHandle(nom);\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "un refus de la création rend le handle (#311)",
+    garde: "creerLeCoffre — `verrou.close()` du `catch`",
+    fichier: DEVERROUILLAGE,
+    avant: "    verrou?.close();\n    dek.fill(0);\n    throw cause;\n",
+    apres: "    dek.fill(0);\n    throw cause;\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "un verrou de création que l'ouvreur n'a pas reçu est rendu par `deverrouiller` (#311)",
+    garde: "deverrouiller — `ouverte.verrou?.close()` du `finally`",
+    fichier: DEVERROUILLAGE,
+    avant: "    ouverte.verrou?.close();\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "la création REFAIT le constat de l'emplacement sous le verrou (#311, PR #314 constat 1)",
+    garde: "creerLeCoffre — `constaterLaPortabilite()` et le refus de `refusDOuverture`",
+    fichier: DEVERROUILLAGE,
+    avant: "    const refusDuCoffre = refusDOuverture(etat);\n" + "    if (refusDuCoffre !== null)",
+    apres: "    const refusDuCoffre = null;\n" + "    if (refusDuCoffre !== null)",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "la création refuse un emplacement qui a CHANGÉ depuis le constat qui l'a décidée (#311)",
+    garde: "creerLeCoffre — la branche `emplacementOccupe`",
+    fichier: DEVERROUILLAGE,
+    avant: "    if (etat !== etatConstate) {\n",
+    apres: "    if (false) {\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
+  {
+    nom: "la clé tirée est effacée même quand la prise du handle est rejetée (#311, PR #314 constat 3)",
+    garde: "creerLeCoffre — la prise du handle DANS le `try` qui efface la clé",
+    fichier: DEVERROUILLAGE,
+    avant:
+      "  let verrou = null;\n" +
+      "  // La clé tirée et le verrou sont rendus sur TOUT échec, y compris celui de la prise du handle : le\n" +
+      "  // `try` commence donc AVANT l'attente (revue de la PR #314, constat 3).\n" +
+      "  try {\n" +
+      "    verrou = await ouvrirLeHandle(volume);\n",
+    apres: "  const verrou = await ouvrirLeHandle(volume);\n" + "  try {\n",
+    epreuves: [EPREUVE_WORKER_DEVERROUILLAGE],
+  },
 ]);
 
 function rapporter({ resultats }, json) {

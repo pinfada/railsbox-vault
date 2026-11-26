@@ -881,6 +881,47 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
     [ADR 0016](docs/decisions/0016-format-de-volume-v3-dispositions.md)), et aucun chemin du produit
     ne l'offre.
 
+13. **Ce que la révocation garantit face à un déverrouillage concurrent (#311, C5).** Une clé
+    révoquée ne finit plus « ouverte » : le Worker de confiance rouvre l'enveloppe SOUS le handle
+    exclusif du volume, et exige le même emplacement et la même clé de volume avant de publier «
+    ouvert ». Le refus est celui d'une clé inconnue, le handle est rendu, la clé effacée
+    ([ADR 0029](docs/decisions/0029-deverrouillage-dans-la-coquille.md), limite 12). Mesuré sur le
+    Worker de produit, deux onglets réels, Chromium et Firefox ; la même séquence rend « ouvert »
+    sans le correctif (commit rouge `e9fb17c`).
+
+    **La création et la restauration prennent le même verrou** (revue de la PR #314, constats 1 ;
+    [#313](https://github.com/pinfada/railsbox-vault/issues/313)) : le handle exclusif du volume
+    `coquille`, pris AVANT d'écrire `coquille.cles`, puis le **constat COMPLET de l'emplacement
+    refait sous ce verrou** — le même que celui du début du geste, avec les mêmes refus typés —
+    avant toute écriture, et le verrou tenu jusqu'après l'écriture. Ce que cela établit, exactement
+    :
+    - _restauration_ : refusée si l'emplacement n'est plus vide (`VAULT_COQUILLE_EMPLACEMENT_OCCUPE`
+      ou le refus du constat) ; l'enveloppe d'un coffre créé pendant sa suspension — phrase et
+      récupération — reste intacte ;
+    - _création_ : refusée si le constat refait sous le verrou refuse l'emplacement — restauration
+      interrompue après le disque, disque d'un autre coffre, coffre antérieur — sous son refus typé,
+      **ou si l'emplacement a changé depuis le constat qui a décidé de créer**
+      (`VAULT_COQUILLE_EMPLACEMENT_OCCUPE`), y compris quand un autre onglet a créé son coffre entre
+      les deux. Elle ne réinterprète pas un état que cette décision avait admis (un manifeste sans
+      enveloppe, par exemple : ce cas existait déjà et n'est pas changé) ; si une enveloppe est déjà
+      là, `creerEnveloppe` la refuse (`VAULT_ENVELOPPE_PRESENTE`). Un autre détenteur du volume les
+      fait refuser `VAULT_STORAGE_BUSY`. La clé de volume tirée est effacée sur tout échec, y
+      compris une prise de handle rejetée.
+
+    Mesuré sur le Worker de produit, deux onglets réels, **Chromium et Firefox**, avec une enveloppe
+    de récupération antérieure ; le constat refait est mesuré sur le banc du vrai Worker
+    (restauration interrompue, disque d'un autre coffre, état changé pendant l'attente) et, pour la
+    restauration interrompue, dans le navigateur.
+
+    **Ce qui reste, dit sans détour.** (a) **Un détenteur antérieur de la clé de volume la garde** :
+    s'il avait exécuté l'ouverture de l'enveloppe avant la révocation, il lit le volume (limite 12)
+    ; la rotation de la clé de volume reste hors périmètre. (b) **Le verrou lie le code qui le
+    prend** : la bibliothèque `ouvrirVolumeParKek` et les bancs gardent l'ancien ordre ; le produit
+    ne les emprunte pas. (c) **Une restauration n'est pas atomique** : une coupure pendant l'import
+    laisse une restauration interrompue, que le même geste répare. (d) **Non mesurés** : la
+    suspension réelle d'un onglet d'arrière-plan ; WebKit (pas d'OPFS synchrone dans un Worker,
+    refus typé exigé).
+
 **Ce qui sort de l'appareil sort du périmètre.** Un code imprimé passe par un spouleur, parfois par
 un fichier PDF intermédiaire, parfois par le disque d'une imprimante réseau. Vault ne maîtrise aucun
 de ces chemins, ne les observe pas, et ne promet rien à leur sujet.

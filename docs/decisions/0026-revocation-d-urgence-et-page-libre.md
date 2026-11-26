@@ -270,7 +270,13 @@ contributeur ferait rougir la CI d'un autre sans rien dire du produit.
 6. **Aucune interface n'offre ce geste.** Comme les cinq autres opérations : le seul appelant hors
    épreuves est le banc. C'est #24 ;
 7. **La mesure porte sur deux moteurs et une machine.** WebKit ne sert pas OPFS synchrone dans un
-   Worker (`docs/compatibility.md`), et l'épreuve y exige un refus typé au lieu d'un chiffre.
+   Worker (`docs/compatibility.md`), et l'épreuve y exige un refus typé au lieu d'un chiffre ;
+8. **Ce que la révocation garantit d'un déverrouillage concurrent.** **Note datée du 19 novembre
+   2026 (#311).** « Clé révoquée = clé inconnue » tenait à l'ouverture de l'enveloppe, pas jusqu'à
+   l'ouverture du volume : un onglet retardé entre les deux ouvrait le volume sous la clé révoquée.
+   Depuis C5, la clé est REVALIDÉE sous le handle du volume avant tout « ouvert »
+   ([ADR 0029](0029-deverrouillage-dans-la-coquille.md), limite 12). La limite 1 est INCHANGÉE : un
+   onglet qui avait déjà exécuté l'ouverture de l'enveloppe détient la clé de volume et la garde.
 
 ## Impacts sur les ADR antérieurs
 

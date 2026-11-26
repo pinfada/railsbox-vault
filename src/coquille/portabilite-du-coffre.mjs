@@ -98,7 +98,12 @@ export const COHERENCE_DE_LA_SAUVEGARDE = Object.freeze({
 export async function constaterLEmplacement({ observer, lireEnTete, lireVoisin }) {
   const enveloppe = (await observer(ENVELOPPE_DU_COFFRE)).present;
   const disque = (await observer(NOM_DU_VOLUME_APPLICATIF)).present;
-  const coquille = (await observer(VOLUME_DE_LA_COQUILLE)).present;
+  // Un fichier de taille NULLE n'est pas un volume : un volume né porte toujours son en-tête, et
+  // `openOpfsSyncAccess` CRÉE le fichier qu'il ouvre — le verrou d'une restauration ou d'une création
+  // (#311, C5), ou l'échec d'une ouverture, en laisse un vide. Le compter ferait lire une restauration
+  // interrompue, et refuser la création, là où il n'y a rien.
+  const observeCoquille = await observer(VOLUME_DE_LA_COQUILLE);
+  const coquille = observeCoquille.present && observeCoquille.size > 0;
   const manifeste = await manifesteLisible(lireVoisin);
 
   if (coquille && (await volumeCoquilleAnterieur(lireEnTete)))

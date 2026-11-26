@@ -13,14 +13,18 @@ import {
   IDENTIFIANT_DU_VOLUME_COQUILLE,
 } from "/src/coquille/identites-du-coffre.mjs";
 import { TYPES_PRIVILEGIES } from "/src/coquille/contrat-de-messages.mjs";
-import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
 import { ETATS_DU_VOLUME } from "/src/coquille/etat-de-la-coquille.mjs";
+import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
 import {
   ancreDeVersion,
   exigerKekDeLaPage,
   moyenParNom,
 } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { ouvrirParLeCode } from "/src/coquille/ouverture-par-le-code.mjs";
+import {
+  enLectureSeule,
+  revaliderSousLeHandle,
+} from "/src/coquille/revalidation-sous-le-handle.mjs";
 import { constaterALOuverture, feuilleConstatee } from "/src/coquille/preuve-de-la-feuille.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
 import {
@@ -43,6 +47,7 @@ import {
 import { hexEnOctets, octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
 import { creerMoyenDeRecuperation } from "/src/vm/moyen-de-recuperation.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { openOpfsSyncAccess } from "/src/vm/opfs-sync-access.mjs";
 
 /** L'identité que l'enveloppe authentifie, celle du COFFRE et du volume `application` (ADR 0039). */
 const IDENTIFIANT_VOLUME = IDENTIFIANT_DU_COFFRE;
@@ -76,11 +81,15 @@ let constaterLaPortabilite;
 let annoncerLaBarriere;
 let exigerUnVolumeAtteignable;
 let volume;
+let ouvrirLeHandle;
 
 /**
  * @param {{ interne: object, support: Function, repondre: Function, repondreCode: Function,
  *           repondreRefus: Function, constater: Function, annoncerLaBarriere: Function,
- *           exigerUnVolumeAtteignable: Function, volume: string }} contexte
+ *           exigerUnVolumeAtteignable: Function, volume: string,
+ *           ouvrirLeHandle?: (nom: string) => Promise<FileSystemSyncAccessHandle> }} contexte
+ *   `ouvrirLeHandle` est LA porte de tout handle exclusif de ce module : le vrai OPFS par défaut, un
+ *   double sous Node — c'est ce qui permet de charger CE module, tel qu'il est servi, dans une épreuve.
  */
 export function brancherLeDeverrouillage(contexte) {
   ({
@@ -94,6 +103,7 @@ export function brancherLeDeverrouillage(contexte) {
     exigerUnVolumeAtteignable,
     volume,
   } = contexte);
+  ouvrirLeHandle = contexte.ouvrirLeHandle ?? openOpfsSyncAccess;
 }
 
 /** Oublie le porteur du code de la session : la fermeture et la restauration le font. */
@@ -152,7 +162,8 @@ export async function deverrouiller(message, correlation) {
     return repondreCode(CODES_REFUS_COQUILLE.typeInconnu, correlation);
   }
   exigerUnVolumeAtteignable();
-  const refusDuCoffre = refusDOuverture(await constaterLaPortabilite());
+  const etatConstate = await constaterLaPortabilite();
+  const refusDuCoffre = refusDOuverture(etatConstate);
   if (refusDuCoffre !== null)
     throw Object.assign(new Error(refusDuCoffre), { code: refusDuCoffre });
   const versionMinimale = ancreDeVersion(message.versionMinimale);
@@ -160,17 +171,19 @@ export async function deverrouiller(message, correlation) {
 
   const ouverte = observe.present
     ? await ouvrirLExistante(moyen, message, versionMinimale)
-    : await creerLeCoffre(moyen, message);
+    : await creerLeCoffre(moyen, message, etatConstate);
 
-  // La DEK est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le chemin d'ÉCHEC est
-  // celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
-  // (`VAULT_STORAGE_BUSY`), et les octets en clair de la clé de volume restaient alors dans le tas
-  // du Worker. Un second clic sur « Ouvrir par la phrase » y suffisait — un geste ordinaire, pas un
+  // La DEK (celle de la passe 1) est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le
+  // chemin d'ÉCHEC est celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
+  // (`VAULT_STORAGE_BUSY`) ou quand la revalidation refuse (#311), et les octets en clair de la clé
+  // de volume restaient alors dans le tas du Worker. Un second clic sur « Ouvrir par la phrase » y suffisait — un geste ordinaire, pas un
   // scénario. C'est le constat 5 de la revue de sécurité de la PR #167.
   try {
-    await ouvrirLeVolume(ouverte.dek);
+    await ouvrirLeVolume(ouverte);
   } finally {
     ouverte.dek.fill(0);
+    // Le verrou d'une CRÉATION que l'ouvreur n'a pas reçu (un refus avant lui) est rendu ici.
+    ouverte.verrou?.close();
   }
   // Après l'ouverture seulement ; la barrière qui suit rend l'inscription durable (#239).
   const constat = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);
@@ -199,8 +212,12 @@ export async function deverrouiller(message, correlation) {
  * Le backend précédent était ÉCRASÉ sans être fermé : le handle exclusif restait tenu par un objet
  * que plus personne ne référençait, et l'ouverture suivante rendait `VAULT_STORAGE_BUSY` — sur le
  * volume que l'utilisateur venait d'ouvrir lui-même. Constat 6 de la même revue.
+ *
+ * `sousLeHandle` est la PASSE 2 de #311 (`revalidation-sous-le-handle.mjs`) : l'ouvreur l'appelle une
+ * fois le handle exclusif pris, avant d'écrire ou d'authentifier quoi que ce soit, et rend le handle
+ * si elle refuse. Ce n'est qu'après elle que l'état peut devenir « ouvert ».
  */
-async function ouvrirLeVolume(dek) {
+async function ouvrirLeVolume(ouverte) {
   const precedent = interne.backend;
   interne.backend = null;
   interne.etat = ETATS_DU_VOLUME.verrouille;
@@ -209,9 +226,18 @@ async function ouvrirLeVolume(dek) {
   interne.backend = await openOpfsVolume({
     name: volume,
     size: TAILLE,
-    cle: dek,
+    cle: ouverte.dek,
     identifiantVolume: IDENTIFIANT_DU_VOLUME_COQUILLE,
     transactionnel: false,
+    openHandle: (nom) => {
+      // Une création a déjà SON handle : l'ouvreur reçoit celui-là, une fois, et n'en rouvre pas un.
+      const verrou = ouverte.verrou;
+      if (verrou === undefined || verrou === null || nom !== volume) return ouvrirLeHandle(nom);
+      ouverte.verrou = null;
+      return verrou;
+    },
+    sousLeHandle: () =>
+      revaliderSousLeHandle({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME, ouverte }),
   });
 }
 
@@ -232,6 +258,8 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
     kek: ouverte.kek,
     version: ouverte.version,
     migree: ouverte.migration?.faite === true,
+    identifiantEmplacement: ouverte.identifiantEmplacement,
+    versionMinimale,
     // Seul un CODE éprouve une feuille, jamais l'emplacement d'une phrase ou d'une passkey.
     identifiantEprouve: moyen.derivePar === "page" ? null : ouverte.identifiantEmplacement,
   };
@@ -241,7 +269,7 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
 async function ouvrirSousLaPage(message, versionMinimale) {
   const kek = exigerKekDeLaPage(message.kek);
   const ouverte = await ouvrirEnveloppe({
-    support: support(),
+    support: enLectureSeule(support()),
     identifiantVolume: IDENTIFIANT_VOLUME,
     kek,
     versionMinimale,
@@ -260,7 +288,7 @@ async function ouvrirSousLaPage(message, versionMinimale) {
  */
 async function ouvrirSousLeCode(moyen, message, versionMinimale) {
   return ouvrirParLeCode({
-    support: support(),
+    support: enLectureSeule(support()),
     identifiantVolume: IDENTIFIANT_VOLUME,
     code: String(message.code ?? ""),
     derivateur: CATALOGUE.pour(moyen.typeKek),
@@ -281,8 +309,15 @@ async function ouvrirSousLeCode(moyen, message, versionMinimale) {
  *
  * La DEK est effacée par `deverrouiller`, dans son `finally` : elle est RENDUE à l'appelant, et
  * l'effacer ici la lui retirerait avant qu'il n'ouvre le volume.
+ *
+ * **Le handle du volume est pris AVANT d'écrire l'enveloppe, et passé à l'ouvreur** (#311, C5 ; #313).
+ * L'ADR 0020 veut l'enveloppe avant le volume, et `creerEnveloppe` refuse un fichier déjà présent —
+ * mais ce refus se jugeait avant l'écriture, sans verrou : un autre onglet qui créait, ou restaurait,
+ * entre les deux voyait son enveloppe écrasée par celle-ci. Sous le handle, plus personne ne peut
+ * naître ni s'ouvrir : le refus de `creerEnveloppe` est enfin un constat, et le volume naît sous CE
+ * handle, sans trou. Un autre détenteur fait refuser la création `VAULT_STORAGE_BUSY`.
  */
-async function creerLeCoffre(moyen, message) {
+async function creerLeCoffre(moyen, message, etatConstate) {
   if (moyen.derivePar !== "page") {
     const erreur = new Error(
       "Aucun coffre n'existe encore : un code de récupération secourt, il ne crée pas.",
@@ -293,16 +328,50 @@ async function creerLeCoffre(moyen, message) {
   const kek = exigerKekDeLaPage(message.kek);
   const parametres = hexEnOctets(String(message.parametresHex ?? ""));
   const dek = tirerCleDeVolume();
-  const creee = await creerEnveloppe({
-    support: support(),
-    identifiantVolume: IDENTIFIANT_VOLUME,
-    dek,
-    kek,
-    typeKek: moyen.typeKek,
-    parametres,
-    identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
-  });
-  return { dek, kek, version: creee.version, identifiantEprouve: null };
+  let verrou = null;
+  // La clé tirée et le verrou sont rendus sur TOUT échec, y compris celui de la prise du handle : le
+  // `try` commence donc AVANT l'attente (revue de la PR #314, constat 3).
+  try {
+    verrou = await ouvrirLeHandle(volume);
+    // L'emplacement est CONSTATÉ À NOUVEAU sous le verrou, en entier — le même constat que la restauration
+    // et que le début de `deverrouiller` : le premier date d'avant l'attente du handle, et pendant elle
+    // une restauration a pu s'interrompre après le disque, ou le disque d'un autre coffre apparaître
+    // (revue de la PR #314, constat 1). Tout ce que `refusDOuverture` refuse l'est ici, avant toute
+    // écriture ; et l'emplacement ne doit pas avoir CHANGÉ depuis le constat qui a décidé de créer — il
+    // s'agit de ne pas créer sur un état que cette décision n'a pas vu, non de réinterpréter un état
+    // qu'elle a admis (un manifeste sans enveloppe l'était déjà). Une enveloppe déjà là reste le refus de
+    // `creerEnveloppe` (`VAULT_ENVELOPPE_PRESENTE`), qui la juge sur le support.
+    const etat = await constaterLaPortabilite();
+    const refusDuCoffre = refusDOuverture(etat);
+    if (refusDuCoffre !== null)
+      throw Object.assign(new Error(refusDuCoffre), { code: refusDuCoffre });
+    if (etat !== etatConstate) {
+      const code = CODES_REFUS_COQUILLE.emplacementOccupe;
+      throw Object.assign(new Error(code), { code });
+    }
+    const creee = await creerEnveloppe({
+      support: support(),
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      dek,
+      kek,
+      typeKek: moyen.typeKek,
+      parametres,
+      identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
+    });
+    return {
+      dek,
+      kek,
+      version: creee.version,
+      identifiantEprouve: null,
+      identifiantEmplacement: creee.identifiantEmplacement,
+      versionMinimale: null,
+      verrou,
+    };
+  } catch (cause) {
+    verrou?.close();
+    dek.fill(0);
+    throw cause;
+  }
 }
 
 // --- Le moyen de récupération, et son code rendu UNE fois -----------------------------------------

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
+import { open, readFile, realpath } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -10,6 +10,7 @@ import {
   parseServerOptions,
   securityHeaders,
 } from "./serve-headers.mjs";
+import { CHEMIN_INSTRUMENTE, harnaisDemande, instrumenter } from "./harnais-point-d-arret.mjs";
 
 const publicRoot = resolve("public");
 const sourceRoot = resolve("src");
@@ -21,6 +22,12 @@ const vendorRoot = resolve("vendor");
 // sert à v86 dans le navigateur, en lecture seule, sous leur propre racine.
 const artifactRoot = resolve("artifacts");
 const options = parseServerOptions(process.argv.slice(2), process.env);
+
+/**
+ * HARNAIS des COURSES ENTRE ONGLETS SEULEMENT (#311, C5 ; `tools/harnais-point-d-arret.mjs`) : sert, pour
+ * UN chemin, une copie de `openOpfsSyncAccess` que l'épreuve peut retenir. Borné au banc de test : un ARGUMENT, que seule `playwright.course-onglets.config.mjs` passe — jamais l'environnement.
+ */
+const pointDArret = harnaisDemande(process.argv.slice(2));
 
 // Une socket de bouclage accepte aussi les alias de son adresse. Servir le coffre sous
 // localhost partagerait les cookies des autres applications localhost, quel que soit le port.
@@ -150,7 +157,9 @@ createServer(async (request, response) => {
       }),
     });
     if (request.method === "HEAD") response.end();
-    else await pipeline(fichier.createReadStream({ autoClose: false }), response);
+    else if (pointDArret && pathname === CHEMIN_INSTRUMENTE) {
+      response.end(instrumenter(await readFile(cheminReel, "utf8")));
+    } else await pipeline(fichier.createReadStream({ autoClose: false }), response);
   } catch {
     // Une ABSENCE n'est jamais cachable. Sous `/vendor/v86/artefacts/*` le `_headers` publié
     // annonce un an d'`immutable` pour le CHEMIN, et un 404 gardé un an n'aurait aucun geste de

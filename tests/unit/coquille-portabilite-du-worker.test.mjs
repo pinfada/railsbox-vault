@@ -348,8 +348,13 @@ test("une RÉPARATION coupée à CHAQUE rang ne laisse jamais un coffre sans dis
       `rang ${rang} : le disque repris ne relit pas Rails`,
     );
   }
-  // Deux volumes, chacun avec ses cinq voisins : douze retraits, chacun coupé une fois.
-  assert.equal(rangsCoupes, 2 * (1 + voisinsDunVolume("application").length));
+  // Les voisins de `coquille` et ceux d'`application`, plus le fichier d'`application` : chaque retrait
+  // est coupé une fois. Le fichier `coquille` n'est plus RETIRÉ — la restauration le tient (#311, C5) :
+  // il est vidé par son handle, après ses voisins, ce qui ne se coupe pas par `retirer`.
+  assert.equal(
+    rangsCoupes,
+    voisinsDunVolume("coquille").length + 1 + voisinsDunVolume("application").length,
+  );
 });
 
 /**

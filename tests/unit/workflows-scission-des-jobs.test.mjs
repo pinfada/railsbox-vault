@@ -77,9 +77,9 @@ test("les rapports des lots sont fusionnés en un seul artefact", () => {
   assert.match(final, /name: campagnes-de-mutation$/mu);
 });
 
-test("« Qualité et tests » exige chacun des deux jobs de produit, en plus de la couverture et des audits", () => {
+test("« Qualité et tests » exige chacun des deux jobs de produit, en plus de la couverture, des courses entre onglets et des audits", () => {
   const gate = bloc("qualite");
-  const attendus = ["check-navigateur", "check-parcours", "couverture", "audits"];
+  const attendus = ["check-navigateur", "check-parcours", "couverture", "courses", "audits"];
   assert.match(gate, /^ {4}name: Qualité et tests$/mu);
   assert.match(gate, new RegExp(`^ {4}needs: \\[${attendus.join(", ")}\\]$`, "mu"));
   assert.ok(

@@ -18,6 +18,7 @@
     "test:vm": "playwright test --config playwright.vm.config.mjs",
     "test:isolation": "playwright test --config playwright.isolation.config.mjs",
     "test:fins-d-onglet": "playwright test --config playwright.fins-d-onglet.config.mjs",
+    "test:course-onglets": "playwright test --config playwright.course-onglets.config.mjs",
     "test:csp": "playwright test --config playwright.csp.config.mjs",
     "isolation:inventaire": "node tools/isolation-inventaire.mjs",
     "publier": "node tools/publier.mjs",
