@@ -127,9 +127,6 @@ const DEVERROUILLAGE_COQUILLE = [
   // Un stockage INACCESSIBLE POUR L'INSTANT n'est pas un coffre ABSENT (#231, revue de la PR #305) :
   // l'inventaire inconnu, « Réessayer », la reprise sans rechargement.
   "**/coquille-stockage-indetermine.spec.mjs",
-  // La COURSE entre deux onglets au déverrouillage (#311, C5) : même chemin de produit, deux Workers
-  // sur un même OPFS, pause posée par l'épreuve.
-  "**/coquille-course-entre-onglets.spec.mjs",
 ];
 
 /**
