@@ -121,7 +121,12 @@ export function selectionner({ lot, campagnes }) {
     return LOTS[numero - 1].map(resoudre);
   }
   if (campagnes !== undefined) {
-    return campagnes.split(",").filter(Boolean).map(resoudre);
+    const noms = campagnes
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (noms.length === 0) throw new Error("--campagnes est vide : aucune campagne à jouer.");
+    return noms.map(resoudre);
   }
   return CAMPAGNES.map((c) => ({ ...c }));
 }
@@ -176,6 +181,9 @@ function jouer(campagne) {
     return { ...campagne, ok: false, dureeMs, erreur: `sortie JSON illisible : ${erreur.message}` };
   }
 
+  if (resultats.length === 0) {
+    return { ...campagne, ok: false, dureeMs, erreur: "campagne vide : 0 mutant éprouvé." };
+  }
   const tues = resultats.filter((r) => r.tue).length;
   return {
     ...campagne,

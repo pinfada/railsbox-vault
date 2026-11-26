@@ -185,9 +185,11 @@ function decrire({ status, signal, memoireEpuisee }) {
  * les tranches plutôt que de livrer à l'une d'elles le bloc le plus lent. Les `n` tranches
  * partitionnent la table : rien rejoué deux fois, rien oublié — `tests/unit/campagnes-de-mutation-
  * repartition.test.mjs` le garde. Sans tranche (`undefined`), toute la table est rendue.
- * Une tranche mal formée LÈVE : jouer une table vide passerait pour une campagne verte.
+ * Une tranche mal formée, une tranche vide ou une table vide LÈVENT : jouer rien passerait pour une
+ * campagne verte (0/0).
  */
 export function filtrerParTranche(mutations, tranche) {
+  if (mutations.length === 0) throw new Error("table de mutations vide : rien à éprouver.");
   if (tranche === undefined || tranche === "") return mutations;
   const lue = /^([1-9]\d*)\/([1-9]\d*)$/u.exec(tranche);
   const i = lue ? Number(lue[1]) : 0;
@@ -195,7 +197,13 @@ export function filtrerParTranche(mutations, tranche) {
   if (!lue || i > n) {
     throw new Error(`tranche « ${tranche} » invalide : attendu i/n avec 1 ≤ i ≤ n.`);
   }
-  return mutations.filter((_, indice) => indice % n === i - 1);
+  const retenues = mutations.filter((_, indice) => indice % n === i - 1);
+  if (retenues.length === 0) {
+    throw new Error(
+      `tranche ${tranche} vide pour ${mutations.length} mutant(s) : rien à éprouver.`,
+    );
+  }
+  return retenues;
 }
 
 /**
