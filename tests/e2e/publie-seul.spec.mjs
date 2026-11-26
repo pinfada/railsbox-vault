@@ -139,12 +139,16 @@ test("l'image servie ici est OCTET POUR OCTET celle de l'arbre que le job publie
 
 test("CONTRE-ÉPREUVE : sans --avec-image, l'arbre publié ne sert ni le descripteur ni l'image", async () => {
   exigerLesPrealables(raison, "publie-seul.spec.mjs");
-  publier(SANS_IMAGE);
+  // `--tolerer-incomplet` : sous `--commit`, le descripteur (non versionné) n'entre pas non plus, et l'arbre est
+  // déclaré INCOMPLET (code 6) — c'est précisément ce que cette contre-épreuve montre.
+  publier(SANS_IMAGE, "--tolerer-incomplet");
   const descripteur = JSON.parse(readFileSync(CHEMIN_DESCRIPTEUR, "utf8"));
   const origines = await servir(SANS_IMAGE);
   try {
     const url = `${E2E_ORIGIN_PUBLIEE}${descripteur.prefixeDesArtefacts}${descripteur.rootfs.nom}`;
     expect((await fetch(url, { method: "HEAD" })).status, "le rootfs n'est pas servi").toBe(404);
+    const adresse = `${E2E_ORIGIN_PUBLIEE}/artifacts/application.json`;
+    expect((await fetch(adresse, { method: "HEAD" })).status, "le descripteur non plus").toBe(404);
   } finally {
     await origines.arreter();
   }
