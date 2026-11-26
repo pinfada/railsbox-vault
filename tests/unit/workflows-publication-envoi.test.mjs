@@ -53,6 +53,17 @@ test("deployer : UN seul appel d'envoi pour les DEUX arbres, précédé de la ga
   const etape = bloc.slice(debut, bloc.indexOf("- name:", debut + 5));
   assert.ok(etape.includes("publier-garde-environnement.mjs"), "l'étape de garde est isolée");
   assert.doesNotMatch(etape, /CLOUDFLARE|secrets\./u);
+  // L'approbation de CE run, lue avec le jeton du workflow : `contents: read` suffit (mesuré, 26/11/2026),
+  // le job n'a aucune permission de plus. Absente, la lecture rend `[]` : refus fermé.
+  assert.match(etape, /actions\/runs\/\$VAULT_RUN\/approvals/u);
+  assert.match(etape, /VAULT_RUN: \$\{\{ github\.run_id \}\}/u);
+  assert.match(etape, /publier-garde-environnement\.mjs environnement\.json approbations\.json/u);
+  assert.doesNotMatch(
+    bloc,
+    /^ {4}permissions:/mu,
+    "aucune permission de job : contents: read hérité",
+  );
+  assert.match(publication, /^permissions:\n {2}contents: read$/mu);
   assert.doesNotMatch(bloc, /--profil/u, "le profil d'envoi n'est pas un choix");
 });
 

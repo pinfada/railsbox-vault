@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -162,4 +162,36 @@ test("un gzip tronqué ou illisible est refusé en le nommant, pas par une erreu
   descripteur.graine.transfertOctets = servi.byteLength;
   await writeFile(join(racine, "artifacts", "application.json"), JSON.stringify(descripteur));
   await assert.rejects(copie(), /graine\.ext4\.gz/);
+});
+
+test("des déclarations CONTRADICTOIRES (même nom, empreintes différentes) sont refusées par le publieur", async (t) => {
+  const { racine, copie } = await copier(t);
+  const chemin = join(racine, "artifacts", "application.json");
+  const descripteur = JSON.parse(await readFile(chemin, "utf8"));
+  // Le paquet précédent porte le NOM du paquet courant, avec une AUTRE empreinte : le descripteur est valide
+  // (`descripteur-applicatif.mjs` l'accepte), c'est le publieur qui refuse.
+  descripteur.precedent.paquet = { ...descripteur.paquet, sha256: "e".repeat(64) };
+  await writeFile(chemin, JSON.stringify(descripteur));
+  await assert.rejects(copie(), (erreur) => {
+    assert.equal(erreur.sourceAbsente, true);
+    assert.match(erreur.message, /contradictoires/);
+    assert.match(erreur.message, /paquet\.ext4\.gz/);
+    return true;
+  });
+});
+
+test("le MÊME artefact déclaré deux fois à l'identique n'est copié et vérifié qu'une fois", () => {
+  const descripteur = descripteurDEpreuve();
+  descripteur.precedent = { paquet: { ...descripteur.paquet } };
+  const fichiers = image.fichiersDeLImage(descripteur);
+  assert.equal(fichiers.length, 7);
+  assert.equal(fichiers.filter(({ nom }) => nom === descripteur.paquet.nom).length, 1);
+});
+
+test("même nom et même empreinte mais taille servie différente : contradictoire aussi", () => {
+  const descripteur = descripteurDEpreuve();
+  descripteur.paquet.compression = "gzip";
+  descripteur.paquet.transfertOctets = 10;
+  descripteur.precedent = { paquet: { ...descripteur.paquet, transfertOctets: 11 } };
+  assert.throws(() => image.fichiersDeLImage(descripteur), /contradictoires/);
 });
