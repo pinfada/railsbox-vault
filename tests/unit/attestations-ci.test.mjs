@@ -112,3 +112,44 @@ test("le CLI refuse un dossier d'attestations vide ou incomplet avec un code non
   writeFileSync(join(dossier, "lot-1", "mutations-lot-1.json"), JSON.stringify(a));
   assert.equal(lancer().status, 0);
 });
+
+test("le vérificateur lit le succès de CHAQUE campagne et la cohérence des comptes individuels (relecture 3)", () => {
+  const echec = tous();
+  echec[0].campagnes[0] = { ...echec[0].campagnes[0], ok: false };
+  assert.match(verifierMutations(echec).join("\n"), /lot 1.*campagne .* en échec/u);
+
+  const incoherent = tous();
+  incoherent[1].campagnes[0] = { ...incoherent[1].campagnes[0], tues: 4 };
+  assert.match(verifierMutations(incoherent).join("\n"), /lot 2.*campagne .*tués/u);
+
+  const somme = tous();
+  somme[2] = { ...somme[2], mutants: somme[2].mutants + 1, tues: somme[2].tues + 1 };
+  assert.match(verifierMutations(somme).join("\n"), /lot 3.*somme/u);
+
+  const decompte = tous();
+  decompte[3].campagnes[0] = { ...decompte[3].campagnes[0], tues: 3, survivants: 1 };
+  assert.match(verifierMutations(decompte).join("\n"), /lot 4/u);
+
+  const reparti = tous();
+  reparti[0].campagnes[0] = { ...reparti[0].campagnes[0], survivants: 2 };
+  assert.match(
+    verifierMutations(reparti).join("\n"),
+    /lot 1.*campagne .*(tués|décompte|survivant)/u,
+  );
+});
+
+test("une campagne qui ne rend aucun mutant fait échouer le lanceur (jouer)", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { jouer } = await import("../../tools/rejouer-les-campagnes.mjs");
+  const dossier = mkdtempSync(join(tmpdir(), "vide-"));
+  const script = join(dossier, "vide.mjs");
+  writeFileSync(script, "process.stdout.write(JSON.stringify({ resultats: [] }));\n");
+  const ligne = jouer({ nom: "vide", script });
+  assert.equal(ligne.ok, false);
+  assert.match(ligne.erreur, /vide/u);
+  const plein = join(dossier, "plein.mjs");
+  writeFileSync(plein, "process.stdout.write(JSON.stringify({ resultats: [{ tue: true }] }));\n");
+  assert.equal(jouer({ nom: "plein", script: plein }).ok, true);
+});
