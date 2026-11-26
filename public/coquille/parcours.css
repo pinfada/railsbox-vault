@@ -1,4 +1,4 @@
-/* Direction « scène » (ADR 0050) : une scène sombre, pétrole et laiton, et une plaque par écran.
+/* Direction « scène » (ADR 0051) : une scène sombre, pétrole et laiton, et une plaque par écran.
    Aucune ressource distante : ni police, ni image. Le cadran du fond est dessiné en CSS. */
 :root {
   color-scheme: dark;
@@ -560,7 +560,7 @@ pre {
   color: var(--secondaire);
 }
 /* L’application garde SON thème : sans cette ligne, le cadre hériterait du thème sombre de la scène,
-   et une application claire passerait au sombre sans que personne l’ait demandé (ADR 0050). */
+   et une application claire passerait au sombre sans que personne l’ait demandé (ADR 0051). */
 #cadre-applicatif iframe {
   color-scheme: light dark;
   display: block;
@@ -882,7 +882,7 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
     visibility: hidden;
   }
 }
-/* LA SCÈNE EN PLEIN ÉCRAN (ADR 0050, décision 6). À partir de 1024 px, hors de l'application, la page
+/* LA SCÈNE EN PLEIN ÉCRAN (ADR 0051, décision 6). À partir de 1024 px, hors de l'application, la page
    n'est plus une carte au milieu du vide : elle occupe la fenêtre. À gauche, ce que l'écran dit, en
    grand. À droite, sur une plaque, ce que l'on fait. Rien n'est déplacé dans le document : l'ordre
    de lecture et celui du clavier restent ceux du fichier. La dernière rangée est élastique, pour
@@ -1080,7 +1080,7 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
     max-width: none;
   }
 }
-/* LA SAUVEGARDE, montrée comme un OBJET (ADR 0050, décision 10) : l'annonce de sa taille est gravée
+/* LA SAUVEGARDE, montrée comme un OBJET (ADR 0051, décision 10) : l'annonce de sa taille est gravée
    sur une plaque sombre, à côté d'un cadran. Les couleurs sont dites ici, sans jeton : la plaque
    reste sombre sur le papier comme sur la scène. */
 #sauvegarde-annonce:not(:empty) {
@@ -1191,7 +1191,7 @@ html:not([data-travail-pret="true"])
     ),
     var(--fond-page);
 }
-/* ROUVRIR (ADR 0050, décision 9). L'écran de tous les jours : le verrou au centre, le titre en
+/* ROUVRIR (ADR 0051, décision 9). L'écran de tous les jours : le verrou au centre, le titre en
    très grand, la phrase et son bouton. Il se reconnaît au bloc « J'ai oublié ma phrase », que seul
    cet écran montre. Derrière, une silhouette floue d'application : un DÉCOR fixe, dessiné par la
    feuille de style, qui ne lit ni ne montre rien du coffre. */
@@ -1329,7 +1329,7 @@ html:not([data-travail-pret="true"])
     min-height: 68px;
   }
 }
-/* LA PLAQUE EST DU PAPIER (ADR 0050, décision 3). Sur la scène sombre, ce que l'on fait est posé sur
+/* LA PLAQUE EST DU PAPIER (ADR 0051, décision 3). Sur la scène sombre, ce que l'on fait est posé sur
    une feuille claire : la palette est redéfinie pour tout ce que la plaque porte, et chaque
    composant la suit sans autre règle. */
 @media (min-width: 1024px) and (forced-colors: none) {
@@ -1395,7 +1395,7 @@ html:not([data-travail-pret="true"])
     padding: 14px 0 0;
   }
 }
-/* LE DÉMARRAGE (ADR 0050, décision 5) : pendant l'attente, un cadran tourne autour de la phrase. Une
+/* LE DÉMARRAGE (ADR 0051, décision 5) : pendant l'attente, un cadran tourne autour de la phrase. Une
    couronne de crans, lente, et un arc de laiton, plus vif. Décor : la durée et l'avancement restent
    dits par le texte et par la barre de progression. */
 html[data-travail-pret="true"] [data-application="attente"]::before,

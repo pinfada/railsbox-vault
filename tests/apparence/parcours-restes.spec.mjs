@@ -22,7 +22,7 @@ test("m7 : avant tout démarrage, la plaque des gestes de l'étape 4 reste à la
   await page.setViewportSize({ width: 1280, height: 900 });
   await jusquAuTravail(page);
   await expect(titre(page, "Travailler dans l'application")).toBeVisible();
-  // Depuis l'ADR 0050, la scène occupe la fenêtre ; ce qui ne doit pas s'élargir à vide est la
+  // Depuis l'ADR 0051, la scène occupe la fenêtre ; ce qui ne doit pas s'élargir à vide est la
   // plaque des gestes, mesurée sur la section qui porte « Démarrer l'application ».
   const plaque = await page.locator("#cycle").boundingBox();
   expect(plaque.width, "la moitié droite d'une plaque de 1024 px serait vide").toBeLessThanOrEqual(

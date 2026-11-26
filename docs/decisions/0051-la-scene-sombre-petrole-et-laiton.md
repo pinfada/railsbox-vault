@@ -1,4 +1,4 @@
-# ADR 0050 — La scène : une direction sombre, pétrole et laiton, et le thème clair retiré
+# ADR 0051 — La scène : une direction sombre, pétrole et laiton, et le thème clair retiré
 
 - Statut : proposé
 - Date : 2026-11-26

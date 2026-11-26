@@ -216,7 +216,7 @@ test("la scène est servie localement et le focus clavier reste visible", async 
   await expect(
     page.getByRole("heading", { name: "Créer votre coffre", exact: true }),
   ).toBeVisible();
-  // La scène de l'ADR 0050 : le fond pétrole de la page, et le laiton du filet de l'en-tête. Deux
+  // La scène de l'ADR 0051 : le fond pétrole de la page, et le laiton du filet de l'en-tête. Deux
   // couleurs de la feuille locale : si elle n'est pas servie, aucune des deux n'est là.
   const style = await page.locator("main").evaluate((node) => ({
     fond: getComputedStyle(node).backgroundColor,
@@ -253,7 +253,7 @@ test("la scène et le focus clavier sur l'écran « stockage inaccessible » (We
     exact: true,
   });
   await expect(inaccessible).toBeVisible();
-  // La scène de l'ADR 0050 : le fond pétrole de la page, et le laiton du filet de l'en-tête. Deux
+  // La scène de l'ADR 0051 : le fond pétrole de la page, et le laiton du filet de l'en-tête. Deux
   // couleurs de la feuille locale : si elle n'est pas servie, aucune des deux n'est là.
   const style = await page.locator("main").evaluate((node) => ({
     fond: getComputedStyle(node).backgroundColor,

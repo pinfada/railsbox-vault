@@ -1,7 +1,7 @@
 # Direction visuelle du parcours
 
 > **Mise à jour du 26 novembre 2026** : les couleurs, les formes et la typographie décrites
-> ci-dessous sont remplacées par l'[ADR 0050](decisions/0050-la-scene-sombre-petrole-et-laiton.md) :
+> ci-dessous sont remplacées par l'[ADR 0051](decisions/0051-la-scene-sombre-petrole-et-laiton.md) :
 > une scène sombre, pétrole et laiton, une plaque par écran, des champs clairs, neuf crans pour le
 > rang, et un seul thème. Les règles d'accessibilité de ce document restent en vigueur. Le tableau
 > des contrastes plus bas est celui de la direction précédente : ses quatre premières lignes sont
