@@ -23,6 +23,10 @@ import {
 } from "../../src/coquille/politique-de-phrase.mjs";
 import { TYPES_PRIVILEGIES } from "../../src/coquille/contrat-de-messages.mjs";
 import { normaliserLInventaire } from "../../src/coquille/reponse-de-la-revocation.mjs";
+import {
+  encoderCode,
+  tirerCodeDeRecuperation,
+} from "../../src/vm/derivation/code-de-recuperation.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 
@@ -73,6 +77,7 @@ async function monter(inventaire) {
   const dom = racine();
   const demandes = [];
   const derivations = [];
+  const passkeys = [];
   const normalise = normaliserLInventaire(
     { type: TYPES_PRIVILEGIES.inventaireReponse, refus: null, ...inventaire },
     { ouvert: false },
@@ -90,7 +95,10 @@ async function monter(inventaire) {
       derivations.push(appel);
       return {};
     },
-    deriverPasskey: async () => ({}),
+    deriverPasskey: async (appel) => {
+      passkeys.push(appel);
+      return {};
+    },
     reessayer: async () => {},
     portes: {
       lirePublic: () => donnees.public,
@@ -100,7 +108,7 @@ async function monter(inventaire) {
     },
   });
   interface_.refleter(donnees, "coffre");
-  return { dom, demandes, derivations, interface_ };
+  return { dom, demandes, derivations, passkeys, interface_ };
 }
 
 async function cliquerSurLaPhrase(dom) {
@@ -237,4 +245,56 @@ test("contre-épreuve : un appareil SANS coffre (inventaire lu, vide) reçoit la
   assert.equal(phrase.autocomplete, "new-password");
   assert.equal(dom.querySelector("#phrase-aide").textContent, CONSEIL_DE_CHOIX_DE_PHRASE);
   assert.notEqual(dom.querySelector("#phrase-conseil").textContent, CONSEIL_DE_REOUVERTURE);
+});
+
+test("[#265] un inventaire REFUSÉ ou INCONNU : ni la passkey ni le code ne dérivent ou n'ouvrent — le refus est rendu", async () => {
+  for (const inventaire of [
+    {
+      present: false,
+      versionEnveloppe: null,
+      emplacements: [],
+      inconnu: true,
+      refus: REFUS_DU_STOCKAGE,
+    },
+    {
+      present: true,
+      versionEnveloppe: 1,
+      emplacements: [],
+      refus: { code: ENVELOPPE_ERROR_CODES.illisible },
+    },
+  ]) {
+    const { dom, demandes, passkeys, interface_ } = await monter(inventaire);
+    dom.querySelector("#ouvrir-par-passkey").declencher("click");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(passkeys, [], "aucune assertion WebAuthn ne part");
+    assert.ok(!demandes.includes("deverrouiller"));
+    assert.equal(interface_.releve.dernierRefus, inventaire.refus.code);
+  }
+});
+
+test("[#265] un inventaire REFUSÉ ou INCONNU : un code de récupération valide n'est ni envoyé ni consommé — le refus est rendu", async () => {
+  for (const inventaire of [
+    {
+      present: false,
+      versionEnveloppe: null,
+      emplacements: [],
+      inconnu: true,
+      refus: REFUS_DU_STOCKAGE,
+    },
+    {
+      present: true,
+      versionEnveloppe: 1,
+      emplacements: [],
+      refus: { code: ENVELOPPE_ERROR_CODES.illisible },
+    },
+  ]) {
+    const { dom, demandes, interface_ } = await monter(inventaire);
+    const code = encoderCode(tirerCodeDeRecuperation());
+    dom.querySelector("#saisie-code").value = code;
+    dom.querySelector("#saisie-code").declencher("input");
+    dom.querySelector("#ouvrir-par-code").declencher("click");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(!demandes.includes("deverrouiller"), "aucune ouverture demandée au Worker");
+    assert.equal(interface_.releve.dernierRefus, inventaire.refus.code);
+  }
 });

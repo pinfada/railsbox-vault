@@ -6,6 +6,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import {
+  encoderCode,
+  tirerCodeDeRecuperation,
+} from "../../src/vm/derivation/code-de-recuperation.mjs";
 import { monterLInterface } from "../../src/coquille/interface-de-deverrouillage.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { etatDeLaPhase } from "./support-revocation.mjs";
@@ -216,4 +220,27 @@ test("[C2-3] un refus du Worker pendant la création est dit, sans feuille", asy
   await attendre();
   assert.match(doc.getElementById("deverrouillage-refus").textContent, /VAULT_ENVELOPPE_PLEINE/);
   assert.equal(doc.getElementById("feuille-code").textContent, "");
+});
+
+test("[ADR 0039] un inventaire REFUSÉ : un code de récupération valide n'est PAS envoyé au Worker, le refus est rendu tout de suite", async () => {
+  const refuse = {
+    present: true,
+    refus: { code: CODES_REFUS_COQUILLE.coffreAnterieur },
+    parametres: [],
+    versionEnveloppe: null,
+  };
+  const { doc, appels } = monter({ portes: { lirePublic: () => refuse } });
+  doc.getElementById("saisie-code").value = encoderCode(tirerCodeDeRecuperation());
+  doc.getElementById("saisie-code").dispatchEvent(new doc.Evenement("input"));
+  doc.getElementById("ouvrir-par-code").click();
+  await attendre();
+  assert.deepEqual(
+    appels.demande.map(([type]) => type),
+    [],
+    "aucune ouverture n'est demandée",
+  );
+  assert.match(
+    doc.getElementById("deverrouillage-refus").textContent,
+    new RegExp(CODES_REFUS_COQUILLE.coffreAnterieur),
+  );
 });

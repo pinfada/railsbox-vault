@@ -1571,12 +1571,12 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un stockage inaccessible n'est pas un coffre absent : le refus typé le reconnaît",
-    garde: "coffreObserve — `COFFRE.inaccessible` (#231, revue de la PR #305)",
-    fichier: PARCOURS,
-    avant:
-      "  if (dernierRefus === STORAGE_ERROR_CODES.indeterminate) return COFFRE.inaccessible;\n",
+    garde:
+      "coffreDeLEtat — `COFFRE.inaccessible` (#231, revue de la PR #305 ; décision d'écran de C2)",
+    fichier: "src/coquille/ecran-de-la-revocation.mjs",
+    avant: "  if (code === STORAGE_ERROR_CODES.indeterminate) return COFFRE.inaccessible;\n",
     apres: "",
-    epreuves: [EPREUVE_PARCOURS],
+    epreuves: ["tests/unit/coquille-ecran-de-la-revocation.test.mjs"],
   },
   {
     nom: "l'écran d'un stockage inaccessible est celui du réessai, non « chargement »",
@@ -1780,10 +1780,9 @@ export const MUTATIONS = Object.freeze([
       "ouvrirParLaPhrase — la garde sur `inventaire.refus`, avant la politique de phrase (#231)",
     fichier: INTERFACE,
     avant:
-      "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n" +
-      "  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);\n",
-    apres:
-      "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n",
+      "  const refusee = contexte.portes.lirePublic()?.refus ?? null;\n" +
+      "  if (refusee !== null) return montrerLeRefus(contexte, refusee);\n",
+    apres: "",
     epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
   },
   // #231, revue de la PR #305 (relecteur 2, seconde passe) : la condition qui CHOISIT la politique de
@@ -1792,10 +1791,11 @@ export const MUTATIONS = Object.freeze([
   // la relecture d'un inventaire dont on ne sait rien.
   {
     nom: "un inventaire INCONNU n'est pas un coffre à créer : aucune politique de création",
-    garde: "relireLaPhrase — `inventaire.inconnu !== true` dans le choix de la création (#231)",
+    garde: "relireLaPhrase — le refus typé `indeterminate` dans le choix de la création (#231)",
     fichier: INTERFACE,
-    avant: "  const creation = !inventaire.present && inventaire.inconnu !== true;\n",
-    apres: "  const creation = !inventaire.present;\n",
+    avant:
+      "  const creation =\n    donnees?.present !== true && donnees?.refus?.code !== STORAGE_ERROR_CODES.indeterminate;\n",
+    apres: "  const creation = donnees?.present !== true;\n",
     epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
