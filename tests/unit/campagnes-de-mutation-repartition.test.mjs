@@ -7,6 +7,7 @@
 // et `npm run check:mutations` sans argument joue encore tout.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import test from "node:test";
 
@@ -97,4 +98,26 @@ test("sans argument, tout est joué ; un lot ou une liste ne joue que sa sélect
     () => selectionner({ lot: 1, campagnes: "magasin" }),
     /lot.*campagnes|campagnes.*lot/u,
   );
+});
+
+test("une sélection vide est refusée, au lieu de rendre 0/0 avec le code 0 (#328, relecture 2)", () => {
+  for (const vide of ["", ",", ",,", " , "]) {
+    assert.throws(() => selectionner({ campagnes: vide }), /vide|aucune/u, JSON.stringify(vide));
+  }
+  const resultat = spawnSync(
+    process.execPath,
+    ["tools/rejouer-les-campagnes.mjs", "--campagnes=,,"],
+    {
+      cwd: new URL("../..", import.meta.url),
+      encoding: "utf8",
+      timeout: 20_000,
+    },
+  );
+  assert.notEqual(resultat.status, 0, resultat.stdout);
+});
+
+test("une tranche valide mais vide, ou une table vide, est refusée par le moteur", () => {
+  assert.throws(() => filtrerParTranche([{ nom: "x" }, { nom: "y" }], "3/4"), /vide/u);
+  assert.throws(() => filtrerParTranche([], undefined), /vide/u);
+  assert.throws(() => filtrerParTranche([], "1/2"), /vide/u);
 });

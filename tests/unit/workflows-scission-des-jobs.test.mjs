@@ -140,3 +140,27 @@ test("`npm run check` rejoue exactement l'union des deux moitiés, sans rien per
   assert.match(parcours, /npm run check:statique/u);
   assert.match(parcours, /npm run check:parcours/u);
 });
+
+test("chaque lot et chaque tranche dépose une attestation exigée, et les jobs agrégés les vérifient (#328)", () => {
+  const lots = bloc("mutations-lot");
+  assert.match(lots, /tools\/attestations-ci\.mjs/u);
+  const depot = lots.match(/name: campagnes-de-mutation-lot-[\s\S]*?retention-days/u)?.[0];
+  assert.match(depot, /if-no-files-found: error/u);
+
+  const final = bloc("mutations");
+  assert.match(final, /uses: actions\/download-artifact@[0-9a-f]{40}/u);
+  assert.match(final, /node tools\/attestations-ci\.mjs verifier mutations /u);
+  assert.ok(
+    final.indexOf("attestations-ci.mjs verifier") < final.indexOf("upload-artifact/merge"),
+    "la vérification précède la fusion",
+  );
+
+  const navigateur = bloc("check-navigateur");
+  assert.match(navigateur, /tools\/attestations-ci\.mjs attester navigateur /u);
+  const depotNav = navigateur.match(/name: attestation-navigateur-[\s\S]*?retention-days/u)?.[0];
+  assert.match(depotNav, /if-no-files-found: error/u);
+
+  const gate = bloc("qualite");
+  assert.match(gate, /uses: actions\/download-artifact@[0-9a-f]{40}/u);
+  assert.match(gate, /node tools\/attestations-ci\.mjs verifier navigateur /u);
+});
