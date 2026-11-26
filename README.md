@@ -12,6 +12,29 @@ dépendre d'un serveur applicatif permanent.
 RailsBox Vault est un projet expérimental. Il ne protège encore aucune donnée réelle et ne doit pas
 être utilisé en production.
 
+### Où en est le projet (26 novembre 2026)
+
+Ce qui fonctionne, éprouvé en intégration continue sous Chromium :
+
+- le parcours guidé en neuf étapes, de la création du coffre à la révocation (ADR 0040) ;
+- une écriture acquittée par Rails est durable dès l'acquittement (#209) ;
+- la reprise par instantané après un verrouillage : p95 de 0,84 s
+  ([attributs de qualité](docs/quality-attributes.md)) ;
+- le démarrage hors connexion : le descripteur est scellé (ADR 0046) et, depuis le 26 novembre 2026,
+  un Service Worker de la coquille sert la réserve (ADR 0048).
+
+Ce qui manque avant un premier usage, même sur des données non sensibles :
+
+- aucune version n'est publiée et la chaîne de publication n'a jamais été exercée sur un hébergeur
+  réel (#124, #125) ;
+- aucune personne extérieure au projet n'a encore suivi le parcours sans aide (#195) ;
+- seuls Chrome et Edge mènent le parcours à son terme : Firefox n'atteint pas l'étape 4 (ADR 0038),
+  et Safari n'a pas été mesuré (#40) ;
+- le premier démarrage, à froid, prend environ deux minutes (p95 de 125,9 s), et son pic de mémoire
+  dépasse la cible (#238).
+
+L'usage sur des données sensibles reste fermé par les conditions de [SECURITY.md](SECURITY.md).
+
 ### Limites de sécurité à connaître
 
 - un retour arrière complet et cohérent du stockage local ne peut pas être distingué de l'état
@@ -197,7 +220,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0045 — les workflows de l'image et des épreuves VM restent sur ubuntu-24.04, à titre provisoire](docs/decisions/0045-les-workflows-d-image-restent-sur-ubuntu-24-04.md)
 - [ADR 0046 — le descripteur scellé et le démarrage hors connexion : HMAC sous la clé du coffre, « injoignable » = un `TypeError` de `fetch`](docs/decisions/0046-le-descripteur-scelle-et-le-demarrage-hors-connexion.md)
 - [ADR 0047 — un rejet « transitoire » du stockage n'est pas une absence : état et refus indéterminés, réessayables](docs/decisions/0047-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md)
-- [ADR 0048 — le Service Worker de la coquille sert la réserve hors connexion : un seul, vérifié avant de servir, borné au bootstrap puis aux clients contrôlés (proposé ; en vigueur avec D1h-b)](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
+- [ADR 0048 — le Service Worker de la coquille sert la réserve hors connexion : un seul, vérifié avant de servir, borné au bootstrap puis aux clients contrôlés (en vigueur depuis D1h-b, #323)](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
 - [ADR 0049 — le modèle d'état de la révocation d'urgence](docs/decisions/0049-le-modele-d-etat-de-la-revocation.md)
 
 ## Licence
