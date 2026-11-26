@@ -68,3 +68,6 @@ export const LIMITES = Object.freeze({
     lien: LIEN_DU_DETAIL,
   }),
 });
+
+/** Squelette de l'épreuve rouge : l'implémentation naïve montre les limites partout. */
+export const limitesAffichees = () => true;

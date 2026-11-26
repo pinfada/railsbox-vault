@@ -12,7 +12,9 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { LIMITES } from "../../src/coquille/limites-de-cette-version.mjs";
+import { LIMITES, limitesAffichees } from "../../src/coquille/limites-de-cette-version.mjs";
+import { ECRANS } from "../../src/coquille/parcours.mjs";
+import { ECRANS_DE_L_ENTREE } from "../../src/coquille/textes-du-parcours.mjs";
 
 const lire = (chemin) => readFile(new URL(`../../${chemin}`, import.meta.url), "utf8");
 
@@ -93,14 +95,36 @@ test("le lien de détail désigne un fichier qui existe dans le dépôt", async 
   await access(new URL(`../../${chemin}`, import.meta.url));
 });
 
-test("la page porte la section, la branche sur les textes, et ne la montre qu'à l'entrée", async () => {
-  const [html, promesse, page] = await Promise.all([
-    lire("public/index.html"),
-    lire("public/coquille/promesse-de-l-entree.mjs"),
-    lire("public/coquille/parcours-de-la-page.mjs"),
-  ]);
+test("le document porte la section des limites, nommée par son titre", async () => {
+  const html = await lire("public/index.html");
   assert.match(html, /<section id="limites"[^>]*aria-labelledby="limites-titre"/);
   assert.match(html, /<h2 id="limites-titre"/);
-  assert.match(promesse, /LIMITES/, "la section n'est pas écrite depuis les textes du parcours");
-  assert.match(page, /noeud\("limites"\)\.hidden = ecranId === "rouvrir"/);
+});
+
+/**
+ * LA RÈGLE, écrite : les limites se disent à l'écran de CRÉATION, avant que la personne crée quoi que
+ * ce soit. Elles ne reviennent à aucun autre écran — ni à la réouverture, où la personne les a déjà
+ * lues et où le champ de la phrase doit rester à l'écran (ADR 0043, R1-bis), ni aux neuf étapes. La
+ * décision est une fonction de `src/` : la page ne fait que l'appliquer, et la campagne de mutation
+ * peut la retirer.
+ */
+test("les limites s'affichent à la création, et à aucun autre écran, la réouverture comprise", () => {
+  for (const ecranId of Object.keys(ECRANS)) {
+    assert.equal(
+      limitesAffichees(ecranId),
+      ecranId === "creer",
+      `l'écran « ${ecranId} » ${ecranId === "creer" ? "doit" : "ne doit pas"} montrer les limites`,
+    );
+  }
+  assert.equal(limitesAffichees("rouvrir"), false);
+});
+
+test("les limites ne s'affichent que sur un écran d'entrée, et jamais sur un écran inconnu", () => {
+  // Elles sont écrites DANS la promesse : un écran qui les montrerait sans la promesse ne les verrait pas.
+  for (const ecranId of Object.keys(ECRANS)) {
+    if (limitesAffichees(ecranId)) assert.ok(ECRANS_DE_L_ENTREE.includes(ecranId), ecranId);
+  }
+  for (const inconnu of [undefined, null, "", "Creer", "creer ", "inconnu"]) {
+    assert.equal(limitesAffichees(inconnu), false, String(inconnu));
+  }
 });
