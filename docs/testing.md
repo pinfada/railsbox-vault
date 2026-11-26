@@ -60,7 +60,7 @@ provenance attestée et le SBOM complet de la distribution restent à réaliser.
 | `npm run test:rythme`             | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |                                                                                                                                                                                                                           environ 18 min, **à la demande** |
 | `npm test`                        | suites unitaire et navigateur                                                                                                    |                                                                                                                                                                                                                                                   secondes |
 | `npm run check`                   | lint, format et toutes les suites actuelles                                                                                      | environ 7 min hors installation (#147 : la campagne de mutation en prend 50 s ; #161 : la frontière de la coquille, trois moteurs, en prend 2 min 30 s ; #170 : les fins d'onglet en prennent 55 s ; #192 : le chemin servi, trois moteurs, en prend 80 s) |
-| `npm run check:mutations`         | les ONZE campagnes de mutation, en séquence, table à l'appui (#196)                                                              |                                                                                                                                                          de 5 min 24 s à 8 min 17 s mesurés (charge du poste) — job CI séparé, jamais dans `npm run check` |
+| `npm run check:mutations`         | TOUTES les campagnes de mutation, en séquence ; `-- --lot=N` un lot de la CI (#328), table à l'appui (#196)                      |                                                                                                                                                          de 5 min 24 s à 8 min 17 s mesurés (charge du poste) — job CI séparé, jamais dans `npm run check` |
 
 La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas), auquel se sont
 ajoutés l'export vérifiable (#11), la restauration inter-origine (#12) et la migration de format
@@ -195,6 +195,93 @@ seuil de cinq minutes posé pour brancher directement dans `check` : le job **«
 `node --test` sur des fonctions pures de `src/`. Quinze minutes de plafond, mesuré contre les 8 min
 17 s les plus lentes observées. **Ce check doit être ajouté aux « required status checks » de la
 protection de branche.**
+
+### La scission des campagnes de mutation et du job de produit (#328)
+
+Le 26 novembre 2026, après la fusion de #323, deux jobs du contrôle requis ont été annulés à leur
+plafond sur `main` (run 45778067983, `5948086`) : « Campagnes de mutation » à 15 min (deux fois),
+puis « Vérifications du produit » à 36 min, vert à la relance en 35 min. La réponse est de
+**scinder**, pas de relever un plafond : aucun `timeout-minutes` n'a bougé, aucune épreuve n'est
+retirée.
+
+**Mutations.** Mesure de départ (PR #323, run 45771991219, 859 s) : `coquille` 492 s (526 mutants),
+`reserve` 105 s, `magasin` 83 s, `hors-ligne` 49 s, `recuperation` 23 s, `cycle-de-vie` 20 s,
+`archive-recuperation` 19 s, `hierarchie-de-cles` 13 s, `dephasage` 10 s, `enveloppe-v2` 9 s,
+`verrouillage` 9 s, `paquet-applicatif` 8 s, `fins-d-onglet` 7 s, `revocation-urgence` 5 s,
+`instantane` 3 s, `persistance` 1 s. `coquille` seule dépasse la moitié du plafond (450 s) : la
+scission par campagne entière ne suffit pas, la table de `coquille` est donc coupée en quatre
+**tranches** (`VAULT_MUTATION_TRANCHE=i/n` lue par `tools/moteur-de-mutation.mjs` : les mutants
+d'indice ≡ i−1 modulo n). `LOTS` (`tools/rejouer-les-campagnes.mjs`) répartit en quatre lots ≈ 190 à
+235 s ; `npm run check:mutations -- --lot=N` joue un lot, `-- --campagnes=a,b@1/4` une liste, et
+`npm run check:mutations` sans argument joue TOUT.
+`tests/unit/campagnes-de-mutation-repartition.test.mjs` garde que chaque campagne et chaque tranche
+figure exactement une fois, qu'aucun script `muter-gardes-*.mjs` n'est oublié, et que les tranches
+partitionnent la table.
+
+**Un seul statut requis.** La matrice `mutations-lot` (« Mutations (lot N) », `fail-fast: false`)
+est suivie du job « Campagnes de mutation » (`needs: [mutations-lot]`, `if: always()`), qui n'est
+vert que si le résultat agrégé de la matrice est `success` : un lot en échec, annulé, sauté ou
+absent le fait échouer, comme « Qualité et tests ». Les tables des lots sont fusionnées en un seul
+artefact `campagnes-de-mutation` (`reports/mutations-lot-N.json`).
+`tests/unit/workflows-scission-des-jobs.test.mjs` garde la matrice égale à `LOTS`, l'exigence du job
+final et les plafonds.
+
+**Produit.** Mesure du run 45778067983 : installation des moteurs de navigateur **12 min 13 s** (3
+min 36 s sur la PR #323), vérifications **22 min 24 s** dans les deux cas : la variance est dans
+l'installation. Le job est scindé en `check-navigateur` (`npm run check:navigateur` : lint, format,
+unitaires, suite navigateur) et `check-parcours` (`npm run check:parcours` : apparence, compat, fins
+d'onglet, `publier:check`). `npm run check` reste la suite complète (les deux, en séquence) ; le
+cliquet vérifie que l'union des deux moitiés est exactement l'ancienne liste de commandes. « Qualité
+et tests » exige chacun des deux jobs. Le premier essai (un seul job navigateur) a mesuré **22 min
+45 s** (installation 4 min 47 s, suite 17 min 49 s), au-dessus de la moitié du plafond : la suite
+navigateur est donc coupée en deux tranches Playwright (`npm run test:browser -- --shard=i/2`, et
+non derrière l'alias `check:navigateur`, où npm absorbe `--shard` : le run 45802424036 a rejoué 541
+épreuves dans chaque tranche avant que ce défaut soit vu), et lint, format et unitaires rejoignent
+le job des parcours.
+
+**Durées mesurées (run CI 45805649681, PR #328, tous verts) :**
+
+| Job                                       | Durée                             | Plafond | Moitié du plafond |
+| ----------------------------------------- | --------------------------------- | ------- | ----------------- |
+| Mutations (lot 1)                         | 3 min 50 s                        | 15 min  | 7 min 30 s        |
+| Mutations (lot 2)                         | 4 min 05 s                        | 15 min  | 7 min 30 s        |
+| Mutations (lot 3)                         | 4 min 54 s                        | 15 min  | 7 min 30 s        |
+| Mutations (lot 4)                         | 4 min 03 s                        | 15 min  | 7 min 30 s        |
+| Campagnes de mutation (agrégat)           | 6 s                               | 15 min  | —                 |
+| Vérifications du produit (navigateur 1/2) | 9 min 58 s                        | 25 min  | 12 min 30 s       |
+| Vérifications du produit (navigateur 2/2) | 11 min 07 s                       | 25 min  | 12 min 30 s       |
+| Vérifications du produit (parcours)       | 7 min 52 s                        | 20 min  | 10 min            |
+| Qualité et tests (agrégat)                | 6 s ; 11 min 10 s de bout en bout | 2 min   | —                 |
+
+Les plafonds du produit BAISSENT (36 → 25 et 20). **Écart dit en chiffres :** ces durées ont
+l'installation des moteurs à 30–40 s ; le jour de l'annulation elle a pris 12 min 13 s. Dans ce cas
+un job navigateur approcherait 22 min, sous son plafond de 25 min mais PAS sous la moitié. La
+scission enlève la somme des deux moitiés d'un seul job ; elle ne supprime pas la variance de
+l'installation (non traitée ici).
+
+**Attestations (relecture 2 de #329).** Le résultat agrégé d'une matrice ne prouve pas que chaque
+entrée a été jouée. Chaque lot de mutation dépose donc une attestation
+(`tools/attestations-ci.mjs attester mutations` : son numéro, les entrées jouées, ses comptes ;
+envoi en `if-no-files-found: error`), et chaque tranche navigateur la sienne (`attester navigateur`,
+tirée des `stats` du rapport Playwright). Les jobs agrégés (« Campagnes de mutation », « Qualité et
+tests ») téléchargent tout et lancent `verifier` : il EXIGE exactement les lots de `LOTS` et les
+tranches 1 à 2, chacun UNE fois, non vide (au moins un mutant, une épreuve réussie), sans survivant
+ni épreuve en échec, sinon code 1. `tests/unit/attestations-ci.test.mjs` fait échouer l'agrégation
+pour un lot manquant, en double, inattendu, vide, avec un survivant ou des entrées différentes. Une
+sélection vide (`--campagnes=,,`), une tranche valide mais vide et une table vide sont refusées
+(code non nul), au lieu de rendre 0/0.
+
+**Campagne `outillage-ci` (relecture 3 de #329).** Dix-septième campagne, dans le lot 4
+(`tools/muter-gardes-outillage-ci.mjs`) : **27/27 mutants tués**, un par garde du vérificateur
+d'attestations (lot et tranche absents, en double, hors bornes, vides, survivants, `ok` global ET de
+chaque campagne, comptes de chaque campagne et leur somme, CLI), du refus des tranches et tables
+vides (`moteur-de-mutation.mjs`) et du refus des sélections et campagnes vides
+(`rejouer-les-campagnes.mjs`). Neuf mutants ont d'abord survécu : les épreuves ont été resserrées ou
+ajoutées, jamais les mutants retirés.
+
+**Limites.** Les durées par lot dépendent de l'exécutant (#243). Une attestation prouve le comptage
+déposé par le lot, pas son exactitude : un lot qui écrirait une attestation fausse la passerait ;
+les artefacts d'un run ne se mélangent pas à ceux d'un autre.
 
 **Réarmer une campagne qui a dérivé.** Un mutant SURVIVANT (« le texte muté ne fait plus rougir
 l'épreuve ») reçoit l'épreuve qui le tue — jamais un retrait pour faire passer le score. Un mutant

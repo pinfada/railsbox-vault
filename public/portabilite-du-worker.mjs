@@ -61,6 +61,7 @@ import {
   openOpfsVolumeFile,
   removeOpfsVolume,
   statOpfsVolume,
+  voisinsDunVolume,
 } from "/src/vm/opfs-sync-access.mjs";
 import { readSidecarBytes, writeSidecarBytes } from "/src/vm/opfs-volume-open.mjs";
 import { bindNavigatorStorage, createStorageBudget } from "/src/vm/storage-budget.mjs";
@@ -146,6 +147,16 @@ export const PRIMITIVES_OPFS = Object.freeze({
     }
   },
   retirer: removeOpfsVolume,
+  /**
+   * Le VERROU du volume `coquille` : le handle exclusif que l'ouverture prend, pris par une restauration
+   * avant d'écrire (#311, C5). Il CRÉE le fichier s'il n'existe pas — vide, donc « pas un volume ».
+   */
+  prendreLeVolume: () => openOpfsSyncAccess(VOLUME_DE_LA_COQUILLE),
+  /** Vide le fichier tenu : on ne retire pas, sous son handle, un fichier qu'on tient. */
+  async viderLeVolume(handle) {
+    handle.truncate(0);
+    handle.flush();
+  },
   ecrireVoisin: writeSidecarBytes,
   ouvrirLeDisque,
   async ouvrirLePuits(nom) {
@@ -358,16 +369,44 @@ async function restaurer(contexte, message, correlation) {
   const lu = await prim.lireLeDescripteur();
   const expectations = lu.present ? { app: { id: lu.descripteur.application.id } } : {};
 
-  return contexte.enBattant(correlation, async () => {
+  return contexte.enBattant(correlation, () =>
+    restaurerSousLeVerrou(contexte, { archive, expectations }, correlation),
+  );
+}
+
+/**
+ * Restaure SOUS le verrou du volume `coquille` — celui de l'ouverture —, pris AVANT la première écriture.
+ *
+ * Le constat de `restaurer` date d'avant plusieurs attentes (la lecture de l'archive, celle du
+ * descripteur, la file du canal) : entre lui et l'écriture de `coquille.cles`, un autre onglet a pu
+ * CRÉER son coffre, l'ouvrir, y imprimer un code — et la restauration, admise sur un emplacement vide,
+ * aurait remplacé son enveloppe (revue de sécurité de la PR #314, constat 1). La cible d'import ne
+ * verrouille que le disque applicatif ; ce volume-ci, que l'ouverture et la création verrouillent, ne
+ * l'était pas.
+ *
+ * Le verrou est donc pris d'abord — un autre détenteur le fait refuser `VAULT_STORAGE_BUSY` —, puis
+ * l'emplacement est CONSTATÉ À NOUVEAU sous lui : plus personne ne peut naître ni s'ouvrir pendant ce
+ * qui suit. Un emplacement plus vide rend le refus que `restaurer` rend déjà, avant toute écriture.
+ * Il n'est relâché qu'après l'import, c'est-à-dire après l'écriture de l'enveloppe et le manifeste.
+ */
+async function restaurerSousLeVerrou(contexte, { archive, expectations }, correlation) {
+  const { interne, prim } = contexte;
+  const verrou = await prim.prendreLeVolume();
+  try {
+    const decision = decisionDeRestauration(await constaterLEmplacement(prim));
+    if (decision.code !== null) throw refus(decision.code);
     // La RÉPARATION d'une restauration coupée (ADR 0039, décision 5) : ce qu'elle a laissé ne
     // s'ouvre par rien — aucun manifeste —, et l'utilisateur tient encore l'archive qui le redonne.
     //
     // L'ORDRE est la garde (revue de la PR #208, constat 3) : `coquille` d'abord, qui emporte
     // l'enveloppe `coquille.cles`, puis le disque. Coupée entre les deux, la réparation laisse un
     // disque SANS enveloppe — une restauration interrompue, que le même geste reprend. Dans l'ordre
-    // inverse, elle laissait une enveloppe sans disque : un « coffre » que le code ouvrait.
+    // inverse, elle laissait une enveloppe sans disque : un « coffre » que le code ouvrait. Le fichier
+    // `coquille` étant TENU, il est vidé par son handle, après ses voisins ; un fichier vide n'est pas
+    // un volume (`constaterLEmplacement`), et il naîtra neuf au premier déverrouillage.
     if (decision.reparer) {
-      await prim.retirer(VOLUME_DE_LA_COQUILLE);
+      for (const voisin of voisinsDunVolume(VOLUME_DE_LA_COQUILLE)) await prim.retirer(voisin);
+      await prim.viderLeVolume(verrou);
       await prim.retirer(NOM_DU_VOLUME_APPLICATIF);
     }
     const cible = cibleDuCoffre(prim.cibleDImport(NOM_DU_VOLUME_APPLICATIF), {
@@ -398,7 +437,9 @@ async function restaurer(contexte, message, correlation) {
       volumeCoquille: "a-naitre",
       barrieres: interne.barrieres,
     });
-  });
+  } finally {
+    verrou.close();
+  }
 }
 
 /** Les premiers octets d'une archive : le préambule, puis l'en-tête qu'il annonce, borné. */

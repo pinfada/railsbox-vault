@@ -481,7 +481,62 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
 11. **le déverrouillage crée le coffre s'il n'existe pas**, sous la phrase ou la passkey présentée.
     C'est ce que faisait #161 avec les clés du harnais, et c'est ce qui rend un coffre neuf ouvrable
     ; un flux de création NOMMÉ — qui dirait « vous créez un coffre » avant de le créer — appartient
-    au cycle de vie assemblé.
+    au cycle de vie assemblé ;
+12. **l'enveloppe est ouverte AVANT le handle du volume, et REVALIDÉE sous lui** (#311, tranche C5
+    du lot C). **Note datée du 19 novembre 2026.** Le déverrouillage obtient la clé de volume en
+    ouvrant l'enveloppe, puis prend le handle exclusif : entre les deux, un autre onglet qui tenait
+    le volume pouvait révoquer l'emplacement présenté puis fermer, et le premier onglet ouvrait le
+    volume sous une KEK que l'enveloppe refusait déjà — « coffre ouvert », clé révoquée. Démontré
+    par le spike `spike/c1-course-onglets` @ `3ca0c6c` (bibliothèque, deux Workers réels), puis sur
+    le Worker de produit par `tests/browser/coquille-course-entre-onglets.spec.mjs`.
+
+    **Décision : deux passes.** La passe 1, hors handle, est en LECTURE SEULE (`enLectureSeule` :
+    aucune écriture d'enveloppe, la migration de page v1→v2 comprise) ; elle obtient la clé de
+    volume. L'ouvreur de volume reçoit un crochet optionnel `sousLeHandle`, appelé une fois le
+    handle pris et la clé exigée — après la seule lecture de l'en-tête, qui est public, et avant
+    toute écriture ou tout accès authentifié. Le Worker y rouvre l'enveloppe (passe 2, migration
+    comprise) et exige le MÊME emplacement et la MÊME clé de volume
+    (`src/coquille/revalidation-sous-le-handle.mjs`). Tout refus rend le handle, efface la clé et
+    rend `VAULT_ENVELOPPE_CLE_REFUSEE` — le refus d'une clé inconnue, par le même parcours, sans
+    nouveau code. Rien n'est publié « ouvert » avant la passe 2. Coût : une ouverture d'enveloppe de
+    plus en lecture, ≈ 2,5 ms mesurées au spike. Aucun format, aucun message, aucun vecteur.
+
+    **Ce que cela tient** : une session ne finit jamais « ouverte » sous une KEK que l'enveloppe
+    refuse AU MOMENT où elle prend le handle. Tant qu'elle le tient, aucun autre onglet ne peut
+    retirer de clé : la révocation d'urgence et l'ajout d'un moyen de récupération exigent un coffre
+    ouvert, donc un handle tenu. La migration de page, seule autre écriture sur un coffre établi,
+    est ramenée sous le handle ; hors du handle, elle pouvait republier l'ANCIENNE liste
+    d'emplacements par-dessus une révocation.
+
+    **Le même verrou pour la CRÉATION et la RESTAURATION** (revue de sécurité de la PR #314, constat
+    1 ; #313). Elles écrivent l'enveloppe avant le volume (ADR 0020), donc avant toute prise de
+    handle : une restauration admise sur un emplacement vide, suspendue, pouvait reprendre après
+    qu'un autre onglet avait créé son coffre — et remplacer son enveloppe ; deux créations
+    simultanées de même. Elles prennent désormais le handle exclusif du volume `coquille` — celui de
+    l'ouverture — AVANT d'écrire, puis **refont le constat COMPLET de l'emplacement sous ce verrou**
+    (le même que celui du début du geste, avec les mêmes refus typés) avant toute écriture, et ne le
+    relâchent qu'après : la création le PASSE à l'ouvreur, sans trou jusqu'à la naissance du volume
+    ; la restauration le tient pendant tout l'import. Un autre détenteur les fait refuser
+    `VAULT_STORAGE_BUSY`. Un emplacement que le constat refuse l'est : pour la restauration
+    `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` quand il n'est plus vide ; pour la création le refus du
+    constat (`RESTAURATION_INTERROMPUE`, `DISQUE_D_UN_AUTRE_COFFRE`, `COFFRE_ANTERIEUR`,
+    `COFFRE_SERVI_SANS_MANIFESTE`), ou `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` quand l'état a CHANGÉ
+    depuis le constat qui l'a décidée — elle ne réinterprète pas un état qu'elle avait admis (un
+    manifeste sans enveloppe l'était déjà). Une enveloppe déjà là reste le refus de `creerEnveloppe`
+    (`VAULT_ENVELOPPE_PRESENTE`). La clé de volume tirée par la création est effacée sur tout échec,
+    y compris une prise de handle rejetée. Prendre le handle d'un fichier inexistant le CRÉE vide :
+    `constaterLEmplacement` lit désormais un fichier `coquille` de taille nulle comme absent (un
+    volume né porte toujours son en-tête). La réparation d'une restauration coupée vide le fichier
+    TENU par son handle, après ses voisins, au lieu de le retirer.
+
+    **Ce que cela ne tient pas** — et c'est écrit dans `SECURITY.md`, limite 13 : (a) un détenteur
+    antérieur de la clé de volume la garde (limite 12 : révoquer ne rechiffre pas ; la rotation de
+    la clé de volume reste hors périmètre) ; (b) le verrou est celui de l'OPFS : il lie le code qui
+    le prend. `ouvrirVolumeParKek` et les bancs `public/vm/*` gardent l'ancien ordre, hors du chemin
+    servi ([#313](https://github.com/pinfada/railsbox-vault/issues/313)) ; (c) la restauration n'est
+    toujours pas atomique : une coupure en cours d'import laisse une restauration interrompue, que
+    le même geste répare (ADR 0039) ; (d) la suspension réelle d'un onglet d'arrière-plan et WebKit
+    (pas d'OPFS synchrone) ne sont pas mesurés ; la course est rejouée sous Chromium et Firefox.
 
 ## Alternatives rejetées
 

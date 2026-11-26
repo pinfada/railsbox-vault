@@ -443,7 +443,8 @@ async function tenirLaClotureHorsTransaction(backend, options, clotureParDatatio
 }
 
 /**
- * Saisit le support, EXIGE la clé, puis alloue si le volume naît. L'ordre est le sujet.
+ * Saisit le support, EXIGE la clé, REVALIDE sous le handle (`sousLeHandle`, #311), puis alloue si le
+ * volume naît. L'ordre est le sujet.
  *
  * L'en-tête est lu avant que la clé ne soit exigée, et c'est un diagnostic : un fichier d'un format
  * antérieur n'a pas besoin d'une clé pour qu'on sache qu'il ne s'ouvre pas ici, et lui répondre
@@ -457,10 +458,20 @@ async function tenirLaClotureHorsTransaction(backend, options, clotureParDatatio
  * ce point que `installerGenerationOuFermer` ouvrirait `.gen` et `.temoin`, et un témoin périmé lu
  * après ce point ferait refuser un volume qui vient de naître.
  */
-async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHandle }) {
+async function saisirLireEtAllouer({
+  name,
+  size,
+  cle,
+  identifiantVolume,
+  openHandle,
+  sousLeHandle,
+}) {
   const saisi = await saisirSupport({ name, size, identifiantVolume, openHandle });
   try {
     exigerCleDeVolume(name, cle);
+    // Le crochet de #311 : l'appelant REVALIDE sa clé SOUS le handle, avant la première écriture et
+    // avant tout accès authentifié. Un refus rend le handle comme n'importe quel autre.
+    await sousLeHandle?.();
   } catch (refus) {
     throw abandonHandle(saisi.handle, name, refus);
   }
@@ -500,6 +511,11 @@ function construireBackend({ name, saisi, scellement, journal, faults, flushDela
  *   fabrique une avant #21 ; les bancs la reçoivent du harnais sous jeton (`cle-de-volume.mjs`).
  *   `identifiantVolume` est l'identifiant que le MANIFESTE déclare. À la création il est inscrit
  *   dans l'en-tête ; à la réouverture il est confronté à celui du fichier.
+ *   `sousLeHandle` (#311) est un crochet ASYNCHRONE que l'ouvreur appelle une fois le handle
+ *   exclusif pris et la clé exigée — après la lecture de l'en-tête, qui est publique, et AVANT toute
+ *   écriture (pose d'en-tête, retrait d'orphelins, scellement) et tout accès authentifié (racine,
+ *   génération, secteurs). Il sert à l'appelant qui a obtenu `cle` AVANT d'être seul : il y relit ce
+ *   qui la lui a donnée. S'il lève, le handle est rendu et l'erreur est relancée telle quelle.
  *   `openHandle` est le point d'injection du support : le vrai OPFS en production, un double
  *   déterministe dans les tests unitaires.
  *   `fautesFraicheur` vise les VOISINS de fraîcheur (#19) — la région d'authentification et le
@@ -527,11 +543,13 @@ export async function openOpfsVolume({
   scellementsReportes = null,
   seuilPointDeControle,
   clotureParDatation = false,
+  sousLeHandle = null,
 } = {}) {
   assertVolumeLibre(name);
   if (size !== undefined) assertBlockGeometry(size);
 
-  const saisi = await saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHandle });
+  const lecture = { name, size, cle, identifiantVolume, openHandle, sousLeHandle };
+  const saisi = await saisirLireEtAllouer(lecture);
   const scellement = await scellementDeLaSession(saisi, cle, scellementsReportes);
   const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
   if (saisi.naissance) await scellerLeVolumeNeuf(backend, name);
