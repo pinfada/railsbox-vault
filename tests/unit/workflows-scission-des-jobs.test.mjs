@@ -119,14 +119,24 @@ test("`npm run check` rejoue exactement l'union des deux moitiés, sans rien per
   assert.deepEqual(decomposer("check"), [
     "npm run lint",
     "npm run format:check",
-    "npm test",
+    "npm run test:unit",
+    "npm run test:browser",
     "npm run test:apparence",
     "npm run test:compat",
     "npm run test:fins-d-onglet",
     "npm run publier:check",
   ]);
-  assert.ok(paquet.scripts["check:navigateur"]);
-  assert.ok(paquet.scripts["check:parcours"]);
-  assert.match(bloc("check-navigateur"), /npm run check:navigateur/u);
-  assert.match(bloc("check-parcours"), /npm run check:parcours/u);
+  for (const nom of ["check:statique", "check:navigateur", "check:parcours"]) {
+    assert.ok(paquet.scripts[nom], nom);
+  }
+  const navigateur = bloc("check-navigateur");
+  const tranches = navigateur
+    .match(/^ {8}shard: \[(?<l>[\d, ]+)\]$/mu)
+    ?.groups.l.split(",")
+    .map(Number);
+  assert.deepEqual(tranches, [1, 2], "la matrice des tranches Playwright");
+  assert.match(navigateur, /npm run check:navigateur -- --shard=\$\{\{ matrix\.shard \}\}\/2/u);
+  const parcours = bloc("check-parcours");
+  assert.match(parcours, /npm run check:statique/u);
+  assert.match(parcours, /npm run check:parcours/u);
 });

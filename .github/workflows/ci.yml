@@ -80,12 +80,19 @@ jobs:
   # variance est dans l'installation, pas dans les épreuves. Les deux moitiés paient chacune cette
   # installation ; elles ne s'ajoutent plus. `npm run check` reste la suite complète en local.
   #
-  # Moitié 1 : lint, format, unitaires et suite navigateur (`npm run check:navigateur`).
+  # Moitié 1 : la suite navigateur (`npm run check:navigateur`), en DEUX tranches Playwright
+  # (`--shard`) : la mesure du premier run de #328 l'a donnée à 22 min 45 s en un seul job (installation 4
+  # min 47 s, suite 17 min 49 s), au-dessus de la moitié du plafond de 36 min.
   check-navigateur:
-    name: Vérifications du produit (navigateur)
+    name: Vérifications du produit (navigateur ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
-    # MESURE : voir `docs/testing.md`, « La scission du job de produit (#328) ».
-    timeout-minutes: 36
+    # MESURE : voir `docs/testing.md`, « La scission des campagnes de mutation et du job de produit
+    # (#328) ». Le plafond BAISSE de 36 à 25 min : une tranche attendue à ≈ 10 min de suite.
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -105,7 +112,7 @@ jobs:
       # `xvfb-run` : voir le commentaire historique du job « parcours » ci-dessous — la mesure du
       # bfcache de #170 exige un Chromium FENÊTRÉ, donc un affichage.
       - name: Vérifications
-        run: xvfb-run --auto-servernum npm run check:navigateur
+        run: xvfb-run --auto-servernum npm run check:navigateur -- --shard=${{ matrix.shard }}/2
 
       - name: Stabilité des navigations Firefox
         if: always()
@@ -115,12 +122,13 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-report-navigateur
+          name: playwright-report-navigateur-${{ matrix.shard }}
           path: playwright-report/
           if-no-files-found: ignore
           retention-days: 7
 
-  # Moitié 2 : apparence, compatibilité, fins d'onglet et publication (`npm run check:parcours`).
+  # Moitié 2 : lint, format, unitaires (`check:statique`), puis apparence, compatibilité, fins d'onglet
+  # et publication (`check:parcours`). Mesuré à 6 min 51 s de job au premier run de #328.
   check-parcours:
     name: Vérifications du produit (parcours)
     runs-on: ubuntu-latest
@@ -167,7 +175,7 @@ jobs:
     # `test:apparence` (81 épreuves) — aucun blocage, aucune reprise. Vingt-huit minutes ne laissaient plus de
     # marge sur un exécutant qui varie de quatre minutes ; trente-six en laissent huit, comme #177 le demande,
     # et le plafond mord encore (un blocage de 60 s par `navigationTimeout` en coûte au plus deux).
-    timeout-minutes: 36
+    timeout-minutes: 20
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -183,6 +191,9 @@ jobs:
 
       - name: Installation des moteurs de navigateur
         run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Lint, format et unitaires
+        run: npm run check:statique
 
       - name: Vérifications
         run: xvfb-run --auto-servernum npm run check:parcours
