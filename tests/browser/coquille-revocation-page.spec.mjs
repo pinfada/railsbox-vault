@@ -11,14 +11,16 @@
 //  - ajouter un code pendant une confirmation l'OUBLIE ;
 //  - après rechargement, l'indice persisté n'ouvre que « aucun geste de révocation dans cette séance ».
 //
-// WebKit n'offre pas l'OPFS synchrone dans un Worker (`indisponible`) ou rejette `getDirectory()` en session
-// éphémère (`indetermine`, #231) : aucun coffre ne s'y ouvre, et la limite est EXIGÉE ici — `test.skip` avec sa raison mesurée —, pas contournée.
+// Le WebKit ÉPHÉMÈRE n'offre pas l'OPFS synchrone dans un Worker (`indisponible`) ou rejette `getDirectory()`
+// (`indetermine`, #231) : aucun coffre ne s'y ouvre, et la limite est EXIGÉE ici — `test.skip` avec sa raison
+// mesurée, bornée à ce moteur —, pas contournée. Chromium et Firefox ouvrent un coffre : ces états y échouent.
 
 import { expect, test } from "../support/test.mjs";
 
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { TYPES_PRIVILEGIES } from "../../src/coquille/contrat-de-messages.mjs";
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
+import { etatsSansVolume, moteurDe } from "../support/refus-de-capacite.mjs";
 
 const PHRASE = "une phrase assez longue pour la revocation d'urgence 265";
 const DELAI = 90_000;
@@ -70,12 +72,19 @@ async function ouvrirLaCoquille(page, requete = "?vue=complete") {
     timeout: DELAI,
   });
   const etat = (await releve(page)).etat;
-  if ([ETATS_DU_VOLUME.indisponible, ETATS_DU_VOLUME.indetermine].includes(etat)) {
+  // Le saut n'est admis que pour le contexte WebKit ÉPHÉMÈRE, identifié par le MOTEUR DE LA FIXTURE
+  // (`etatsSansVolume`, tests/support/refus-de-capacite.mjs) et jamais par ce que la page affiche :
+  // sous Chromium et Firefox, la liste est vide, et un état sans volume fait ÉCHOUER l'épreuve.
+  if (etatsSansVolume(page).includes(etat)) {
     test.skip(
       true,
-      `WebKit : état « ${etat} » (OPFS synchrone absent, ou getDirectory() rejeté en session éphémère, #231) : aucun coffre ne s'y ouvre (mesuré)`,
+      `WebKit éphémère (moteur ${moteurDe(page)}) : état « ${etat} » (OPFS synchrone absent, ou getDirectory() rejeté en session éphémère, #231) : aucun coffre ne s'y ouvre (mesuré)`,
     );
   }
+  expect(
+    [ETATS_DU_VOLUME.indisponible, ETATS_DU_VOLUME.indetermine].includes(etat),
+    `${moteurDe(page)} doit ouvrir un coffre : un état « ${etat} » est un échec, pas un saut`,
+  ).toBe(false);
 }
 
 const attendreLEtat = (page, etat) =>
