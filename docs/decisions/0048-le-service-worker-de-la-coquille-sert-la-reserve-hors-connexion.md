@@ -756,8 +756,11 @@ l'amendement de l'ADR 0046 § 6 (le texte « `libv86` n'est PAS lié » devient 
    neuf), et **la course à la création** : « vérification suspendue → révocation connue avant la
    reprise → **zéro Worker, zéro clé** » (la vérification complète est suspendue, la révocation est
    observée pendant l'attente, la vérification reprend et rend « tout est bon » : le portail refuse
-   `PERIMEE`), puis la même épreuve sur un **second portail** de la même page (verrouillage,
-   réouverture), l'état de révocation n'ayant pas reculé ;
+   `PERIMEE`), puis le **second portail** : la page n'en appelle qu'**un par document**
+   (verrouiller, rouvrir et la première visite rechargent la page), donc l'état de révocation
+   partagé, non reculé, est éprouvé **en unitaire** sur des portails successifs d'une même page, et
+   gardé par le cliquet `reserve-un-seul-portail` (décision du mainteneur du 26/11/2026, note sous
+   le critère 13) ;
 6. garde fermée : URL inattendue, variantes, redirections, types, destinations, hors origine,
    méthodes ;
 7. retrait par script (onglets actifs, attente, interruption entre caches et désinscription, réseau
@@ -776,10 +779,22 @@ l'amendement de l'ADR 0046 § 6 (le texte « `libv86` n'est PAS lié » devient 
     boot Rails → page rendue ; (b) origine **arrêtée** (+ magasin de #298) → **nouvelle navigation**
     → déverrouillage → boot depuis la réserve ; (c) refus **sans boot**, chacun avec **zéro requête
     de boot** (image, `v86.wasm`) : entrée altérée, supprimée, SW absent, API absente, SW muet,
-    version périmée, retrait, changement de contrôleur, avec les **codes typés du portail**.
-    Chromium pour le boot ; Firefox et WebKit pour ce qui ne dépend pas du guest. Repli si l'E2E ne
-    peut pas servir l'arbre publié avec les deux rôles : `serve.mjs --arbre`, **à décider en
-    D1h-b**.
+    version périmée, retrait, changement de contrôleur — **dans la même page : zéro Worker, zéro
+    requête de démarrage, sonde de comptage à témoin positif et de mordant** —, avec les **codes
+    typés du portail**. Chromium pour le boot ; Firefox et WebKit pour ce qui ne dépend pas du
+    guest. Repli si l'E2E ne peut pas servir l'arbre publié avec les deux rôles :
+    `serve.mjs --arbre`, **à décider en D1h-b**.
+
+> **Décision du mainteneur du 26/11/2026 — « 13c accepté, accord #323 ».** Les critères 5 et 13c
+> sont réécrits ci-dessus avec ce que la preuve établit réellement. Le produit n'a **aucun**
+> parcours de seconde ouverture dans la même page (amendement D1h-b, point 9) : « une nouvelle
+> ouverture dans la même page, refusée après un changement de contrôleur » ne peut donc pas être
+> éprouvée en E2E, et la preuve de remplacement est acceptée : l'**E2E** « zéro Worker, zéro requête
+> de démarrage après un changement de contrôleur, dans la même page », la **garde unitaire** du
+> portail (portails successifs d'une même page : état de révocation partagé, non reculé, anomalie de
+> contrôleur qui ne se défait pas) et le **cliquet** `tests/unit/reserve-un-seul-portail.test.mjs`.
+> Il reste un cliquet de l'accident, pas une preuve (point 9) : si un second appelant du portail
+> apparaît, il rougit et l'E2E de la seconde ouverture devient exigible.
 
 **Preuve.** Unitaires (générateur ; décision pure ; **le script du SW exécuté dans un `vm`** avec
 `caches`/`fetch`/`crypto` factices : altération, manque, installation en échec, activation,
@@ -905,12 +920,12 @@ décision n'est rouvert.
    hébergeur réel ; boot Rails Chromium seul ; l'origine applicative n'est pas dans la réserve ;
    TOFU et origine hostile avant le jalon 6 ; `tests/browser/reserve-messages.spec.mjs` ignorée sous
    Chromium (exception par projet, raison mesurée).
-9. **ÉCART DÉCLARÉ au critère 5 (« second portail de la même page ») et au critère 13c — en attente
-   de la décision du mainteneur.** Le produit n'appelle le portail **qu'une fois par document** ; il
-   n'existe aucun parcours de seconde ouverture dans la même page, donc l'E2E ne peut pas en
-   emprunter un. Preuve (code, hors commentaires) : le Worker de confiance n'est construit qu'à
-   `public/coquille/canal-de-confiance.mjs:65`, par `creerCanalDeConfiance`, dont le seul appelant
-   est le rappel de `public/main.mjs:211` ; le portail (`ouvrirLePortail`,
+9. **ÉCART aux critères 5 (« second portail de la même page ») et 13c — DÉCIDÉ par le mainteneur le
+   26/11/2026 (« 13c accepté, accord #323 »).** Le produit n'appelle le portail **qu'une fois par
+   document** ; il n'existe aucun parcours de seconde ouverture dans la même page, donc l'E2E ne
+   peut pas en emprunter un. Preuve (code, hors commentaires) : le Worker de confiance n'est
+   construit qu'à `public/coquille/canal-de-confiance.mjs:65`, par `creerCanalDeConfiance`, dont le
+   seul appelant est le rappel de `public/main.mjs:211` ; le portail (`ouvrirLePortail`,
    `public/coquille/reserve-de-la-page.mjs:84`) n'est ouvert que par `public/main.mjs:213`
    (`pont.canal = await reserve.ouvrir();`, au niveau du module, évalué une fois par document).
    Verrouiller, rouvrir après la mort du Worker et la préparation de la première visite
@@ -932,7 +947,6 @@ décision n'est rouvert.
    (niveau du module, sans analyse syntaxique), et rougit si un nouvel appelant ÉVIDENT apparaît —
    il faudra alors l'éprouver en E2E. Il ne voit pas un appel renommé, coupé sur plusieurs lignes,
    dynamique ou hors périmètre : l'absence de tout second appelant repose sur la lecture du code
-   ci-dessus. Aucun crochet de test n'est ajouté à la production. **Modification proposée au critère
-   13c** : « après un changement de contrôleur, zéro nouveau Worker et zéro requête de démarrage
-   dans la même page (éprouvé) ; une nouvelle ouverture dans la même page n'existant pas, le critère
-   porte sur le rechargement, qui repasse par le portail normal ».
+   ci-dessus. Aucun crochet de test n'est ajouté à la production. **Décision du mainteneur
+   (26/11/2026)** : les critères 5 et 13c sont réécrits avec ce que la preuve établit (note sous le
+   critère 13 de l'annexe A) ; la preuve de remplacement est acceptée.
