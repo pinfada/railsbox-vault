@@ -10,16 +10,16 @@
 
 ## Matrice des cibles
 
-| Cible                 | Statut                      | Condition de promotion                          |
-| --------------------- | --------------------------- | ----------------------------------------------- |
-| Chromium ordinateur   | mesuré                      | scénario bout en bout du jalon 1                |
-| Firefox ordinateur    | mesuré                      | scénario bout en bout du jalon 1                |
-| WebKit Playwright     | refusé (OPFS absent)        | build WebKit exposant `navigator.storage`       |
-| Safari ordinateur     | candidat                    | sonde exécutée sur un vrai Safari, puis jalon 1 |
-| Navigateurs mobiles   | expérimental                | budgets mémoire, cycle Worker et récupération   |
-| Node 22               | supporté pour développement | contrôle obligatoire `Qualité et tests`         |
-| PostgreSQL dans la VM | candidat                    | persistance #7 et image de référence dédiée     |
-| SQLite dans la VM     | mesuré                      | scénario bout en bout du jalon 1                |
+| Cible                 | Statut                         | Condition de promotion                          |
+| --------------------- | ------------------------------ | ----------------------------------------------- |
+| Chromium ordinateur   | mesuré                         | scénario bout en bout du jalon 1                |
+| Firefox ordinateur    | mesuré                         | scénario bout en bout du jalon 1                |
+| WebKit Playwright     | refusé (OPFS absent ou rejeté) | build WebKit dont `getDirectory()` aboutit      |
+| Safari ordinateur     | candidat                       | sonde exécutée sur un vrai Safari, puis jalon 1 |
+| Navigateurs mobiles   | expérimental                   | budgets mémoire, cycle Worker et récupération   |
+| Node 22               | supporté pour développement    | contrôle obligatoire `Qualité et tests`         |
+| PostgreSQL dans la VM | candidat                       | persistance #7 et image de référence dédiée     |
+| SQLite dans la VM     | mesuré                         | scénario bout en bout du jalon 1                |
 
 La frontière d'origine décidée par l'ADR 0002 a été mesurée séparément sur les trois mêmes moteurs
 et n'y change aucun statut : elle tient partout. Voir « Frontière d'origine » plus bas.
@@ -409,8 +409,10 @@ la directive dit, et c'est ce qui montre que la sonde sait lire un opener quand 
   `ATTENTE_RESOLUTION` / durabilité `INCONNUE`. La sonde de compatibilité, elle, a sa propre borne
   (quatre secondes également) et range cette indétermination sous `denied`, avec le détail « demande
   laissée en attente d'une interaction utilisateur » : c'est le vocabulaire d'un contrat de sonde à
-  trois verdicts, qui ne connaît pas « indéterminé ». **Enfin, WebKit n'expose pas `persist()`** :
-  c'est une absence, jamais un refus, et le produit rend `unsupported`.
+  trois verdicts, qui ne connaît pas « indéterminé ». **Enfin, WebKit 26.5 n'exposait pas
+  `persist()`** : c'était une absence, jamais un refus, et le produit rendait `unsupported`. WebKit
+  27.2 l'expose et rend `false` : le produit rend `denied` (voir la section sur WebKit 26.6 et
+  suivants).
 
   La capacité reste facultative : Vault doit fonctionner sans persistance accordée et savoir la
   demander plus tard. Ce que ce relevé ne dit pas : ce qu'un Firefox FENÊTRÉ fait de l'invite quand
@@ -436,6 +438,142 @@ la directive dit, et c'est ce qui montre que la sonde sait lire un opener quand 
   n'est pas partagée — et l'[ADR 0010](decisions/0010-isolation-multi-origine.md) décide de ne pas
   poser l'isolation. La sonde continue de la poser parce qu'elle **mesure** ces primitives ; mesurer
   n'est pas dépendre.
+
+## WebKit 26.6 et suivants : l'OPFS est exposé, mais REJETÉ en contexte éphémère (#231)
+
+Relevés du **18/11/2026**, Linux x86_64, Node 22, contexte éphémère (`browser.newContext()`, le
+contexte par défaut de Playwright) :
+
+| Playwright | WebKit (build)  | `await navigator.storage.getDirectory()` | `persist()` |
+| ---------- | --------------- | ---------------------------------------- | ----------- |
+| 1.62.1     | 26.5 (2336)     | fonction **absente** (`undefined`)       | absent      |
+| **1.63.0** | **26.6 (2359)** | **rejet `UnknownError`**                 | `false`     |
+| 1.64.0     | 27.2 (2370)     | rejet `UnknownError`                     | `false`     |
+| 1.65.0     | 27.2 (2388)     | rejet `UnknownError`                     | `false`     |
+
+**Le rejet mesuré, mot pour mot :** nom `UnknownError`, message « The operation failed for an
+unknown transient reason (e.g. out of memory). », rendu par la page comme par un Worker dédié. Le
+message parle lui-même d'une raison **passagère** : le moteur ne dit pas si l'indisponibilité est
+durable, et le produit ne le prétend pas. Les suites WebKit passent sous Playwright **1.64.0**, qui
+est le verrou de la CI (voir « Firefox 159 », plus bas) ; la matrice « mesurée » plus haut date du
+23/08/2026 (Playwright 1.62.1, WebKit 26.5) et n'est pas réécrite.
+
+**Reproduction du critère de #231 (Playwright 1.63.0, WebKit 26.6 v2359), 18/11/2026, x86_64, Node
+22.23.5.** `playwright test --project '*webkit*'` sur `main` (f619be5) : **76 rouges, 45 verts, 32
+sautés** (39,7 min, 09:04–09:44 UTC) — même répartition que sous 1.65.0 : `data-coquille` attendu
+`prete`, reçu `erreur` ; `#deverrouillage-moyens` vide ; `VAULT_STORAGE_SUPPORT_FAILURE` au lieu de
+`VAULT_STORAGE_UNSUPPORTED` ; table de persistance ; sondes de banc. Avec le correctif (`c635323`,
+mêmes conditions) : **122 verts, 0 rouge, 32 sautés** (2,6 min) ; fins d'onglet 11 verts, apparence
+22, compat 3. Les 32 sautés sont ceux de `main`, aucun n'est nouveau. Non reproduit : rien — la
+cause (rejet `UnknownError` en contexte éphémère) est la même qu'observée sous 1.65.0, la sonde
+minimale le confirme sous 26.6 (rejet identique, `persist()` rend `false`).
+
+Détail sous WebKit 27.2 (1.65.0), contexte éphémère contre contexte persistant
+(`launchPersistentContext`) — **non mesuré sous 26.6** pour le contexte persistant :
+
+| Question                                                  | WebKit 27.2, éphémère    | WebKit 27.2, persistant            |
+| --------------------------------------------------------- | ------------------------ | ---------------------------------- |
+| `typeof navigator.storage.getDirectory`                   | `function`               | `function`                         |
+| `await navigator.storage.getDirectory()` (page ET Worker) | **rejet `UnknownError`** | aboutit                            |
+| `createSyncAccessHandle()` dans un Worker                 | —                        | aboutit (`readwrite-unsafe` aussi) |
+| `navigator.storage.estimate()`                            | quota 1000 Mio           | quota 1000 Mio                     |
+
+**Ce que le produit en tire** (ADR
+[0047](decisions/0047-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md), qui amende la
+décision 6 de l'[ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)) : un `typeof` ne dit
+plus si le moteur offre l'OPFS, et **un `UnknownError` n'est pas une absence** — le message du
+moteur parle d'une raison transitoire. Le Worker de confiance **appelle** `getDirectory()` au
+démarrage (`src/vm/sonde-du-stockage.mjs`), **réessaie trois fois, à 100 ms d'intervalle**, puis
+répond : l'état, l'inventaire et chaque geste attendent la conclusion de la sonde. Coût mesuré le
+18/11/2026 sous WebKit 26.6 et 27.2 en contexte éphémère : chaque appel rend en 0 à 1 ms, le rejet
+est constant (8 essais sur 8, étalés sur 800 ms) ; le coût est le seul délai, **200 ms** au
+démarrage.
+
+| Verdict de la sonde | Cause                                                     | État publié    | Refus d'un geste                          |
+| ------------------- | --------------------------------------------------------- | -------------- | ----------------------------------------- |
+| `atteignable`       | `getDirectory()` aboutit, à n'importe lequel des essais   | `verrouille`   | —                                         |
+| `absente`           | fonction manquante ; `SecurityError`, `TypeMismatchError` | `indisponible` | `VAULT_STORAGE_UNSUPPORTED`               |
+| **`indetermine`**   | `UnknownError` persistant après les essais                | `indetermine`  | **`VAULT_STORAGE_INDETERMINE`**           |
+| `panne`             | tout autre rejet : quota, état invalide, erreur inconnue  | `indetermine`  | **son code précis**, jamais `UNSUPPORTED` |
+
+`VAULT_STORAGE_INDETERMINE` dit « le stockage du navigateur est inaccessible pour l'instant, cause
+non établie » : il **n'affirme aucune absence**, ne conseille pas d'emblée de changer de navigateur,
+et est **réessayable** — un geste ou une demande d'inventaire présentés tant que l'état est
+`indetermine` relancent la sonde, et si elle aboutit le coffre redevient `verrouille` sans
+rechargement. L'**inventaire** est alors INCONNU, non vide : le parcours dit « le stockage ne répond
+pas pour l'instant », n'offre ni création ni moyen d'ouverture, et propose « Réessayer » (ADR 0047).
+Avant ce correctif la coquille passait en `data-coquille="erreur"` sur WebKit ≥ 26.6 (47 épreuves
+rouges sous 1.63.0 en CI, 76 sous 1.65.0 en local). Un contexte persistant, lui, ouvre un volume :
+si Safari se comporte ainsi, le refus du volume est une propriété de la SESSION et non du moteur.
+**Cela n'a pas été mesuré sur un vrai Safari** (#40) ; l'assimilation « contexte éphémère de
+Playwright = navigation privée de Safari » est une hypothèse, que le produit ne fait pas : il ne dit
+rien du contexte, seulement ce qu'il a vu.
+
+**La sonde de capacités ne suit pas encore.** Sous WebKit ≥ 26.6 éphémère, `opfsGetDirectory` et
+`opfsSyncAccessHandle` valent `error` (`UnknownError`), non `unsupported` : le verdict Vault de la
+sonde est `candidat` (« mesure non concluante », règle de `src/compat/`) et non `refusé`. Ce choix
+de prudence de la sonde — un nom d'erreur inconnu n'est pas classé — n'est pas modifié ici ; il est
+suivi par #306. Le produit, lui, ne tranche pas non plus : il dit « indéterminé ».
+
+**Persistance** (note datée de l'[ADR 0006](decisions/0006-conduite-refus-persistance.md)) : WebKit
+27.2 expose `persist()` et rend `false` ; le produit range ce verdict `denied`, non plus
+`unsupported`. La table `tests/browser/persistance-attendue.mjs` suit, et l'affirmation « WebKit
+n'expose pas `persist()` » de « Lecture des verdicts notables » vaut pour WebKit 26.5 seulement.
+
+**Un `await` de premier niveau dans un Worker module perd les premiers messages — sur les TROIS
+moteurs.** Mesuré le 18/11/2026 (Chromium 158, Firefox 159, WebKit 27.2) : un Worker module dont le
+script attend (`await` d'une minuterie de 300 ms, ou de `getDirectory()`) avant de poser
+`self.onmessage` ne répond à AUCUN message envoyé par la page juste après sa construction (aucune
+réponse en 5 s) ; le même Worker sans `await` de premier niveau répond immédiatement. Ce n'est pas
+propre à WebKit — une première lecture de cette PR l'avait cru. La conséquence pour le produit : la
+sonde de l'OPFS du Worker de confiance (`public/runtime-worker.mjs`) est une promesse, attendue par
+chaque réponse qui en dépend (`surMessagePrivilegie`, `publierLEtat`), jamais un `await` de module,
+sans quoi la poignée de main de la coquille reste muette (`data-coquille` figé sur `demarrage`, puis
+`worker-mort`).
+
+**Observé, non éprouvé :** `PublicKeyCredential` se déclare `function` sous WebKit 27.2 (objet sous
+26.5) ; la sonde le range `supported` dans les deux cas.
+
+## Firefox 159 (Playwright 1.65.x) : le processus de contenu plante sous axe (#231)
+
+**Le verrou est à Playwright 1.64.0, et Playwright 1.65.x est exclu de Dependabot.** Relevé du
+**18/11/2026**, Linux x86_64, Node 22, `@axe-core/playwright` 4.14.0 (axe-core 4.14) :
+
+| Playwright              | Firefox (build)  | Apparence Firefox (`parcours.spec.mjs`)        |
+| ----------------------- | ---------------- | ---------------------------------------------- |
+| 1.64.0                  | 157.0 (**1555**) | verte (81 verts sur les trois moteurs)         |
+| 1.65.0 et 1.65.1        | 159.0 (**1572**) | **10 rouges** : `frame.evaluate: Page crashed` |
+| 1.66.0-alpha-2026-11-18 | (**1578**)       | pas de plantage (sonde minimale ci-dessous)    |
+
+**Ce qui plante** : le processus de contenu de Firefox (SIGSEGV, `process … exited on signal 11`),
+pendant `AxeBuilder.analyze()`, sur la page du parcours (`/index.html`, étape « Créer votre coffre
+»). Les règles axe qui lisent le rôle ou le nom accessible (`aria-allowed-attr`,
+`aria-conditional-attr`, `aria-prohibited-attr`, `label-content-name-mismatch`,
+`nested-interactive`, `target-size`) sont celles qui plantent, une à une.
+
+**Reproduction minimale** (sur la page du produit ; **pas autonome** : une page triviale — `<main>`,
+un bouton, un `fieldset` — ne plante pas) : charger la page du parcours sous Firefox, attendre le
+titre « Créer votre coffre », puis, dans un ordre ou dans l'autre, (1) une opération du moteur de
+rôles de Playwright qui calcule des noms accessibles — `locator("#parcours").ariaSnapshot()` ou
+`expect(getByRole("heading", { name: … })).toBeVisible()` — et (2)
+`new AxeBuilder({ page }).analyze()`. Mesures : `ariaSnapshot()` puis axe plante ; axe puis
+`ariaSnapshot()` plante ; axe seul, `ariaSnapshot()` seul, `getByRole(…).waitFor()` puis axe, et un
+parcours entièrement à sélecteurs CSS puis axe ne plantent pas. Le plantage ne dépend ni de la durée
+d'attente, ni de la trace, ni des préférences d'accessibilité de Firefox
+(`accessibility.force_disabled` sans effet), ni du nombre d'ouvriers. L'inclusion axe de `#parcours`
+seul plante ; chacun de ses enfants seul, non.
+
+**Ce que ce n'est pas** : un défaut du produit (le produit n'est pas en cause : Firefox 157 et le
+build 1578 passent la même page), ni de l'oracle d'accessibilité (`outils-d-apparence.mjs`, #290).
+**Non établi** : la cause exacte dans Firefox, et si le build 1578 est corrigé ou ne fait que
+déplacer le déclencheur (une seule sonde, sans les 81 épreuves d'apparence).
+
+**Conséquences retenues** : `.github/dependabot.yml` exclut `@playwright/test` 1.65.x ; le verrou
+`~1.64.0` empêche une montée mineure silencieuse ; la montée à Playwright 1.66 se refait quand son
+Firefox est de build ≥ 1578 **et** que `npm run test:apparence` passe sur les trois moteurs (suivi :
+#309). Contourner par des épreuves d'apparence à sélecteurs CSS a été essayé et écarté (8 des 10
+épreuves repassaient, deux restaient rouges, et chaque nouveau `getByRole` avant `verifier` aurait
+replanté).
 
 ## WebKit Playwright n'est pas une qualification Safari
 

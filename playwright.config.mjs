@@ -47,6 +47,14 @@ const FRONTIERE_HIERARCHIE = ["**/hierarchie-de-cles-frontiere.spec.mjs"];
 const FRONTIERE_DESCRIPTEUR = ["**/descripteur-scelle.spec.mjs"];
 
 /**
+ * La RÉSERVE du Service Worker de la coquille (#299, ADR 0048) : l'ARBRE PUBLIÉ, servi par une origine
+ * contrôlable sous les en-têtes de production. Chaque épreuve lance SON navigateur et SON origine
+ * (« réseau coupé » = origine arrêtée, jamais `setOffline`) ; les trois moteurs sont TOUJOURS exécutés : un
+ * Service Worker ne se comporte pas pareil d'un moteur à l'autre (ADR 0048 § 14).
+ */
+const RESERVE = ["**/reserve-*.spec.mjs"];
+
+/**
  * Frontière entre deux applications partageant l'origine applicative (#46, ADR 0018). Exécutée sur
  * les trois moteurs pour le même motif que la frontière de CSP, et pour un motif de plus : le
  * partitionnement du stockage n'est pas identique d'un moteur à l'autre — l'OPFS et
@@ -116,6 +124,9 @@ const DEVERROUILLAGE_COQUILLE = [
   // Le PARCOURS GUIDÉ (#193, ADR 0040) : l'ordre attaqué et ce qu'il laisse dans la page, sur le même
   // chemin de produit (revue de la PR #213, constats 1, 2, 3 et 9).
   "**/coquille-parcours.spec.mjs",
+  // Un stockage INACCESSIBLE POUR L'INSTANT n'est pas un coffre ABSENT (#231, revue de la PR #305) :
+  // l'inventaire inconnu, « Réessayer », la reprise sans rechargement.
+  "**/coquille-stockage-indetermine.spec.mjs",
   // L'AFFICHAGE de la révocation (#265, ADR 0049 § C2) : le masquage vérifié, la publication d'un seul
   // geste et la règle CSS « masqué sans estampille » se mesurent sur le DOM réel des trois moteurs.
   "**/coquille-affichage-dom.spec.mjs",
@@ -306,6 +317,7 @@ export default defineConfig({
         ...CYCLE_DE_VIE,
         ...SERVICE_APPLICATIF,
         ...PERSISTANCE,
+        ...RESERVE,
       ],
     })),
     // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
@@ -367,6 +379,12 @@ export default defineConfig({
       name: `service-applicatif-${nom}`,
       use: { browserName: nom },
       testMatch: SERVICE_APPLICATIF,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `reserve-${nom}`,
+      use: { browserName: nom },
+      testMatch: RESERVE,
+      timeout: 120_000,
     })),
     ...MOTEURS_CONNUS.map((nom) => ({
       name: `persistance-${nom}`,

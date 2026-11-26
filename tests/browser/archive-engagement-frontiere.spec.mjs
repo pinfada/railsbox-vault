@@ -1,4 +1,5 @@
 import { expect, test } from "../support/test.mjs";
+import { codesDeRefusDeCapacite } from "../support/refus-de-capacite.mjs";
 
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 
@@ -81,7 +82,7 @@ test("le mélange A/C est REFUSÉ sur l'OPFS réel, ou le moteur refuse typé", 
   });
 
   if (!porte) {
-    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    expect(codesDeRefusDeCapacite(page)).toContain(code);
     return;
   }
   expect(report, `le scénario a échoué : ${resultat.message}`).not.toBeNull();

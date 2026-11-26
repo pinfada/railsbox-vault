@@ -65,6 +65,7 @@ export const CODES_DU_CHEMIN = Object.freeze({
     D.argon2Indisponible,
     CODE_PHRASE_FAIBLE,
     S.unsupported,
+    S.indeterminate,
     S.busy,
     S.quotaExceeded,
     S.volumeSansRacine,
@@ -215,6 +216,11 @@ export const CODES_HORS_DU_CHEMIN = Object.freeze({
   [C.capaciteDansUnMessage]: `${INATTEIGNABLE}la capacité est refusée avant l'envoi, par le contrat`,
   [C.canalDeRelaisRefuse]: `${INATTEIGNABLE}c'est l'application qui vise le canal de relais`,
   [I.consentementRequis]: `${INATTEIGNABLE}la restauration sans feuille (ADR 0027) n'est pas offerte par la coquille`,
+  [C.reserveAbsente]: `${INATTEIGNABLE}le portail de la réserve (ADR 0048) refuse avant que le Worker de confiance et le parcours existent : la page dit sa conduite elle-même`,
+  [C.reserveIncomplete]: `${INATTEIGNABLE}le portail de la réserve (ADR 0048) refuse avant que le Worker de confiance et le parcours existent : la page dit sa conduite elle-même`,
+  [C.reserveAlteree]: `${INATTEIGNABLE}le portail de la réserve (ADR 0048) refuse avant que le Worker de confiance et le parcours existent : la page dit sa conduite elle-même`,
+  [C.reserveDivergente]: `${INATTEIGNABLE}le portail de la réserve (ADR 0048) refuse avant que le Worker de confiance et le parcours existent : la page dit sa conduite elle-même`,
+  [C.reservePerimee]: `${INATTEIGNABLE}le portail de la réserve (ADR 0048) refuse avant que le Worker de confiance et le parcours existent : la page dit sa conduite elle-même`,
 });
 
 /** Les CLASSES de conduite : ce que la personne fera, en un mot. La page de relecture les affiche. */
@@ -354,6 +360,15 @@ const TABLE = Object.freeze({
   [S.unsupported]: [
     K.autreAppareil,
     "Ce navigateur ne sait pas garder un coffre. " + CHROME_OU_EDGE + " " + RIEN_PERDU,
+  ],
+  // Le stockage a rejeté ce que le moteur dit lui-même transitoire : AUCUNE absence n'est affirmée, rien
+  // n'a été tenté sur le coffre, et le même geste peut aboutir plus tard (#231).
+  [S.indeterminate]: [
+    K.recommencer,
+    "Le stockage du navigateur est inaccessible pour l'instant, cause non établie. Rien n'a été " +
+      "tenté sur le coffre : réessayez dans un instant. Si cela dure, essayez une autre fenêtre ou un " +
+      "autre navigateur. " +
+      RIEN_PERDU,
   ],
   [S.busy]: [
     K.recommencer,

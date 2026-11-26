@@ -200,6 +200,19 @@ export function creerLeCablage(liaison) {
      * avant le montage) : non — la table ne prévoit alors aucune lecture, et la page ne s'en invente pas.
      */
     relireLInventaire: () => ({ demandee: RELECTURE_EN_COURS.includes(revocation.etat().phase) }),
+    /**
+     * « Réessayer » (#231) : une relecture de l'inventaire demandée au MAGASIN — la table la range dans une
+     * modification vide (e19, puis e20 relit) —, attendue jusqu'à ce que l'état soit de nouveau au repos.
+     * Refusée par la table (échec terminal, doute) : rien n'est relancé, et la table a dit pourquoi.
+     */
+    reessayerLaLecture: async () => {
+      const resultat = dire(
+        ctx,
+        revocation.modifier(() => Promise.resolve()),
+      );
+      if (resultat.accepte) await attendre(ctx, (etat) => !RELECTURE_EN_COURS.includes(etat.phase));
+      return resultat;
+    },
     /** La cause que le magasin a CONSIGNÉE pour son dernier échec (un code), ou `null` : un diagnostic. */
     causeDeLEchec: () => liaison.rapport.revocation?.code ?? null,
     lireLeConstat: () => lireLeConstat(revocation.etat()),

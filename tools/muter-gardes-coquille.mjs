@@ -69,6 +69,19 @@ const EPREUVE_PARCOURS_CONDUITES = "tests/unit/coquille-parcours-conduites.test.
 const PREUVE = "src/coquille/preuve-de-la-feuille.mjs";
 const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
 const DEVERROUILLAGE = "public/runtime-worker-deverrouillage.mjs";
+const OPFS_SYNC = "src/vm/opfs-sync-access.mjs";
+const EPREUVE_GETDIRECTORY = "tests/unit/vm-opfs-getdirectory-refuse.test.mjs";
+const EPREUVE_WORKER_SONDE = "tests/unit/coquille-worker-sonde-opfs.test.mjs";
+const RUNTIME_WORKER = "public/runtime-worker.mjs";
+const SONDE_DU_STOCKAGE = "src/vm/sonde-du-stockage.mjs";
+const CAPACITE = "src/coquille/capacite-du-stockage.mjs";
+const CAPACITE_DU_WORKER = "public/capacite-du-worker.mjs";
+const EPREUVE_CAPACITE = "tests/unit/coquille-capacite-du-stockage.test.mjs";
+const EPREUVE_SONDE = "tests/unit/vm-sonde-du-stockage.test.mjs";
+const RACINE_OPFS = "public/spike/origin/racine-opfs.mjs";
+const TEMOINS_OPFS = "tests/support/temoins-opfs.mjs";
+const EPREUVE_TEMOINS = "tests/unit/temoins-opfs.test.mjs";
+const EPREUVE_INTERFACE_INVENTAIRE = "tests/unit/coquille-interface-inventaire-refuse.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -320,14 +333,12 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_ADMISSION],
   },
   {
-    nom: "la coquille ne publie que ses quatre états",
+    nom: "la coquille ne publie que ses cinq états",
     garde: "chargeUtileDEtat — la table des états connus",
     fichier: ETAT,
     avant:
       "  if (!ETATS_CONNUS.has(etat)) {\n" +
-      "    throw new Error(\n" +
-      "      `État de volume inconnu : ${etat}. La coquille ne publie que ses quatre états.`,\n" +
-      "    );\n" +
+      "    throw new Error(`État de volume inconnu : ${etat}. La coquille ne publie que ses cinq états.`);\n" +
       "  }\n",
     apres: "",
     epreuves: [EPREUVE_CONTRAT],
@@ -1251,6 +1262,541 @@ export const MUTATIONS = Object.freeze([
     avant: "  if (conduite !== undefined) return conduite;\n",
     apres: "",
     epreuves: [EPREUVE_PARCOURS_CONDUITES],
+  },
+  // #231 : WebKit 26.6+ expose `getDirectory` mais le REJETTE (`UnknownError`, que le moteur dit
+  // « transitoire ») en contexte éphémère. Cinq familles de gardes. (1) La SONDE du stockage
+  // (`src/vm/sonde-du-stockage.mjs`) : essais bornés, délai, classement — `indetermine` jamais
+  // `absente`. (2) La traduction du rejet en `VAULT_STORAGE_INDETERMINE` (`opfs-sync-access.mjs`).
+  // (3) Le BRANCHEMENT dans `public/runtime-worker.mjs`, chargé TEL QUEL par
+  // `coquille-worker-sonde-opfs.test.mjs` (sonde suspendue, demandes reçues pendant elle) : attente,
+  // ordre « attendre puis lire », état indéterminé, relance par un geste, refus typés. (4) La racine
+  // des témoins du spike et de la fouille du banc (`racine-opfs.mjs`) : un `UnknownError` n'est jamais
+  // `indisponible`, une panne lève. (5) La comparaison des témoins (`tests/support/temoins-opfs.mjs`) :
+  // la tolérance du seul contexte éphémère mesuré. Non muté, et dit : le branchement DOM du spike
+  // (`app-inter.mjs`) et du banc, éprouvé par le seul navigateur (`apps-frontiere`,
+  // `deverrouillage-frontiere`) ; et `PEUT_OUVRIR = true` à la levée de l'indétermination, que le double
+  // du Worker ne distingue pas d'un refus tiers.
+  {
+    nom: "le rejet de racine non transitoire garde son classement précis, jamais INDETERMINE",
+    garde: "volumeDirectory — `throw cause` pour tout autre nom (#231)",
+    fichier: OPFS_SYNC,
+    avant:
+      "    if (classerLeRejetDeRacine(cause) !== VERDICTS_DU_STOCKAGE.indetermine) throw cause;\n",
+    apres: "",
+    epreuves: [EPREUVE_GETDIRECTORY],
+  },
+  {
+    nom: "le rejet transitoire de racine rend INDETERMINE, jamais UNSUPPORTED",
+    garde: "volumeDirectory — le code du refus (#231)",
+    fichier: OPFS_SYNC,
+    avant:
+      "      STORAGE_ERROR_CODES.indeterminate,\n      `Le stockage du navigateur est inaccessible",
+    apres:
+      "      STORAGE_ERROR_CODES.unsupported,\n      `Le stockage du navigateur est inaccessible",
+    epreuves: [EPREUVE_GETDIRECTORY],
+  },
+  {
+    nom: "la racine des témoins : un UnknownError n'est PAS « indisponible »",
+    garde: "racineDeLOpfs — le verdict du rejet transitoire (#231, revue de la PR #305)",
+    fichier: RACINE_OPFS,
+    avant: '          resultat: "indetermine",\n',
+    apres: '          resultat: "indisponible",\n',
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la racine des témoins : seul le nom transitoire est indéterminé, tout autre rejet est une panne",
+    garde: "racineDeLOpfs — le nom du rejet (#231)",
+    fichier: RACINE_OPFS,
+    avant: "    if (erreur?.name === NOM_DU_REJET_TRANSITOIRE) {\n",
+    apres: "    if (erreur) {\n",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la fouille impossible LÈVE sur une panne : jamais un texte vide muet",
+    garde: "fouilleImpossible — la levée (#231, revue de la PR #305)",
+    fichier: RACINE_OPFS,
+    avant: '  if (absent.resultat === "panne") throw new Error(absent.detail);\n',
+    apres: "",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la fouille impossible se DIT : `impossible` est rendu",
+    garde: "fouilleImpossible — le marqueur (#231)",
+    fichier: RACINE_OPFS,
+    avant: '  return { texte: "", impossible: absent.resultat };\n',
+    apres: '  return { texte: "" };\n',
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la tolérance des témoins ne vaut que pour le contexte éphémère connu de l'épreuve",
+    garde: "estToleree — `contexteEphemereMesure` (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: "    contexteEphemereMesure === true &&\n",
+    apres: "",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la tolérance ne vaut que si A n'a RIEN déposé : un témoin déjà déposé qui disparaît reste rouge",
+    garde: "estToleree — le dépôt de A (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: '    depots.opfs.startsWith("indetermine: ") &&\n',
+    apres: "",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la tolérance ne vaut que pour un témoin OPFS",
+    garde: "estToleree — le mécanisme (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: '    sonde.mecanisme === "OPFS" &&\n    sonde.resultat === "indetermine" &&\n',
+    apres: '    sonde.resultat === "indetermine" &&\n',
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "la tolérance ne vaut que pour le détail MESURÉ",
+    garde: "estToleree — le détail (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: "    sonde.detail === DETAIL_MESURE\n",
+    apres: "    true\n",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "seule une API ABSENTE sort de la comparaison parmi les `indisponible`",
+    garde: "estIndisponibleEtablie — le motif (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: "const INDISPONIBILITE_ETABLIE = /(^| )absent$/;",
+    apres: "const INDISPONIBILITE_ETABLIE = /.*/;",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "une isolation n'est prouvée que par des témoins OPFS MESURÉS : indeterminé ou panne ne comptent pas",
+    garde: "opfsNonMesures — les résultats admis (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: '      !["lu", "invisible"].includes(sonde.resultat) &&\n',
+    apres: '      !["lu", "invisible", "indetermine", "panne"].includes(sonde.resultat) &&\n',
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "une fouille impossible est une PANNE sur un moteur qui ouvre un volume",
+    garde: "fouilleOpfsAdmise — la branche `porte` (#231)",
+    fichier: TEMOINS_OPFS,
+    avant: "    if (porte || contexteEphemereMesure !== true) {\n",
+    apres: "    if (contexteEphemereMesure !== true) {\n",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "une fouille impossible n'est tolérée que dans le contexte éphémère connu de l'épreuve",
+    garde: "fouilleOpfsAdmise — `contexteEphemereMesure` (#231, revue complète de la PR #305)",
+    fichier: TEMOINS_OPFS,
+    avant: "    if (porte || contexteEphemereMesure !== true) {\n",
+    apres: "    if (porte) {\n",
+    epreuves: [EPREUVE_TEMOINS],
+  },
+  {
+    nom: "un UnknownError PERSISTANT n'est pas une absence : indéterminé, jamais « absente »",
+    garde: "classerLeRejetDeRacine — le nom transitoire mesuré donne `indetermine` (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      "  if (cause?.name === REJET_TRANSITOIRE_MESURE) return VERDICTS_DU_STOCKAGE.indetermine;\n",
+    apres: "  if (cause?.name === REJET_TRANSITOIRE_MESURE) return VERDICTS_DU_STOCKAGE.absente;\n",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "la sonde réessaie un nombre BORNÉ de fois — pas un de moins, pas un de plus",
+    garde: "sonderLeStockageEnDetail — la borne des essais (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "      if (verdict !== VERDICTS_DU_STOCKAGE.indetermine || essai >= essais) {\n",
+    apres: "      if (verdict !== VERDICTS_DU_STOCKAGE.indetermine || essai > essais) {\n",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "seul l'indéterminé est réessayé : une panne ou une absence ne le sont pas",
+    garde: "sonderLeStockageEnDetail — le réessai conditionné au verdict (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "      if (verdict !== VERDICTS_DU_STOCKAGE.indetermine || essai >= essais) {\n",
+    apres: "      if (essai >= essais) {\n",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "la sonde ATTEND entre deux essais",
+    garde: "sonderLeStockageEnDetail — le délai (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "    await attendre(delaiMs);\n",
+    apres: "",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "le délai entre essais reste court : le coût du démarrage est borné",
+    garde: "DELAI_ENTRE_ESSAIS_MS (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "export const DELAI_ENTRE_ESSAIS_MS = 100;",
+    apres: "export const DELAI_ENTRE_ESSAIS_MS = 5000;",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "la sonde réessaie : un UnknownError transitoire suivi d'une réussite n'est pas figé",
+    garde: "ESSAIS_DE_LA_SONDE (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "export const ESSAIS_DE_LA_SONDE = 3;",
+    apres: "export const ESSAIS_DE_LA_SONDE = 1;",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "une fonction getDirectory absente est une absence établie",
+    garde: "sonderLeStockageEnDetail — la garde `typeof` (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      '  if (typeof storage?.getDirectory !== "function") {\n    return { verdict: VERDICTS_DU_STOCKAGE.absente, code: null };\n  }\n',
+    apres:
+      '  if (typeof storage?.getDirectory !== "function") {\n    return { verdict: VERDICTS_DU_STOCKAGE.atteignable, code: null };\n  }\n',
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "les refus de capacité déjà typés restent des absences",
+    garde: "classerLeRejetDeRacine — le renvoi à la table des codes (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "    ? VERDICTS_DU_STOCKAGE.absente\n    : VERDICTS_DU_STOCKAGE.panne;",
+    apres: "    ? VERDICTS_DU_STOCKAGE.panne\n    : VERDICTS_DU_STOCKAGE.panne;",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "la reprise est possible depuis une PANNE : panne → disponible",
+    garde: "TRANSITIONS — la ligne `panne` (#231, revue de la PR #305)",
+    fichier: CAPACITE,
+    avant: "  [E.panne]: Object.freeze([V.atteignable, V.absente, V.indetermine, V.panne]),",
+    apres: "  [E.panne]: Object.freeze([V.absente, V.indetermine, V.panne]),",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une panne au réessai d'un stockage indéterminé est une transition ÉCRITE",
+    garde: "TRANSITIONS — la ligne `indetermine` (#231, revue de la PR #305)",
+    fichier: CAPACITE,
+    avant: "  [E.indetermine]: Object.freeze([V.atteignable, V.absente, V.indetermine, V.panne]),",
+    apres: "  [E.indetermine]: Object.freeze([V.atteignable, V.absente, V.indetermine]),",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "`absent` est terminal : une absence établie ne se lève pas",
+    garde: "TRANSITIONS — la ligne `absent` (#231)",
+    fichier: CAPACITE,
+    avant: "  [E.absent]: Object.freeze([]),",
+    apres: "  [E.absent]: Object.freeze([V.atteignable]),",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "`disponible` n'est pas resondé : aucune transition n'en sort",
+    garde: "TRANSITIONS — la ligne `disponible` (#231)",
+    fichier: CAPACITE,
+    avant: "  [E.disponible]: Object.freeze([]),",
+    apres: "  [E.disponible]: Object.freeze([V.indetermine]),",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "un verdict `atteignable` pose `disponible`",
+    garde: "ETAT_DU_VERDICT — la reprise (#231, revue de la PR #305)",
+    fichier: CAPACITE,
+    avant: "  [V.atteignable]: E.disponible,",
+    apres: "  [V.atteignable]: E.indetermine,",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une panne porte son code PRÉCIS",
+    garde: "apresLaSonde — le code exigé (#231)",
+    fichier: CAPACITE,
+    avant:
+      "  if (!TRANSITIONS[capacite.etat]?.includes(verdict)) {\n" +
+      "    throw new Error(`Transition de capacité non écrite : ${capacite.etat} ← ${verdict}.`);\n" +
+      "  }\n" +
+      "  if (verdict === V.panne) {\n" +
+      '    if (typeof code !== "string" || code === "") {\n',
+    apres:
+      "  if (!TRANSITIONS[capacite.etat]?.includes(verdict)) {\n" +
+      "    throw new Error(`Transition de capacité non écrite : ${capacite.etat} ← ${verdict}.`);\n" +
+      "  }\n" +
+      "  if (verdict === V.panne) {\n" +
+      "    if (false) {\n",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "seule la capacité `disponible` ouvre",
+    garde: "peutOuvrir (#231)",
+    fichier: CAPACITE,
+    avant: "export const peutOuvrir = (capacite) => capacite.etat === E.disponible;",
+    apres: "export const peutOuvrir = (capacite) => capacite.etat !== E.absent;",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une panne se RÉESSAIE, comme l'indéterminé",
+    garde: "reessayable — la panne (#231)",
+    fichier: CAPACITE,
+    avant:
+      "export const reessayable = (capacite) =>\n  capacite.etat === E.indetermine || capacite.etat === E.panne;",
+    apres: "export const reessayable = (capacite) => capacite.etat === E.indetermine;",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une panne se publie `indetermine`, jamais `verrouille`",
+    garde: "etatPublie — la panne (#231)",
+    fichier: CAPACITE,
+    avant:
+      "  if (capacite.etat === E.indetermine || capacite.etat === E.panne) {\n    return ETATS_DU_VOLUME.indetermine;",
+    apres: "  if (capacite.etat === E.indetermine) {\n    return ETATS_DU_VOLUME.indetermine;",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "UNSUPPORTED n'est rendu que pour une absence ÉTABLIE",
+    garde: "refusDeCapacite — la branche absente (#231, revue de la PR #305)",
+    fichier: CAPACITE,
+    avant:
+      "  if (capacite.etat === E.absent) {\n    return { code: STORAGE_ERROR_CODES.unsupported, message: MESSAGE_ABSENT };",
+    apres:
+      "  if (capacite.etat !== E.disponible && capacite.etat !== E.inconnu) {\n    return { code: STORAGE_ERROR_CODES.unsupported, message: MESSAGE_ABSENT };",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une panne rend SON code, non celui de l'indétermination",
+    garde: "refusDeCapacite — le code de la panne (#231)",
+    fichier: CAPACITE,
+    avant: "    return {\n      code: capacite.code,",
+    apres: "    return {\n      code: STORAGE_ERROR_CODES.indeterminate,",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "la sonde rend le code PRÉCIS d'une panne",
+    garde: "sonderLeStockageEnDetail — le code (#231, revue de la PR #305)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      '            ? toStorageError(cause, { operation: "open-directory", volume: "-" }).code\n            : null;',
+    apres: "            ? null\n            : null;",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "un stockage inaccessible n'est pas un coffre absent : le refus typé le reconnaît",
+    garde: "coffreObserve — `COFFRE.inaccessible` (#231, revue de la PR #305)",
+    fichier: PARCOURS,
+    avant:
+      "  if (dernierRefus === STORAGE_ERROR_CODES.indeterminate) return COFFRE.inaccessible;\n",
+    apres: "",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "l'écran d'un stockage inaccessible est celui du réessai, non « chargement »",
+    garde: "ecranCourant — `inaccessible` (#231)",
+    fichier: PARCOURS,
+    avant: '  if (coffre === COFFRE.inaccessible) return "inaccessible";\n',
+    apres: "",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "le canal privilégié attend la sonde avant l'inventaire et avant tout geste",
+    garde: "surMessagePrivilegie — `await premiereSonde` (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "  await capaciteDuWorker.premiereSonde;\n  const decode",
+    apres: "  const decode",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la poignée d'état ATTEND la sonde puis LIT l'état — jamais l'inverse",
+    garde: "publierLEtat — l'ordre « attendre, lire » (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "  const exclusivite = await exclusiviteConstatee;\n  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n    exclusivite,\n",
+    apres:
+      "  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {\n    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),\n    exclusivite: await exclusiviteConstatee,\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "le constat d'exclusivité dépend de la sonde, et la première réponse d'état avec lui",
+    garde: "exclusiviteConstatee — `premiereSonde.then` (#231)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "const exclusiviteConstatee = capaciteDuWorker.premiereSonde.then(() =>\n  constaterLExclusivite({ volume: VOLUME, peutOuvrir: capaciteDuWorker.peutOuvrir() }),\n);\n",
+    apres:
+      "const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: capaciteDuWorker.peutOuvrir() });\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "un geste présenté pendant l'indétermination RELANCE la sonde : rien n'est figé",
+    garde: "surMessagePrivilegie — la relance (#231)",
+    fichier: RUNTIME_WORKER,
+    avant: "  if (capaciteDuWorker.reessayable() && decode.type !== TYPES_PRIVILEGIES.etat) {",
+    apres: "  if (false && decode.type !== TYPES_PRIVILEGIES.etat) {",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "une demande d'INVENTAIRE relance aussi la sonde : la reprise relit l'inventaire",
+    garde:
+      "surMessagePrivilegie — l'inventaire n'est pas exempté de la relance (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "  if (capaciteDuWorker.reessayable() && decode.type !== TYPES_PRIVILEGIES.etat) {",
+    apres:
+      "  if (\n    capaciteDuWorker.reessayable() &&\n    decode.type !== TYPES_PRIVILEGIES.etat &&\n    decode.type !== TYPES_PRIVILEGIES.inventaire\n  ) {",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "le refus d'un geste est celui de la CAPACITÉ : UNSUPPORTED seulement pour une absence établie",
+    garde: "exigerUnVolumeAtteignable — `refus` de la capacité (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "  const refus = capaciteDuWorker.refus();\n  if (refus === null) return;\n",
+    apres: "  return;\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "l'inventaire d'un stockage indéterminé est INCONNU, jamais vide",
+    garde: "lireLInventaire — la branche inconnue (#231, revue de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant:
+      "    if (capaciteDuWorker.reessayable()) return capaciteDuWorker.corpsDInventaireInconnu();\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "une lecture d'inventaire qui rejette APRÈS une sonde réussie donne un inventaire INCONNU, non un refus privé",
+    garde:
+      "publierLInventaire — la conversion de l'échec de lecture (#231, revue complète de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "    if (!capaciteDuWorker.noterUnEchecDeLecture(erreur)) throw erreur;\n",
+    apres: "    throw erreur;\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "un geste dont la lecture rejette retire `verrouille` : l'échec est NOTÉ",
+    garde: "la chaîne du canal — `noterUnEchecDeLecture` (#231, revue complète de la PR #305)",
+    fichier: RUNTIME_WORKER,
+    avant: "        capaciteDuWorker.noterUnEchecDeLecture(erreur);\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "le résultat de la sonde est APPLIQUÉ à la capacité",
+    garde: "appliquerLaSonde — la transition (#231, revue de la PR #305)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "    capacite = apresLaSonde(capacite, { verdict, code });\n",
+    apres: "    apresLaSonde(capacite, { verdict, code });\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "la sonde publie l'état de la capacité : `indetermine`, puis `verrouille` à la levée",
+    garde: "appliquerLaSonde — l'état publié (#231)",
+    fichier: CAPACITE_DU_WORKER,
+    avant:
+      "    capacite = apresLaSonde(capacite, { verdict, code });\n    interne.etat = etatPublie(capacite);\n",
+    apres: "    capacite = apresLaSonde(capacite, { verdict, code });\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "l'inventaire inconnu se DIT : `inconnu: true` et le refus typé",
+    garde: "corpsDInventaireInconnu — le marqueur (#231)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "      inconnu: true,\n",
+    apres: "",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "l'échec d'une lecture est APPLIQUÉ à la capacité : `disponible` n'est pas un cul-de-sac",
+    garde: "noterUnEchecDeLecture — la transition (#231, revue complète de la PR #305)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "    capacite = apresUnEchecDeLecture(capacite, echec);\n",
+    apres: "    apresUnEchecDeLecture(capacite, echec);\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "l'échec d'une lecture retire `verrouille` de l'état publié",
+    garde: "noterUnEchecDeLecture — l'état publié (#231, revue complète de la PR #305)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "    interne.etat = etatPublie(capacite);\n    return true;",
+    apres: "    return true;",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "seule une erreur du STOCKAGE est notée : une erreur du domaine remonte telle quelle",
+    garde: "noterUnEchecDeLecture — `echec === null` (#231, revue complète de la PR #305)",
+    fichier: CAPACITE_DU_WORKER,
+    avant: "    if (echec === null || interne.etat === ETATS_DU_VOLUME.ouvert) return false;\n",
+    apres: "    if (interne.etat === ETATS_DU_VOLUME.ouvert) return false;\n",
+    epreuves: [EPREUVE_WORKER_SONDE],
+  },
+  {
+    nom: "`disponible` peut repasser en `indetermine` ou en `panne` sur une lecture réelle",
+    garde: "TRANSITIONS_DE_LECTURE — la ligne `disponible` (#231, revue complète de la PR #305)",
+    fichier: CAPACITE,
+    avant: "  [E.disponible]: Object.freeze([V.indetermine, V.panne]),",
+    apres: "  [E.disponible]: Object.freeze([]),",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une lecture en échec depuis `indetermine` ou `panne` reste une transition écrite",
+    garde: "TRANSITIONS_DE_LECTURE — les lignes `indetermine` et `panne` (#231)",
+    fichier: CAPACITE,
+    avant:
+      "  [E.indetermine]: Object.freeze([V.indetermine, V.panne]),\n  [E.panne]: Object.freeze([V.indetermine, V.panne]),\n",
+    apres:
+      "  [E.indetermine]: Object.freeze([V.indetermine]),\n  [E.panne]: Object.freeze([V.indetermine]),\n",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "une lecture en échec ne fait jamais repasser une capacité `inconnue` ni `absente`",
+    garde: "TRANSITIONS_DE_LECTURE — la garde des états (#231)",
+    fichier: CAPACITE,
+    avant: "  if (!TRANSITIONS_DE_LECTURE[capacite.etat]?.includes(verdict)) {",
+    apres: "  if (false) {",
+    epreuves: [EPREUVE_CAPACITE],
+  },
+  {
+    nom: "l'UnknownError déjà traduit garde son nom dans `context.cause` : il reste indéterminé",
+    garde: "classerLaLectureEnEchec — `context.cause` (#231, revue complète de la PR #305)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant: "    cause.context?.cause === REJET_TRANSITOIRE_MESURE ||\n",
+    apres: "",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "une erreur du DOMAINE n'est jamais avalée en panne de stockage",
+    garde: "classerLaLectureEnEchec — les codes de panne (#231, revue complète de la PR #305)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      "    return PANNES_DE_LECTURE_PAR_CODE.has(code)\n" +
+      "      ? { verdict: VERDICTS_DU_STOCKAGE.panne, code }\n" +
+      "      : null;\n",
+    apres: "    return { verdict: VERDICTS_DU_STOCKAGE.panne, code };\n",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "un échec de lecture de type `QuotaExceededError` rend le code précis",
+    garde: "classerLaLectureEnEchec — le nom du DOMException (#231)",
+    fichier: SONDE_DU_STOCKAGE,
+    avant:
+      "  const parNom = PANNES_DE_LECTURE_PAR_NOM[cause.name];\n  return parNom === undefined ? null : { verdict: VERDICTS_DU_STOCKAGE.panne, code: parNom };",
+    apres: "  return null;",
+    epreuves: [EPREUVE_SONDE],
+  },
+  // #231, revue de la PR #305 (relecteur 2) : la garde de l'interface sur un inventaire refusé ou INCONNU,
+  // éprouvée en exécutant `monterLInterface` sur un document minimal. Les deux autres lignes identiques
+  // (`ouvrirPar`, `ouvrirParLaPasskey`) ne sont PAS mutées ici, et la garde de `ouvrirPar` MASQUE celle-ci
+  // pour la dérivation : ce qui les distingue est le champ de phrase conservé et la priorité du refus
+  // d'inventaire sur la politique de création.
+  {
+    nom: "un inventaire refusé ou inconnu ne juge aucune phrase et ne vide pas le champ",
+    garde:
+      "ouvrirParLaPhrase — la garde sur `inventaire.refus`, avant la politique de phrase (#231)",
+    fichier: INTERFACE,
+    avant:
+      "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n" +
+      "  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);\n",
+    apres:
+      "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n",
+    epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
+  },
+  // #231, revue de la PR #305 (relecteur 2, seconde passe) : la condition qui CHOISIT la politique de
+  // création dans `relireLaPhrase`. Un inventaire INCONNU a `present: false` : sans `inconnu !== true`, la
+  // politique de création (longueur minimale, `new-password`, constat et conseil de choix) revient dès
+  // la relecture d'un inventaire dont on ne sait rien.
+  {
+    nom: "un inventaire INCONNU n'est pas un coffre à créer : aucune politique de création",
+    garde: "relireLaPhrase — `inventaire.inconnu !== true` dans le choix de la création (#231)",
+    fichier: INTERFACE,
+    avant: "  const creation = !inventaire.present && inventaire.inconnu !== true;\n",
+    apres: "  const creation = !inventaire.present;\n",
+    epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,

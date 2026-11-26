@@ -874,3 +874,28 @@ test("contre-recette de #244 : ouvrir avec le code de la feuille dont on disait 
     "code-annonce",
   );
 });
+
+// --- #231 (revue de la PR #305) : un inventaire INCONNU n'est pas un coffre absent ---------------------
+
+// (La reconnaissance de l'inventaire inconnu, au refus TYPÉ, est éprouvée dans `coquille-ecran-de-la-revocation.test.mjs`.)
+
+test("l'écran d'un stockage inaccessible ne propose NI création NI moyen : seulement « réessayer »", () => {
+  assert.equal(ecranCourant({ pointeur: 1, coffre: COFFRE.inaccessible }), "inaccessible");
+  const ecran = ECRANS.inaccessible;
+  assert.ok(ecran, "l'écran existe");
+  assert.deepEqual(ecran.blocs, ["reessayer"]);
+  for (const interdit of ["commencer", "phrase", "passkey", "code", "perdu", "ancre"]) {
+    assert.ok(!ecran.blocs.includes(interdit), interdit);
+  }
+  assert.match(ecran.titre, /stockage/i);
+  assert.doesNotMatch(`${ecran.titre} ${ecran.ceQuiVaSePasser}`, /Créer votre coffre/);
+  assert.ok(BLOCS.includes("reessayer"));
+  assert.ok(LIBELLES_DES_BLOCS.reessayer);
+});
+
+test("à la REPRISE, le même coffre redevient verrouillé : l'écran d'un coffre existant, jamais « créer »", () => {
+  const apres = COFFRE.verrouille; // le coffre lu de nouveau : voir `coquille-ecran-de-la-revocation.test.mjs`
+  const ecran = ecranCourant({ pointeur: 1, coffre: apres, moyens: ["phrase"] });
+  assert.notEqual(ecran, "creer");
+  assert.notEqual(ecran, "inaccessible");
+});

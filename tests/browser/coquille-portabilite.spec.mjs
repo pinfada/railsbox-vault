@@ -19,13 +19,17 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
+import {
+  motifDeRefusDeCapacite,
+  etatsSansVolume,
+  moteurDe,
+} from "../support/refus-de-capacite.mjs";
 
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { SHELL_ORIGIN, SHELL_PORT } from "../../src/spike/origin-topology.mjs";
 import { ARCHIVE_ERROR_CODES } from "../../src/vm/archive-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
-import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { EMPREINTES_DU_BOOT_D_EPREUVE } from "../support/empreintes-du-boot.mjs";
 
 /** L'AUTRE origine de confiance : le même serveur, un autre nom, donc un autre OPFS. */
@@ -92,11 +96,16 @@ async function ouvrirLaCoquille(page, origine = SHELL_ORIGIN) {
   });
 }
 
-/** WebKit : l'état DIT l'absence, et le geste de sauvegarde rend son refus typé. */
+/**
+ * WebKit éphémère SEUL (le moteur de la fixture, jamais ce que la page affiche) : l'état DIT la
+ * limite, et le geste de sauvegarde rend son refus typé. Sous Chromium et Firefox, rend `false` et
+ * le scénario COMPLET est exigé : un volume qui n'y serait pas atteignable fait échouer l'épreuve.
+ */
 async function exigerLaLimiteDuMoteur(page) {
-  if ((await releve(page)).etat !== ETATS_DU_VOLUME.indisponible) return false;
+  if (moteurDe(page) !== "webkit") return false;
+  expect(etatsSansVolume(page)).toContain((await releve(page)).etat);
   await page.click("#sauvegarder-le-coffre");
-  await expect(page.locator("#portabilite-refus")).toContainText(STORAGE_ERROR_CODES.unsupported, {
+  await expect(page.locator("#portabilite-refus")).toContainText(motifDeRefusDeCapacite(page), {
     timeout: DELAI,
   });
   return true;
@@ -319,7 +328,7 @@ test("un coffre créé par la coquille d'AVANT est refusé dès l'inventaire, sa
     // Sous WebKit la coquille ne lit aucun volume : elle publie `indisponible`, et le refus ne peut
     // pas être rendu. La limite est exigée plutôt que sautée.
     await ouvrirLaCoquille(page);
-    expect((await releve(page)).etat).toBe(ETATS_DU_VOLUME.indisponible);
+    expect(etatsSansVolume(page)).toContain((await releve(page)).etat);
     return;
   }
   await poserLeCoffreAnterieur(page);

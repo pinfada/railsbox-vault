@@ -18,6 +18,7 @@
 // n'a simplement pas pu mettre à l'épreuve.
 
 import { ACTIFS_A, CANARY_NOM, CHEMIN_APP_A, SECRET_A } from "./apps-topologie.mjs";
+import { racineDeLOpfs } from "./racine-opfs.mjs";
 
 const parametres = new URL(location.href).searchParams;
 const application = parametres.get("app") ?? "a";
@@ -44,11 +45,11 @@ function publier(rapport, etat) {
 // --- Phase « poser » : l'application A dépose un actif par mécanisme --------------------------
 
 async function poserOpfs(rapport) {
-  if (!navigator.storage?.getDirectory) {
-    rapport.opfs = "indisponible: navigator.storage.getDirectory absent";
+  const { racine, absent } = await racineDeLOpfs();
+  if (absent) {
+    rapport.opfs = `${absent.resultat}: ${absent.detail}`;
     return;
   }
-  const racine = await navigator.storage.getDirectory();
   const fichier = await racine.getFileHandle(ACTIFS_A.opfsFichier, { create: true });
   let flux = await fichier.createWritable();
   await flux.write(SECRET_A);
@@ -211,9 +212,8 @@ const SONDES = [
     mecanisme: "OPFS",
     intention: "lire à la racine de l'OPFS le fichier déposé par A",
     async run() {
-      if (!navigator.storage?.getDirectory)
-        return indisponible("navigator.storage.getDirectory absent");
-      const racine = await navigator.storage.getDirectory();
+      const { racine, absent } = await racineDeLOpfs();
+      if (absent) return absent;
       try {
         const handle = await racine.getFileHandle(ACTIFS_A.opfsFichier);
         return lu(`contenu : ${await (await handle.getFile()).text()}`);
@@ -227,9 +227,8 @@ const SONDES = [
     mecanisme: "OPFS",
     intention: "ignorer la convention de préfixe et ouvrir le répertoire « app-a »",
     async run() {
-      if (!navigator.storage?.getDirectory)
-        return indisponible("navigator.storage.getDirectory absent");
-      const racine = await navigator.storage.getDirectory();
+      const { racine, absent } = await racineDeLOpfs();
+      if (absent) return absent;
       try {
         const repertoire = await racine.getDirectoryHandle(ACTIFS_A.opfsRepertoire);
         const handle = await repertoire.getFileHandle(ACTIFS_A.opfsFichierDansRepertoire);
@@ -244,9 +243,8 @@ const SONDES = [
     mecanisme: "OPFS",
     intention: "effacer le répertoire de A — lire n'est pas le pire",
     async run() {
-      if (!navigator.storage?.getDirectory)
-        return indisponible("navigator.storage.getDirectory absent");
-      const racine = await navigator.storage.getDirectory();
+      const { racine, absent } = await racineDeLOpfs();
+      if (absent) return absent;
       try {
         await racine.removeEntry(ACTIFS_A.opfsRepertoire, { recursive: true });
       } catch (erreur) {

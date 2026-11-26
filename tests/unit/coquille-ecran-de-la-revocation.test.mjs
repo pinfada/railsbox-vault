@@ -60,6 +60,20 @@ test("[coffre] fermé et lu (FC) : verrouillé s'il porte des moyens, absent sin
     pointeur: null,
   });
   assert.equal(geste.coffre, COFFRE.absent);
+  // #231 : un stockage INACCESSIBLE n'est ni un coffre absent ni un coffre refusé ; la reconnaissance tient au
+  // refus TYPÉ (le même texte sans le code n'est pas reconnu), et la reprise redonne un coffre verrouillé.
+  const inconnu = observationDeLEtat({
+    etat: vide({ refus: { code: "VAULT_STORAGE_INDETERMINE" }, present: false }),
+    pointeur: null,
+  });
+  assert.equal(inconnu.coffre, COFFRE.inaccessible);
+  assert.notEqual(inconnu.coffre, COFFRE.absent);
+  assert.notEqual(inconnu.coffre, COFFRE.refuse);
+  assert.equal(
+    observer("FC").coffre,
+    COFFRE.verrouille,
+    "à la reprise : l'écran d'un coffre existant",
+  );
 });
 
 test("[C2-1′] les données de décision viennent des deux portes : fermées là où la page ne sait pas", () => {

@@ -5,7 +5,8 @@
 //
 // Les fixtures sont des littéraux fixes : aucun HTML n'est assemblé par interpolation.
 
-import { expect, test, verifier } from "./outils-d-apparence.mjs";
+import { poserLeRejetDansLeWorker } from "../support/rejet-opfs-worker.mjs";
+import { expect, ouvrir, test, verifier } from "./outils-d-apparence.mjs";
 
 const FIXTURE_NON_ATTEIGNABLE = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Fixture</title></head><body><main><h1>Fixture</h1><div id="zone" tabindex="-1" style="height:40px;overflow:auto"><p tabindex="-1">Ligne 1</p><p tabindex="-1">Ligne 2</p><p>Ligne 3</p><p>Ligne 4</p></div></main></body></html>`;
 
@@ -49,4 +50,21 @@ test("une région défilante dont le contenu est atteignable au clavier passe la
 }, testInfo) => {
   await page.setContent(FIXTURE_ATTEIGNABLE);
   await verifier(page, testInfo, "region-atteignable");
+});
+
+// Aucune SORTIE SILENCIEUSE (revue complète de la PR #305). Sur Chromium et Firefox, un écran « le
+// stockage ne répond pas » n'est JAMAIS un résultat acceptable pour une épreuve qui attend l'écran de
+// création : `ouvrir` ÉCHOUE. Le contexte WebKit éphémère, où ce rejet est mesuré, est déclaré par la
+// fixture (le projet), jamais par ce que la page affiche — et il a ses propres épreuves.
+test("sur Chromium et Firefox, un écran « stockage inaccessible » FAIT ÉCHOUER l'ouverture", async ({
+  page,
+  context,
+  browserName,
+}) => {
+  test.skip(
+    browserName === "webkit",
+    "WebKit éphémère : le rejet d'getDirectory() est mesuré (docs/compatibility.md) ; l'écran inaccessible a ses épreuves",
+  );
+  await poserLeRejetDansLeWorker(context, { rejeter: true });
+  await expect(ouvrir(page)).rejects.toThrow();
 });

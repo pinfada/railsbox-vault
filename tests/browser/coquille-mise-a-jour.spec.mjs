@@ -11,6 +11,7 @@
 // l'ancien paquet — `tests/e2e/mise-a-jour-du-paquet.spec.mjs`, sur l'image réelle.
 
 import { expect, test } from "../support/test.mjs";
+import { etatsSansVolume } from "../support/refus-de-capacite.mjs";
 
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.mjs";
@@ -339,7 +340,7 @@ test("ORDRE ATTAQUÉ : « Mettre à jour » cliqué avant le déverrouillage est
     `cycle:demarrage-refuse:${C.etapeHorsOrdre}`,
     { timeout: DELAI },
   );
-  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(
+  expect([ETATS_DU_VOLUME.verrouille, ...etatsSansVolume(page)]).toContain(
     (await releve(page)).etat,
   );
 });

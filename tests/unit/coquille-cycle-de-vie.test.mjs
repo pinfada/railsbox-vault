@@ -305,6 +305,14 @@ test("un moteur INDISPONIBLE reste indisponible : la mort ne lui invente pas un 
   assert.equal(conduite.etat, ETATS_DU_VOLUME.indisponible);
 });
 
+test("un stockage INDÉTERMINÉ le reste : la mort ne lui invente pas un verrou (#231)", () => {
+  const conduite = conduiteApresLaMort({
+    cause: CAUSES_DE_MORT.erreur,
+    etatConnu: ETATS_DU_VOLUME.indetermine,
+  });
+  assert.equal(conduite.etat, ETATS_DU_VOLUME.indetermine);
+});
+
 test("une cause hors table est refusée : on ne constate pas une mort par défaut", () => {
   assert.throws(() => conduiteApresLaMort({ cause: "lenteur" }));
 });

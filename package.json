@@ -48,6 +48,7 @@
     "test:deverrouillage": "playwright test --config playwright.config.mjs --project frontiere-deverrouillage-chromium --project frontiere-deverrouillage-firefox --project frontiere-deverrouillage-webkit",
     "test:coquille:deverrouillage": "playwright test --config playwright.config.mjs --project deverrouillage-coquille-chromium --project deverrouillage-coquille-firefox --project deverrouillage-coquille-webkit",
     "test:cycle": "playwright test --config playwright.config.mjs --project cycle-de-vie-chromium --project cycle-de-vie-firefox --project cycle-de-vie-webkit",
+    "test:reserve": "playwright test --config playwright.config.mjs --project reserve-chromium --project reserve-firefox --project reserve-webkit",
     "test:service-applicatif": "playwright test --config playwright.config.mjs --project service-applicatif-chromium --project service-applicatif-firefox --project service-applicatif-webkit"
   },
   "engines": {
@@ -56,7 +57,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "~1.64.0",
     "eslint": "^10.15.0",
     "globals": "^17.14.0",
     "prettier": "^3.10.1",

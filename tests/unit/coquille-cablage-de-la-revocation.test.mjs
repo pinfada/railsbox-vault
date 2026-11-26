@@ -576,3 +576,31 @@ test("[DoR 4] Échap annule la confirmation ouverte ; sans confirmation, la touc
   p.conteneur.dispatchEvent(new p.doc.Evenement("keydown", { key: "a" }));
   assert.equal(p.cablage.etat().phase, "P");
 });
+
+test("[#231] « Réessayer » : une relecture demandée au MAGASIN (e19 puis e20), attendue jusqu'au repos ; refusée si la table ferme", async () => {
+  const p = monterLeCablage();
+  p.cablage.demarrer();
+  await p.repondreALInventaire({ feuilleEprouvee: false });
+  assert.equal(p.cablage.etat().phase, "FC");
+  let fini = false;
+  const reessai = p.cablage.reessayerLaLecture().then((r) => {
+    fini = true;
+    return r;
+  });
+  await tourner();
+  assert.equal(
+    p.attentes.inventaire.length,
+    2,
+    "une seconde lecture, demandée au canal par le magasin",
+  );
+  assert.equal(fini, false, "attendue jusqu'à ce que l'état soit de nouveau au repos");
+  await p.repondreALInventaire({ feuilleEprouvee: false });
+  assert.equal((await reessai).accepte, true);
+  assert.equal(p.cablage.etat().phase, "FC");
+  // fermé pour de bon : la table refuse, rien n'est relancé
+  p.cablage.appliquer({ type: "worker-mort" });
+  await tourner();
+  const lectures = p.attentes.inventaire.length;
+  assert.equal((await p.cablage.reessayerLaLecture()).accepte, false);
+  assert.equal(p.attentes.inventaire.length, lectures);
+});

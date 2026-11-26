@@ -58,6 +58,7 @@ import { creerFrontiereApplicative } from "./coquille/frontiere-applicative.mjs"
 import { creerVerrouillageEtFinsDOnglet } from "./coquille/verrouillage-et-fins-d-onglet.mjs";
 import { creerCycle } from "./coquille/cycle-de-la-page.mjs";
 import { creerParcoursDeLaPage } from "./coquille/parcours-de-la-page.mjs";
+import { creerLaReserve } from "./coquille/reserve-de-la-page.mjs";
 import { creerLaRevocationDeLaPage } from "./coquille/revocation-de-la-page.mjs";
 
 const parametres = new URL(location.href).searchParams;
@@ -106,6 +107,12 @@ const rapport = {
   refusDeRequete: {},
   annoncesRefusees: 0,
   requetesRefusees: 0,
+  /**
+   * La RÉSERVE du Service Worker de la coquille (#299, ADR 0048) : `null` dans le dépôt vivant ; dans
+   * l'arbre publié, la séquence de la page, l'état de fraîcheur, la cause d'une révocation connue et le
+   * refus du portail (code et cause). Ni clé, ni octet du volume.
+   */
+  reserve: null,
   etat: ETATS_DU_VOLUME.demarrage,
   barrieres: 0,
   /**
@@ -194,37 +201,48 @@ const pont = {};
 // Étape 2 : l'écouteur de `window`, avant que quoi que ce soit puisse poster.
 pont.frontiere = creerFrontiereApplicative({ rapport, publier, mesurer, emplacementDuCadre, pont });
 
-// Étape 3 : le canal privilégié, avant tout document applicatif.
-pont.canal = creerCanalDeConfiance({ rapport, publier, pont });
-
-// La RÉVOCATION D'URGENCE (#265, ADR 0049) : l'état de ce document, le rendeur unique de ce que la page
-// affirme du coffre, les gestes. Elle précède l'interface et le parcours, qui lisent ses portes.
-pont.revocation = creerLaRevocationDeLaPage({ rapport, publier, pont });
-
-// Le verrouillage et les fins d'onglet, branchés dès que le Worker existe.
-pont.verrouillage = creerVerrouillageEtFinsDOnglet({ rapport, publier, terminer, pont });
-
-// Le cycle, qui orchestre les trois autres et conclut les huit étapes.
-pont.cycle = creerCycle({
+// Étape 3 : la RÉSERVE (#299, ADR 0048), puis le canal privilégié, avant tout document applicatif. Dans
+// l'arbre publié, le Worker de confiance n'est créé que par le PORTAIL : aucun Worker et aucune clé sans une
+// réserve présente, complète, intacte, de la séquence de la page, et non révoquée. Le portail refuse ou
+// recharge : `null`, et la page s'arrête là, en le disant.
+const reserve = creerLaReserve({
   rapport,
   publier,
-  mesurer,
   terminer,
-  depart,
-  encadree,
-  parametres,
-  pont,
+  creerLeCanal: () => creerCanalDeConfiance({ rapport, publier, pont }),
 });
+pont.canal = await reserve.ouvrir();
 
-// Le PARCOURS GUIDÉ (#193, ADR 0040) : il lit les relevés publiés et montre l'écran courant. Il est
-// monté AVANT le démarrage pour observer chaque relevé depuis le premier. Il ne rejoint le pont que par
-// les quelques gestes que le magasin de la révocation lui demande (noter l'indice, terminer, revenir).
-pont.parcours = creerParcoursDeLaPage({
-  document,
-  location,
-  history,
-  navigateur: navigator,
-  revocation: pont.revocation,
-});
+if (pont.canal !== null) {
+  // La RÉVOCATION D'URGENCE (#265, ADR 0049) : l'état de ce document, le rendeur unique de ce que la page
+  // affirme du coffre, les gestes. Elle précède le verrouillage, le cycle et le parcours, qui lisent ses portes.
+  pont.revocation = creerLaRevocationDeLaPage({ rapport, publier, pont });
 
-pont.cycle.demarrer();
+  // Le verrouillage et les fins d'onglet, branchés dès que le Worker existe.
+  pont.verrouillage = creerVerrouillageEtFinsDOnglet({ rapport, publier, terminer, pont });
+
+  // Le cycle, qui orchestre les trois autres et conclut les huit étapes.
+  pont.cycle = creerCycle({
+    rapport,
+    publier,
+    mesurer,
+    terminer,
+    depart,
+    encadree,
+    parametres,
+    pont,
+  });
+
+  // Le PARCOURS GUIDÉ (#193, ADR 0040) : il lit les relevés publiés et montre l'écran courant. Il est
+  // monté AVANT le démarrage pour observer chaque relevé depuis le premier. Il ne rejoint le pont que par
+  // les quelques gestes que le magasin de la révocation lui demande (noter l'indice, terminer, revenir).
+  pont.parcours = creerParcoursDeLaPage({
+    document,
+    location,
+    history,
+    navigateur: navigator,
+    revocation: pont.revocation,
+  });
+
+  pont.cycle.demarrer();
+}

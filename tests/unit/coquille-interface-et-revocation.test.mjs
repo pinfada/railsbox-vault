@@ -32,6 +32,7 @@ const IDS = [
   ["p", "code-verdict"],
   ["button", "ouvrir-par-code"],
   ["button", "creer-recuperation"],
+  ["button", "reessayer-le-stockage"],
   ["p", "feuille-code"],
   ["p", "feuille-version"],
   ["p", "feuille-consigne"],
@@ -63,6 +64,7 @@ function monter({ phase = "FC", moyen = null, portes = {}, demander } = {}) {
       return { kek: {}, parametresHex: "ab", identifiantEmplacement: "cd" };
     },
     deriverPasskey: async () => ({}),
+    reessayer: async () => {},
     portes: {
       lirePublic: () => lirePublic(etat),
       identifiantDuVolume: () => "coffre",

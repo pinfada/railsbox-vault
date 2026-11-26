@@ -147,10 +147,19 @@ export const MUTATIONS = Object.freeze([
     fichier: MORT,
     avant:
       "  const etat =\n" +
-      "    etatConnu === ETATS_DU_VOLUME.indisponible\n" +
-      "      ? ETATS_DU_VOLUME.indisponible\n" +
+      "    etatConnu === ETATS_DU_VOLUME.indisponible || etatConnu === ETATS_DU_VOLUME.indetermine\n" +
+      "      ? etatConnu\n" +
       "      : ETATS_DU_VOLUME.verrouille;",
     apres: "  const etat = ETATS_DU_VOLUME.verrouille;",
+    epreuves: [EPREUVE_CYCLE],
+  },
+  {
+    nom: "un stockage INDÉTERMINÉ reste indéterminé : la mort ne lui invente pas un verrou",
+    garde: "conduiteApresLaMort — la préservation de l'état « indetermine » (#231)",
+    fichier: MORT,
+    avant:
+      "    etatConnu === ETATS_DU_VOLUME.indisponible || etatConnu === ETATS_DU_VOLUME.indetermine\n",
+    apres: "    etatConnu === ETATS_DU_VOLUME.indisponible\n",
     epreuves: [EPREUVE_CYCLE],
   },
   {

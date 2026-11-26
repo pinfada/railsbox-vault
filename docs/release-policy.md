@@ -395,8 +395,11 @@ est écrit dans le module et fixé par une épreuve.
 
 ### Ce que la chaîne ne fait pas encore
 
-Aucun déploiement réel, aucune signature, aucun SBOM, aucun Service Worker hors ligne. La politique
-de cache, en revanche, n'est plus héritée :
+Aucun déploiement réel, aucune signature, aucun SBOM. Un Service Worker sert la réserve hors ligne
+depuis D1h-b
+([ADR 0048](decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)) ;
+`publier.mjs` le génère (séquence monotone : par défaut le nombre de commits, `--sequence <n>` la
+fixe). La politique de cache, en revanche, n'est plus héritée :
 l'[ADR 0023](decisions/0023-politique-de-cache-par-nature-d-artefact.md) la décide par nature
 d'artefact (voir ci-dessus). Ce qui reste ouvert de ce côté est l'**effet** — aucune épreuve de ce
 dépôt ne mesure qu'un moteur garde effectivement l'épinglage v86 vingt-quatre heures, ni qu'un

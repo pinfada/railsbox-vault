@@ -4,6 +4,7 @@
 // compte des codes et le constat de la feuille viennent des deux PORTES (`lirePublic`, `lireLeConstat`),
 // jamais d'un miroir, d'une ligne de texte ou d'un drapeau parallèle. Pur : éprouvé et muté dans Node.
 
+import { STORAGE_ERROR_CODES } from "../vm/storage-errors.mjs";
 import { COFFRE, REFUS_D_INVENTAIRE } from "./parcours.mjs";
 import { vueDe, lireLeConstat, lirePublic } from "./vue-de-la-revocation.mjs";
 
@@ -32,6 +33,9 @@ function coffreDeLEtat(etat) {
   const donnees = lirePublic(etat);
   const code = donnees.refus?.code ?? null;
   if (REFUS_D_INVENTAIRE.includes(code)) return COFFRE.refuse;
+  // L'inventaire INCONNU (#231) : reconnu au refus TYPÉ que le Worker rend, non aux mots. Ni « absent » (qui
+  // proposerait de CRÉER un coffre à qui en possède un), ni « refusé ».
+  if (code === STORAGE_ERROR_CODES.indeterminate) return COFFRE.inaccessible;
   return donnees.moyens.length > 0 ? COFFRE.verrouille : COFFRE.absent;
 }
 

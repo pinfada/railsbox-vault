@@ -350,6 +350,22 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * peut pas l'importer sans publier du code de moteur à l'origine applicative ; une épreuve les égale.
    */
   horsLigneArtefactAbsent: "VAULT_COQUILLE_HORS_LIGNE_ARTEFACT_ABSENT",
+
+  // --- La RÉSERVE du Service Worker de la coquille (#299, ADR 0048 § 13) ------------------------
+  //
+  // Rendus par le PORTAIL (`src/coquille/reserve-portail.mjs`), AVANT toute création du Worker de
+  // confiance et avant toute clé. Chacun porte une CAUSE de diagnostic, jamais montrée. Aucun n'efface
+  // une donnée : le magasin OPFS et la réserve du Service Worker s'évincent indépendamment.
+  /** Pas d'API, pas de contrôleur, Service Worker muet, installation impossible : la coquille ne démarre pas. */
+  reserveAbsente: "VAULT_COQUILLE_RESERVE_ABSENTE",
+  /** Des entrées de la réserve manquent (éviction, installation interrompue). */
+  reserveIncomplete: "VAULT_COQUILLE_RESERVE_INCOMPLETE",
+  /** Une entrée de la réserve a une autre taille ou une autre empreinte que celle que la liste épingle. */
+  reserveAlteree: "VAULT_COQUILLE_RESERVE_ALTEREE",
+  /** Le contrôleur, le Worker de confiance ou `libv86` ne sont pas de la version que la page porte. */
+  reserveDivergente: "VAULT_COQUILLE_RESERVE_DIVERGENTE",
+  /** Révocation CONNUE (plancher ou retrait) : cette version a été retirée par son éditeur. */
+  reservePerimee: "VAULT_COQUILLE_RESERVE_PERIMEE",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -465,6 +481,16 @@ const MESSAGES = Object.freeze({
     "L'origine est injoignable et ce coffre n'a pas encore de données à rouvrir : une installation demande le réseau, rien n'est démarré.",
   [CODES_REFUS_COQUILLE.horsLigneArtefactAbsent]:
     "L'origine est injoignable et un fichier du démarrage manque à la réserve de cet appareil : rien n'est démarré, aucune donnée n'est touchée.",
+  [CODES_REFUS_COQUILLE.reserveAbsente]:
+    "Ce navigateur ne peut pas garder la coquille sur cet appareil. Ouvrez le coffre dans une fenêtre normale d'un navigateur à jour.",
+  [CODES_REFUS_COQUILLE.reserveIncomplete]:
+    "La copie de la coquille gardée sur cet appareil est incomplète. Reconnectez-vous une fois : elle sera refaite. Vos données ne sont pas touchées.",
+  [CODES_REFUS_COQUILLE.reserveAlteree]:
+    "La copie de la coquille gardée sur cet appareil a été abîmée : elle n'est pas utilisée. Reconnectez-vous une fois : elle sera refaite. Vos données ne sont pas touchées.",
+  [CODES_REFUS_COQUILLE.reserveDivergente]:
+    "La coquille a changé pendant l'ouverture. Rechargez la page.",
+  [CODES_REFUS_COQUILLE.reservePerimee]:
+    "Cette version a été retirée par son éditeur. Elle se remplace ; fermez toutes les fenêtres du coffre, puis rouvrez-le.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

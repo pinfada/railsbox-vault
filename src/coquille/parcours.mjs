@@ -80,6 +80,11 @@ export const COFFRE = Object.freeze({
   verrouille: "verrouille",
   ouvert: "ouvert",
   refuse: "refuse",
+  /**
+   * Le stockage du navigateur ne répond pas pour l'instant : l'inventaire du coffre est INCONNU, ni
+   * « absent » (qui proposerait de CRÉER un coffre à qui en possède un) ni « refusé » (#231).
+   */
+  inaccessible: "inaccessible",
 });
 
 /**
@@ -87,6 +92,7 @@ export const COFFRE = Object.freeze({
  * n'en montre que quelques-uns ; l'ordre du document est celui du parcours, donc l'ordre du focus.
  */
 export const BLOCS = Object.freeze([
+  "reessayer",
   "commencer",
   "ancre",
   "phrase",
@@ -343,6 +349,7 @@ export function ecranCourant({
   // montre est celui de la restauration, et non un refus sans issue.
   if (coffre === COFFRE.refuse)
     return refus === CODE_RESTAURATION_INTERROMPUE ? "restaurer" : "refuse";
+  if (coffre === COFFRE.inaccessible) return "inaccessible";
   if (coffre === COFFRE.absent) return ecranSansCoffre(pointeur);
   if (coffre === COFFRE.verrouille)
     return ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande, phrasePerdue);

@@ -42,10 +42,15 @@ updates:
         patterns:
           - "v86"
     ignore:
-      # Playwright 1.63.0 embarque WebKit 26.6 : 47 épreuves WebKit rouges, la coquille démarre en
-      # erreur (#231). Écart de cette seule version mineure ; la suivante sera proposée normalement.
+      # Playwright 1.65.x embarque Firefox 159 (build 1572) : le processus de contenu plante
+      # (SIGSEGV, « Page crashed ») quand le moteur de rôles de Playwright puis axe s'exécutent sur la
+      # page du parcours ; l'apparence Firefox rougit (#231, `docs/compatibility.md`). Non reproduit
+      # sous 1.64.0 (build 1555) ni sous 1.66.0-alpha-2026-11-18 (build 1578), mesuré le 18/11/2026.
+      # Retirer cette exclusion avec la montée à Playwright 1.66 (Firefox build >= 1578). L'exclusion
+      # de 1.63.x, levée par la même PR, ne reviendra pas : le produit constate désormais l'OPFS par un
+      # appel (WebKit >= 26.6 le rejette en contexte éphémère).
       - dependency-name: "@playwright/test"
-        versions: ["1.63.x"]
+        versions: ["1.65.x"]
     commit-message:
       prefix: chore
     labels:

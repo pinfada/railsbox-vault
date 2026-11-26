@@ -159,6 +159,7 @@ export function creerCycle({
       deriverPasskey: () => Promise.reject(refusDeMort()),
       agent: navigator.userAgent,
       portes: pont.revocation,
+      reessayer: () => Promise.reject(refusDeMort()),
     });
   }
 
@@ -213,6 +214,12 @@ export function creerCycle({
       deriverPasskey: (appel) => siVivant(() => derivations.deriverPasskey(appel)),
       agent: navigator.userAgent,
       portes: pont.revocation,
+      // « Réessayer » (#231) : la relecture est celle du MAGASIN (la sonde du stockage, puis l'inventaire),
+      // puis l'état publié — sans recharger.
+      reessayer: async () => {
+        await pont.revocation.reessayerLaLecture();
+        await pont.canal.demanderLEtat();
+      },
       surEtat: (reponse) => {
         rapport.etat = reponse.etat;
         rapport.barrieres = reponse.barrieres;
