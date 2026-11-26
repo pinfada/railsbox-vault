@@ -12,6 +12,12 @@ comprenez en lisant, et ce qui vous arrête.
 aussi tout mot inconnu, toute phrase trop longue, et tout moment où vous ne sauriez pas quoi faire.
 Vos retours seront consignés dans la PR, sans votre nom.
 
+**La séance** : la relecture se fait en présence du mainteneur, qui observe le logiciel et non vous.
+Le matériel est dans `docs/parcours/seance-de-relecture/` : les
+[consignes pour la personne](seance-de-relecture/consignes.md), la
+[grille d'observation](seance-de-relecture/grille.md) et la
+[conduite de la séance, pour le mainteneur](seance-de-relecture/conduite.md).
+
 ## Ce que chaque écran affiche
 
 Dans cet ordre : « Étape N sur 9 », le titre, ce qui va se passer, « Ce que vous avez à faire : … »,
@@ -37,6 +43,44 @@ Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 > RailsBox Vault vérifie ce que cet appareil contient déjà.
 >
 > Ce que vous avez à faire : Rien : patientez quelques secondes.
+
+## Ce que l'écran d'entrée dit avant l'étape 1
+
+Au-dessus du titre de l'étape 1, la page dit une phrase, trois garanties, puis ce que cette version
+**ne promet pas**. Les limites ne sont pas repliées : elles se lisent sans cliquer. Elles ne
+reviennent pas à l'écran « Rouvrir votre coffre ».
+
+> Votre application, chez vous : elle s'ouvre comme un site, mais tourne entièrement sur cet
+> appareil, sans serveur.
+
+- **Elle tourne sur cet appareil.** Tout se passe dans ce navigateur : aucun serveur ne fait le
+  travail à votre place.
+- **Vos données restent ici, chiffrées.** Rien n'est lisible sans votre secret, et rien ne quitte
+  l'appareil sauf la sauvegarde que vous demandez.
+- **Elle marche hors ligne.** Une fois démarrée, elle n'a plus besoin d'Internet : vous pouvez
+  couper la connexion.
+
+### Ce que cette version ne promet pas
+
+- **Chrome ou Edge seulement.** Utilisez Chrome ou Edge récents, sur ordinateur. Dans Firefox,
+  l'application ne démarre pas. Safari n'est pas pris en charge.
+- **Un premier démarrage long.** Le premier démarrage dure environ deux minutes : de 82 à 126
+  secondes mesurées, sur des machines de test. Sur un portable modeste ou un téléphone, ce n'est pas
+  mesuré.
+- **Un gros téléchargement.** Le premier démarrage télécharge environ 200 Mo. Évitez une connexion
+  limitée en volume.
+- **Beaucoup de mémoire.** L'application réserve 512 Mo pour elle seule. Le navigateur a dépassé 1,5
+  Go au plus fort du démarrage, au-delà de la cible de 1,2 Go. Fermez vos autres onglets.
+- **Données non sensibles seulement.** N'y mettez aucune donnée réelle ni sensible. Cette version
+  sert à essayer, pas à garder des secrets.
+- **Une application non signée.** L'application n'est pas signée : rien ne prouve encore que le code
+  reçu est bien celui que l'auteur a publié. La signature est prévue plus tard (jalon 6).
+- **Hors connexion, après un premier démarrage.** Le premier démarrage a besoin d'Internet. Ensuite,
+  l'application redémarre sans connexion, mais elle ne peut pas savoir si une nouvelle version
+  existe.
+
+Lien affiché sous la liste :
+[Les chiffres et leurs sources](https://github.com/pinfada/railsbox-vault/blob/main/docs/limites-de-cette-version.md).
 
 ## Étape 1 sur 9 — Créer votre coffre
 

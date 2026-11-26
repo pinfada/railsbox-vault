@@ -18,6 +18,7 @@
 
 import { relierLesChamps } from "./refus-du-champ.mjs";
 import { ecrireLaPromesse } from "./promesse-de-l-entree.mjs";
+import { limitesAffichees } from "/src/coquille/limites-de-cette-version.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
 import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
@@ -474,6 +475,8 @@ export function creerParcoursDeLaPage({
     noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
     // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
     noeud("promesse-garanties").hidden = ecranId === "rouvrir";
+    // Les limites se disent avant de créer ; à la réouverture, la personne les a déjà lues.
+    noeud("limites").hidden = !limitesAffichees(ecranId);
     marquerLePrincipal(ecranId);
     // Replier seulement les conseils quand Rails DÉMARRE. Le cadre reste à sa place :
     // le déplacer rechargerait son document et lui ferait perdre le port restreint.
