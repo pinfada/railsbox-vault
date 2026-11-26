@@ -177,6 +177,17 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   await attendre(b, "Révoquer en urgence");
   chronologie.etape("9-revocation-clavier");
   await activer(b, bouton(b, "Révoquer tous les autres moyens d'ouvrir ce coffre"));
+  // La confirmation s'atteint et se joue au clavier (#265) : le focus y est posé sur « Annuler », la
+  // sortie sûre ; « Oui » est le bouton suivant dans l'ordre de tabulation.
+  await expect(bouton(b, "Annuler")).toBeFocused();
+  // Échap annule, et le focus revient au geste qui avait ouvert la confirmation.
+  await b.keyboard.press("Escape");
+  await expect(bouton(b, "Révoquer tous les autres moyens d'ouvrir ce coffre")).toBeFocused();
+  await b.keyboard.press("Enter");
+  await expect(bouton(b, "Annuler")).toBeFocused();
+  await b.keyboard.press("Tab");
+  await expect(bouton(b, "Oui, révoquer les autres moyens")).toBeFocused();
+  await b.keyboard.press("Enter");
   await attendre(b, "Parcours terminé");
   // « Revenir à mon application » est atteint au clavier, et mène à l'accueil (#239).
   await activer(b, bouton(b, "Revenir à mon application"));

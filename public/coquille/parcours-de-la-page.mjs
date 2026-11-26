@@ -39,7 +39,6 @@ import {
   STATUTS,
   annonceDeLaSaisie,
   attenteDeLaPhrase,
-  coffreObserve,
   ecranCourant,
   ecrireProgression,
   etapeAdmise,
@@ -54,10 +53,12 @@ import {
   texteSansCode,
   unGesteEstEnCours,
 } from "/src/coquille/parcours.mjs";
+import { creerLaBarreDuCoffre } from "./barre-du-coffre.mjs";
 import { brancherLesObservateurs } from "./observateurs-du-parcours.mjs";
 import { surveillerLaPression } from "./pression-du-bouton.mjs";
 import { ancreSaisie } from "/src/coquille/interface-de-deverrouillage.mjs";
 import { etatDeLaSaisie } from "/src/coquille/saisie-du-code.mjs";
+import { ecranImposeDeLEtat, observationDeLEtat } from "/src/coquille/ecran-de-la-revocation.mjs";
 
 /** Les sections qui regroupent des blocs : cachées quand aucun de leurs blocs n'est montré. */
 const SECTIONS = ["deverrouillage", "feuille", "cycle", "portabilite"];
@@ -70,9 +71,16 @@ const ENTREE_VAUT = Object.freeze({
 });
 
 /**
- * @param {{ document: Document, location: Location, history: History, navigateur: Navigator }} hote
+ * @param {{ document: Document, location: Location, history: History, navigateur: Navigator,
+ *           revocation: object }} hote `revocation` : le câblage de la révocation (ses portes et ses gestes)
  */
-export function creerParcoursDeLaPage({ document: doc, location: loc, history: hist, navigateur }) {
+export function creerParcoursDeLaPage({
+  document: doc,
+  location: loc,
+  history: hist,
+  navigateur,
+  revocation,
+}) {
   const noeud = (id) => doc.getElementById(id);
   const parametres = new URL(loc.href).searchParams;
   const vueComplete = parametres.get("vue") === "complete";
@@ -95,7 +103,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     sousEtatDuCode: SOUS_ETATS_DU_CODE.annonce,
     /** « Je n'ai plus cette feuille » : vrai jusqu'au prochain code affiché (#214). */
     nouveauCodeDemande: false,
-    revocationFaite: false,
+    /** Les blocs que l'écran courant montre : la vue les remet en place à chaque publication. */
+    blocsVisibles: [],
+    /** L'ouverture est DITE une fois par document, quand l'état a lu le constat de la feuille. */
+    ouvertureDite: false,
     /** « Terminer sans révoquer » (l'étape 9 est facultative) ; « J'ai oublié ma phrase ». */
     sansRevoquer: false,
     phrasePerdue: false,
@@ -173,7 +184,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   }
 
   function persister() {
-    if (vueComplete || typeof navigateur.storage?.getDirectory !== "function") return;
+    if (vueComplete || typeof navigateur.storage?.getDirectory !== "function")
+      return Promise.resolve();
     const texte = ecrireProgression(etat.progression);
     ecritureEnCours = ecritureEnCours.then(async () => {
       try {
@@ -187,11 +199,12 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
         dire("parcours-progression-etat", `progression:non-ecrite:${erreur?.name ?? "Error"}`);
       }
     });
+    return ecritureEnCours;
   }
 
   function pas(evenement, valeur = null) {
     etat.progression = progressionApres(etat.progression, evenement, valeur);
-    persister();
+    return persister();
   }
 
   function reecrireLURL(etape) {
@@ -207,12 +220,14 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (etape === etat.pointeur) return;
     etat.pointeur = etape;
     reecrireLURL(etape);
+    // Une confirmation de révocation ouverte ne survit pas à un changement d'étape (e16).
+    revocation.appliquer({ type: "changer-d-etape" });
   }
 
   // --- Ce qui est MONTRÉ ----------------------------------------------------------------------------
 
-  function blocsDeLEcran(ecranId, releve, rapport) {
-    const moyens = releve.moyensProposes ?? [];
+  function blocsDeLEcran(ecranId, observation, rapport) {
+    const moyens = observation.moyens;
     // Sous un refus à l'étape 4, la personne met son coffre à l'abri là où elle est : la conduite
     // nomme « sauvegarder » et « verrouiller », l'étape les OFFRE (#252 ; #250).
     const abri = ecranId === "travailler" ? accueil.gestesDAbri(rapport) : [];
@@ -221,7 +236,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       // L'annonce n'offre de revenir, et de faire de la place par la révocation, qu'à un coffre qui
       // porte déjà un code : celui où l'on est venu dire « je n'ai plus cette feuille » (#239).
       if (ecranId === "code-annonce" && (bloc === "feuille-revenir" || bloc === "revocation")) {
-        return (releve.nombreDeCodes ?? 0) > 0;
+        return (observation.nombreDeCodes ?? 0) > 0;
       }
       if (bloc === "passkey") {
         return ecranId === "choisir" ? passkeyConnue : moyens.includes("webauthn-prf");
@@ -240,6 +255,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       section.hidden =
         !vueComplete && ![...section.querySelectorAll("[data-bloc]")].some((bloc) => !bloc.hidden);
     }
+  }
+
+  /** La vue vient d'être publiée : ses blocs reprennent la visibilité de l'écran courant. */
+  function appliquerLesBlocs() {
+    montrerLesBlocs(etat.blocsVisibles);
   }
 
   function nommerLesGestes(ecranId) {
@@ -336,105 +356,43 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (focusDedans) noeud("parcours-titre").focus();
   }
 
-  /**
-   * La BARRE DU COFFRE (ADR 0043, R1-bis) : quand l'application tourne, « Sauvegarder »,
-   * « Verrouiller » et « Continuer » sont DÉPLACÉS dans la barre, dans son ordre visuel, puis rendus
-   * à leur place d'origine. Ce sont les mêmes boutons, mêmes identifiants ; seul le cadre de
-   * l'application est intouchable (le déplacer le rechargerait). Un geste dont le bloc d'étape est
-   * caché reste caché dans la barre (`data-hors-etape`), sauf Sauvegarder et Verrouiller, toujours
-   * offerts tant que l'application tourne.
-   */
-  const GESTES_DE_LA_BARRE = [
-    "sauvegarder-le-coffre",
-    "verrouiller-le-coffre",
-    "parcours-continuer",
-  ];
-  // La barre est RESPONSIVE : un geste n'y monte que si la largeur le permet ; sinon il reste à sa
-  // place, dans le panneau du menu « Coffre », où il demeure joignable (ADR 0043). Sous 640 px, la
-  // barre ne porte que le titre et « Coffre ».
-  const LARGEUR_MIN_DANS_LA_BARRE = Object.freeze({
-    "sauvegarder-le-coffre": 640,
-    "verrouiller-le-coffre": 640,
-    "parcours-continuer": 900,
-  });
-  const fenetre = doc.defaultView ?? null;
-  const assezLarge = (id) =>
-    typeof fenetre?.matchMedia !== "function" ||
-    fenetre.matchMedia(`(min-width: ${LARGEUR_MIN_DANS_LA_BARRE[id]}px)`).matches;
-  let barreDemandee = false;
-  for (const largeur of new Set(Object.values(LARGEUR_MIN_DANS_LA_BARRE))) {
-    fenetre
-      ?.matchMedia?.(`(min-width: ${largeur}px)`)
-      ?.addEventListener?.("change", () => placerLesGestes(barreDemandee));
-  }
-  const placesDOrigine = new Map();
-  function placerLesGestes(dansLaBarre) {
-    barreDemandee = dansLaBarre;
-    const barre = noeud("gestes-de-la-barre");
-    if (!barre) return;
-    const panneau = noeud("gestes-du-panneau") ?? barre;
-    for (const id of GESTES_DE_LA_BARRE) {
-      const bouton = noeud(id);
-      // Application démarrée : dans la barre si la largeur le permet, sinon en tête du panneau.
-      // Application arrêtée : à sa place d'origine, dans son étape.
-      const cible = !dansLaBarre ? null : assezLarge(id) ? barre : panneau;
-      if (cible && bouton.parentElement !== cible) {
-        if (!placesDOrigine.has(id)) {
-          const repere = doc.createComment(id);
-          bouton.before(repere);
-          placesDOrigine.set(id, repere);
-        }
-        cible.append(bouton);
-      } else if (!cible && placesDOrigine.has(id)) {
-        placesDOrigine.get(id).replaceWith(bouton);
-        placesDOrigine.delete(id);
-      }
-      const repere = placesDOrigine.get(id);
-      const horsEtape =
-        id === "parcours-continuer" && repere?.parentElement?.closest("[hidden]") != null;
-      bouton.toggleAttribute("data-hors-etape", horsEtape);
-    }
-    const cadre = noeud("cadre-applicatif");
-    if (dansLaBarre) cadre.tabIndex = -1;
-    const evitement = noeud("lien-d-evitement");
-    if (!evitement) return;
-    evitement.setAttribute("href", dansLaBarre ? "#cadre-applicatif" : "#parcours-titre");
-    evitement.textContent = dansLaBarre ? "Aller à l'application" : "Aller au parcours";
-  }
+  const placerLesGestes = creerLaBarreDuCoffre({ doc, noeud });
 
-  function ecranAMontrer(releve, rapport) {
-    etat.coffre = coffreObserve({
-      etat: rapport.etat,
-      texteDesMoyens: noeud("deverrouillage-moyens").textContent,
-      moyensProposes: releve.moyensProposes,
-      dernierRefus: releve.dernierRefus,
-    });
+  /**
+   * L'écran à montrer, décidé sur l'ÉTAT de la révocation : le coffre, les moyens, le compte des codes et
+   * le constat de la feuille viennent des deux portes (C2-1′) — jamais d'un relevé, d'une ligne de texte
+   * ou d'un drapeau de la page. Un écran que l'état impose l'emporte sur le parcours.
+   */
+  function ecranAMontrer(observation) {
+    etat.coffre = observation.coffre;
+    const imposé = ecranImposeDeLEtat(revocation.projection().vue, etat.pointeur);
+    if (imposé !== null) return imposé;
     if (!etat.progressionLue) return "chargement";
     return ecranCourant({
       pointeur: etat.pointeur,
       coffre: etat.coffre,
-      moyens: releve.moyensProposes ?? [],
-      nombreDeCodes: releve.nombreDeCodes,
+      moyens: observation.moyens,
+      nombreDeCodes: observation.nombreDeCodes,
       // Le CONSTAT du Worker, jamais l'indice du fichier : c'est la garde des étapes 4 à 9 (#239).
-      feuilleEprouvee: rapport.feuilleEprouvee === true,
+      feuilleEprouvee: observation.feuilleEprouvee,
       progression: etat.progression,
       sousEtatDuCode: etat.sousEtatDuCode,
-      revocationFaite: etat.revocationFaite,
+      fin: observation.fin,
       sansRevoquer: etat.sansRevoquer,
       phrasePerdue: etat.phrasePerdue,
       nouveauCodeDemande: etat.nouveauCodeDemande,
-      refus: releve.dernierRefus ?? null,
+      refus: observation.refus,
       moteur,
     });
   }
 
   function rendre({ deplacerLeFocus = true } = {}) {
     if (pression.differerLeRendu(() => rendre({ deplacerLeFocus }))) return;
-    const releve = lireJson("deverrouillage-releve");
     const rapport = lireJson("coquille-rapport");
-    const ecranId = ecranAMontrer(releve, rapport);
+    const observation = observationDeLEtat({ etat: revocation.etat(), pointeur: etat.pointeur });
+    const ecranId = ecranAMontrer(observation);
     const ecran = ECRANS[ecranId];
-    retenirLesIndices(ecranId, rapport);
+    retenirLesIndices(ecranId);
     // Verrouillé, le coffre n'affiche aucun code : la feuille part avant même le rechargement (#239).
     if (etat.coffre === COFFRE.verrouille && etat.sousEtatDuCode !== SOUS_ETATS_DU_CODE.annonce) {
       etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce;
@@ -449,20 +407,28 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (ecran.etape === 3 && !(verification && etat.pointeur > 3)) allerA(3);
     if (ecran.etape === 4 && etat.pointeur === 3) allerA(4);
     if (ecranId === "refuse" || ecranId === "inaccessible") {
-      dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
+      dire("parcours-refus", conduiteHumaine(observation.refus));
     }
     const precedent = etat.ecran;
     etat.ecran = ecranId;
     // Une réussite ne reste pas affichée hors contexte (#266 m6) : elle accompagne l'écran où son
     // geste mène, puis s'efface au changement d'écran suivant.
-    if (precedent !== ecranId && etat.changementsDepuisLaReussite !== null) {
+    // Les écrans que l'ÉTAT impose (lecture, modification, révocation en vol) sont des passages, pas des
+    // destinations : une réussite dite avant eux survit jusqu'à l'écran où son geste mène.
+    const passage = (id) => id === "chargement" || id === "etat-du-coffre";
+    if (
+      precedent !== ecranId &&
+      !passage(precedent) &&
+      !passage(ecranId) &&
+      etat.changementsDepuisLaReussite !== null
+    ) {
       etat.changementsDepuisLaReussite += 1;
       if (etat.changementsDepuisLaReussite > 1) {
         dire("parcours-reussite", "");
         etat.changementsDepuisLaReussite = null;
       }
     }
-    const visibles = blocsDeLEcran(ecranId, releve, rapport);
+    const visibles = blocsDeLEcran(ecranId, observation, rapport);
     const rang = rangAffiche(ecranId, etat.pointeur, etat.progression);
     dire("parcours-rang", rang === null ? "" : MESSAGES.rang(rang));
     dire("parcours-titre", ecran.titre);
@@ -475,10 +441,6 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     noeud("demarrer-application").hidden = !vueComplete && !accueil.demarrerEstPossible(rapport);
     const limite = moteur === "firefox" && (ecranId === "creer" || ecranId === "choisir");
     dire("parcours-limite", limite ? LIMITE_DE_FIREFOX : "");
-    // Le COMPTE des feuilles, là où la personne décide d'en demander une de plus (#214).
-    const codes = releve.nombreDeCodes ?? 0;
-    const compteDit = codes > 0 && (ecranId === "code-annonce" || ecranId === "code-a-verifier");
-    dire("parcours-codes", compteDit ? MESSAGES.codesDejaRendus(codes) : "");
     const attente =
       (surLApplication ? accueil.attenteDuDephasage(rapport.dephasage) : null) ??
       ecran.attente ??
@@ -500,19 +462,15 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
     nommerLesGestes(ecranId);
     dire("sauvegarde-annonce", accueil.annonceDeSauvegarde(rapport)); // AVANT le geste (#269)
-    dire(
-      "parcours-avertissement-revocation",
-      MESSAGES.avertissementDeRevocation(releve.moyenDOuverture, releve.moyensProposes ?? null),
-    );
     // L'application démarrée reste à l'écran à TOUTES les étapes (ADR 0043) : l'écran d'une étape
     // qui ne la nomme pas ne la masque plus, il s'ajoute dans le panneau du coffre.
     const cycleLu = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;
     const applicationVisible = cycleLu === "application-demarree" && !etat.applicationArretee;
-    montrerLesBlocs(
+    etat.blocsVisibles =
       applicationVisible && !visibles.includes("espace-de-travail")
         ? [...visibles, "espace-de-travail"]
-        : visibles,
-    );
+        : visibles;
+    appliquerLesBlocs();
     noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
     // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
     noeud("promesse-garanties").hidden = ecranId === "rouvrir";
@@ -561,13 +519,13 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
    * visite. Aucun des deux n'ouvre un écran : le premier choisit le formulaire d'un coffre verrouillé,
    * le second fait de l'étape 4 l'accueil.
    */
-  function retenirLesIndices(ecranId, rapport) {
+  function retenirLesIndices(ecranId) {
     if (!etat.progressionLue) return;
-    const constat = rapport.feuilleEprouvee === true;
-    if (etat.coffre === COFFRE.ouvert && constat !== etat.progression.feuilleEprouvee) {
-      pas("feuille", constat);
-    }
-    const fin = ecranId === "termine" || ecranId === "termine-sans-revoquer";
+    // Le constat n'est RETENU que connu : « inconnu » (lecture en cours ou en échec, coffre mort) n'est pas
+    // « non éprouvée », et n'efface pas l'indice d'une feuille déjà éprouvée.
+    const constat = revocation.lireLeConstat()?.feuilleEprouvee ?? null;
+    if (constat !== null && constat !== etat.progression.feuilleEprouvee) pas("feuille", constat);
+    const fin = ["termine", "termine-sans-attestation", "termine-sans-revoquer"].includes(ecranId);
     if (fin && !etat.progression.visiteTerminee) pas("visite-terminee");
   }
 
@@ -577,7 +535,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     for (const bouton of doc.querySelectorAll("button[data-principal]")) {
       if (bouton.id !== principal) delete bouton.dataset.principal;
     }
-    if (principal !== null && noeud(principal) !== null) noeud(principal).dataset.principal = "";
+    // Un bouton écrit par la VUE porte son marqueur lui-même : on n'écrit pas dans le conteneur d'affichage.
+    if (principal !== null && noeud(principal)?.closest("#affichage") === null) {
+      noeud(principal).dataset.principal = "";
+    }
   }
 
   /** Le cadre replié dit qu'il attend son démarrage, au lieu d'un rectangle blanc (#242, défaut 11). */
@@ -614,17 +575,15 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   geste("parcours-phrase-perdue", () => {
     etat.phrasePerdue = true;
   });
-  geste("parcours-sans-revoquer", () => {
-    etat.sansRevoquer = true;
-  });
   geste("parcours-continuer", () =>
     allerA(etapeApres(etat.ecran, "continuer", etat.pointeur, etat.progression.etapeAtteinte)),
   );
   // « Revenir à mon application » (#239) : aucun geste du Worker, l'étape 4 seulement. L'application
   // démarrée le reste ; arrêtée, « Démarrer » choisit entre installation, instantané et boot à froid.
-  geste("parcours-retour-application", () =>
-    allerA(etapeApres(etat.ecran, "retour", etat.pointeur)),
-  );
+  geste("parcours-retour-application", () => {
+    // La table décide d'abord (e18) : pas de retour pendant l'envoi d'une révocation.
+    revocation.appliquer({ type: "revenir-a-l-application" });
+  });
   // « Je n'ai plus cette feuille » : aucun geste n'est envoyé au Worker ici. L'écran revient à
   // l'annonce, où la personne prépare son papier, et c'est le bouton d'avant qui crée le code.
   geste("parcours-nouveau-code", () => {
@@ -684,17 +643,39 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
 
   // --- Les observateurs : chaque relevé publié peut changer l'écran (`observateurs-du-parcours.mjs`) -
 
-  brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, allerA, rendre });
+  brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, allerA, rendre, revocation });
+
+  // --- Ce que le magasin de la révocation demande au parcours, JAMAIS dans une transition : ces
+  // fonctions sont appelées par des exécuteurs, qui ne peuvent rien appliquer (réentrance refusée).
+
+  const noterLaRevocation = () => pas("revocation-faite");
+  const terminerSansRevoquer = () => {
+    etat.sansRevoquer = true;
+    queueMicrotask(() => rendre());
+  };
+  const revenirALApplication = () =>
+    queueMicrotask(() => {
+      allerA(etapeApres(etat.ecran, "retour", etat.pointeur));
+      rendre();
+    });
 
   rendre({ deplacerLeFocus: false });
   void chargerLaProgression().then((progression) => {
     etat.progression = progression;
     etat.progressionLue = true;
+    // L'indice persisté rejoint le magasin (L12) : il n'ouvre que « aucun geste dans cette séance » (D4).
+    revocation.definirLIndice(progression.revocationFaite === true);
     const demandee = etapeDeLURL(parametres.get("etape"));
     etat.pointeur = etapeAdmise(demandee, progression);
     // Une étape demandée au-delà de la progression est RAMENÉE, et l'URL le dit.
     if (demandee !== null && demandee !== etat.pointeur) reecrireLURL(etat.pointeur);
     rendre({ deplacerLeFocus: false });
   });
-  return Object.freeze({ rendre });
+  return Object.freeze({
+    rendre,
+    appliquerLesBlocs,
+    noterLaRevocation,
+    terminerSansRevoquer,
+    revenirALApplication,
+  });
 }

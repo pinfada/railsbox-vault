@@ -133,7 +133,9 @@ test("C5 : le Worker de B TUÉ à la pause ne laisse aucun effet — ni écritur
 
   // Sa passe 1 était en lecture seule : la révocation de A trouve l'enveloppe telle qu'elle l'a
   // laissée, et avance d'UNE version — pas d'une de plus parce que B aurait écrit entre-temps.
+  // Deux temps (#265) : « Révoquer… » ouvre la confirmation, « Oui » envoie.
   await a.click("#revoquer-en-urgence");
+  await a.click("#revocation-oui");
   await expect(a.locator("#portabilite-etat")).toContainText("portabilite:revoque:1-retires", {
     timeout: DELAI,
   });

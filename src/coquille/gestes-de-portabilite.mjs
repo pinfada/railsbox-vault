@@ -1,7 +1,10 @@
-// Les trois GESTES de portabilité, côté PAGE de confiance (#207, ADR 0039).
+// Les GESTES de portabilité, côté PAGE de confiance (#207, ADR 0039) : sauvegarder et restaurer.
 //
-// Sauvegarder, restaurer, révoquer en urgence : trois boutons, pour la raison qui a fait des autres
-// gestes des boutons — ce que la coquille fait du coffre appartient à qui l'ouvre. Ce module ne
+// La RÉVOCATION D'URGENCE n'est plus ici (#265, ADR 0049) : son état, sa confirmation et son envoi sont
+// ceux du magasin de `magasin-de-la-revocation.mjs`, câblé par `cablage-de-la-revocation.mjs`. Ce
+// module ne l'appelle plus, et ne retient plus que le lien de sauvegarde qu'elle ferme.
+//
+// Sauvegarder et restaurer : deux boutons, pour la raison qui a fait des autres gestes des boutons — ce que la coquille fait du coffre appartient à qui l'ouvre. Ce module ne
 // décide d'aucun refus : le Worker de confiance tranche, et la page DIT ce qu'il a tranché. Il ne
 // met rien en forme non plus : les écrans et leur ordre sont P2 (#193), la mise en forme P3 (#194).
 //
@@ -15,7 +18,7 @@
 
 import { AVERTISSEMENT_SANS_RECUPERATION } from "./feuille-de-recuperation.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
-import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
+import { modifierEtAttendre } from "./modification-d-enveloppe.mjs";
 import { ARCHIVE_ERROR_CODES } from "../vm/archive-errors.mjs";
 import { IMPORT_ERROR_CODES } from "../vm/import-errors.mjs";
 
@@ -57,13 +60,17 @@ export function conduiteDePortabilite(erreur) {
 }
 
 /**
- * Branche les trois gestes et rend de quoi les déclencher sans passer par le document.
+ * Branche les deux gestes et rend de quoi les déclencher sans passer par le document.
+ *
+ * Restaurer ÉCRIT l'enveloppe : il passe par `modifier` (C2-3), qui masque l'affichage d'abord, lance
+ * le geste, puis fait relire l'inventaire — c'est lui qui remplace l'ancien rappel après restauration.
  *
  * @param {{ racine: Document, demander: (type: string, corps?: object) => Promise<any>,
+ *           modifier: (lanceur: () => Promise<unknown>) => { accepte: boolean },
+ *           lirePublic: () => { present: boolean, nombreDeCodes: number } | null,
+ *           relireLInventaire: () => { demandee: boolean }, causeDeLEchec: () => string | null,
  *           rapport: Record<string, unknown>, publier: () => void,
- *           enregistrer?: (fichier: Blob, nom: string) => void,
- *           apresRestauration?: () => Promise<void> | void,
- *           apresRevocation?: () => Promise<void> | void }} liaison
+ *           enregistrer?: (fichier: Blob, nom: string) => void }} liaison
  */
 export function brancherLesGestesDePortabilite(liaison) {
   const noeud = (id) => liaison.racine.querySelector(`#${id}`);
@@ -75,16 +82,39 @@ export function brancherLesGestesDePortabilite(liaison) {
       if (cible !== null) cible.textContent = texte;
     },
   };
-  liaison.rapport.portabilite = { sauvegarde: null, restauration: null, revocation: null };
+  liaison.rapport.portabilite ??= { sauvegarde: null, restauration: null, revocation: null };
   const sauvegarder = () => sauvegarderLeCoffre(contexte);
   const restaurer = (fichier) => restaurerLeCoffre(contexte, fichier);
-  const revoquer = () => revoquerEnUrgence(contexte);
   noeud("sauvegarder-le-coffre")?.addEventListener("click", () => void sauvegarder());
   noeud("restaurer-le-coffre")?.addEventListener("click", () => {
     void restaurer(noeud("archive-a-restaurer")?.files?.[0] ?? null);
   });
-  noeud("revoquer-en-urgence")?.addEventListener("click", () => void revoquer());
-  return Object.freeze({ sauvegarder, restaurer, revoquer });
+  return Object.freeze({
+    sauvegarder,
+    restaurer,
+    retirerLeLien: () => retirerLeLienDeSauvegarde(contexte),
+  });
+}
+
+/**
+ * Le refus d'une sauvegarde demandée quand la porte publique est FERMÉE : la page ne sait pas ce que le coffre
+ * contient, et une sauvegarde sans moyen de récupération peut se faire refuser à la restauration. Aucune réponse
+ * d'inventaire n'est lue ici : seul le magasin accepte une lecture (C2-1′).
+ */
+function refusSansPorte(contexte) {
+  if (contexte.relireLInventaire().demandee) {
+    return {
+      code: CODES_REFUS_COQUILLE.etapeHorsOrdre,
+      message:
+        "L'inventaire de votre coffre est en cours de relecture : patientez un instant, puis recommencez la sauvegarde.",
+    };
+  }
+  return {
+    // La cause que le magasin a consignée (un code), sinon le code de l'ordre : jamais une réponse du canal.
+    code: contexte.causeDeLEchec() ?? CODES_REFUS_COQUILLE.etapeHorsOrdre,
+    message:
+      "La page ne peut pas relire l'inventaire de votre coffre : rouvrez-le, puis recommencez la sauvegarde.",
+  };
 }
 
 /**
@@ -96,8 +126,12 @@ async function sauvegarderLeCoffre(contexte) {
   dire("portabilite-refus", "");
   dire("portabilite-avertissement", "");
   try {
-    const inventaire = await demander("inventaire", {});
-    if (inventaire.present && moyensProposes(inventaire).nombreDeCodes === 0) {
+    // Ce que la page sait des codes vient du magasin, par sa porte (C2-1′), et d'elle seule. « Inconnu » ne
+    // veut JAMAIS dire « sans risque » : porte fermée, la sauvegarde n'est pas offerte (relecture demandée au
+    // magasin, ou déjà en cours) et la personne réessaie quand la porte est ouverte.
+    const donnees = contexte.lirePublic();
+    if (donnees === null) throw refusSansPorte(contexte);
+    if (donnees.present === true && donnees.nombreDeCodes === 0) {
       dire("portabilite-avertissement", AVERTISSEMENT_SANS_RECUPERATION);
     }
     dire("portabilite-etat", "portabilite:sauvegarde-en-cours");
@@ -153,9 +187,15 @@ async function restaurerLeCoffre(contexte, fichier) {
     dire("portabilite-refus", "Choisissez d'abord le fichier de sauvegarde à restaurer.");
     return null;
   }
-  dire("portabilite-etat", "portabilite:restauration-en-cours");
+  const lance = modifierEtAttendre(contexte.modifier, async () => {
+    dire("portabilite-etat", "portabilite:restauration-en-cours");
+    return demander("restaurer", { archive: fichier });
+  });
+  // Refusé (modification en cours, envoi en vol, affichage non protégé) : la porte a dit pourquoi.
+  if (!lance.accepte) return null;
   try {
-    const rendu = await demander("restaurer", { archive: fichier });
+    const { rendu, erreur } = await lance.issue;
+    if (erreur !== null) throw erreur;
     rapport.portabilite.restauration = {
       taille: rendu.taille,
       empreinte: rendu.empreinte,
@@ -168,40 +208,9 @@ async function restaurerLeCoffre(contexte, fichier) {
     };
     rapport.etat = rendu.etat;
     conclure(contexte, `portabilite:restauree:version-${rendu.versionEnveloppe ?? "aucune"}`);
-    await contexte.apresRestauration?.();
     return rapport.portabilite.restauration;
   } catch (erreur) {
     return refuser(contexte, "restauration", erreur);
-  } finally {
-    publier();
-  }
-}
-
-/** RÉVOQUER EN URGENCE : tout ce qui ouvre ce coffre, sauf ce qui vient de l'ouvrir. */
-async function revoquerEnUrgence(contexte) {
-  const { demander, rapport, publier, dire } = contexte;
-  dire("portabilite-refus", "");
-  try {
-    const rendu = await demander("revoquerEnUrgence", {});
-    rapport.portabilite.revocation = {
-      versionEnveloppe: rendu.versionEnveloppe,
-      restants: rendu.restants,
-      retires: rendu.retires,
-      nombreRetires: rendu.nombreRetires,
-      nombreRestants: rendu.nombreRestants,
-      copieDeSauvegardeRetiree: rendu.copieDeSauvegardeRetiree,
-    };
-    // L'archive que CETTE page tient encore porte l'ancienne page de récupération : le lien qui la
-    // remet au navigateur est fermé (revue de la PR #208, constat 4).
-    retirerLeLienDeSauvegarde(contexte);
-    conclure(
-      contexte,
-      `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`,
-    );
-    await contexte.apresRevocation?.();
-    return rapport.portabilite.revocation;
-  } catch (erreur) {
-    return refuser(contexte, "revocation", erreur);
   } finally {
     publier();
   }

@@ -318,6 +318,36 @@ compté ; la liste en est écrite dans l'en-tête de la table et dans l'ADR. Ce 
 (DOM, CSS, focus, lecteurs d'écran, trois moteurs, ordre des écritures de `parcours.json` entre deux
 documents) est un critère bloquant de C2.
 
+### L'interface de la révocation (#265, ADR 0049, C2)
+
+C2 branche la page sur le modèle de C1 sans le modifier. Les modules de décision et de câblage
+vivent dans `src/coquille/` pour la raison de ce répertoire : la campagne de mutation ne rejoue que
+Node. Un DOM factice (`tests/unit/support-dom-factice.mjs`) fait tourner les VRAIS modules ; chaque
+comportement dont une épreuve dépend est rejoué sur le DOM réel des trois moteurs.
+
+| Épreuve                                                                                             | Ce qu'elle prouve                                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/unit/coquille-rendeur-de-la-vue.test.mjs`                                                    | le rendeur unique : X-a à X-g, R-a à R-h, X-g′ ; promesses et horloge contrôlées ; l'énumération des entrelacements (jamais deux autorisations, une tentative par occurrence)                                                               |
+| `tests/unit/coquille-affichage-de-la-revocation.test.mjs`                                           | le masquage VÉRIFIÉ (cinq défaillances combinées, repli, dernier recours), la publication d'un seul geste, l'estampille en dernier, le focus (même nœud, confirmation, geste ouvrant, repère)                                               |
+| `tests/unit/coquille-construction-de-la-vue.test.mjs`                                               | la vue faite de la seule projection : l'ordre du DOM, `aria-disabled` dérivé de `projeter().gestes`, les textes à leur étiquette, la région, la fin, l'indice                                                                               |
+| `tests/unit/coquille-cablage-de-la-revocation.test.mjs`                                             | le câblage : miroirs écrits par `publier` seulement, conteneur masqué quand « Oui » part, masquage impossible = zéro message, double clic, doute, abonnés hors transition, les constats 9 à 14 de #308                                      |
+| `tests/unit/coquille-ecran-de-la-revocation.test.mjs`                                               | le coffre, les moyens, le compte des codes et le constat lus par les deux portes ; les 13 écrans imposés ; la fin                                                                                                                           |
+| `tests/unit/coquille-textes-de-la-revocation.test.mjs`                                              | un texte par clé du catalogue, chacun à son étiquette ; aucune phrase interdite hors des clés `revoque`, balayée sur tout `src/coquille/`                                                                                                   |
+| `tests/unit/coquille-interface-et-revocation.test.mjs`                                              | l'interface lit les portes (« ancienne source présente »), dit l'ouverture au magasin, écrit l'enveloppe par `modifier`                                                                                                                     |
+| `tests/unit/coquille-balayage-de-la-revocation.test.mjs`                                            | les balayages statiques de C2-1′, C2-3, C2-4, C2-7, C2-11 : un seul écrivain des miroirs, aucun lecteur de miroir, aucune écriture d'enveloppe hors `modifier`                                                                              |
+| `tests/unit/coquille-cycle-sur-la-revocation.test.mjs`, `coquille-acquit-de-la-revocation.test.mjs` | la liaison du verrouillage sur la table (décision obligatoire, `true` franc, table réelle en V et en SM) ; l'acquit (relevé, lien d'archive fermé, publication avant la ligne) ; la sauvegarde refusée quand la récupérabilité est inconnue |
+| `tests/unit/coquille-progression-deux-documents.test.mjs`                                           | C2-17 : `parcours.json` n'est jamais une preuve — 2 880 combinaisons de champs, aucune n'ouvre un écran de travail sans le constat                                                                                                          |
+| `tests/browser/coquille-affichage-dom.spec.mjs`                                                     | la règle CSS « masqué sans estampille », le masquage vérifié sur le DOM réel, l'atomicité (un lot de mutations), le rendeur face à des suspensions contrôlées, le calibrage du délai ; trois moteurs                                        |
+| `tests/browser/coquille-revocation-page.spec.mjs`                                                   | la coquille réelle : ordre DOM = visuel = tabulation, deux temps, conteneur masqué au départ du message, un seul message, doute, oubli par ajout de code, indice après rechargement, deux documents ; trois moteurs                         |
+
+Leurs mutants sont dans `tools/mutants-du-cablage-de-la-revocation.mjs`, concaténés à la campagne
+`coquille` (115 mutants ; la campagne `coquille` entière : 581/581 tués). Les mutants équivalents au
+comportement actuel ne sont pas comptés ; ils sont listés, avec leur raison, dans l'en-tête de la
+table et dans l'ADR 0049 (note de C2).
+
+WebKit n'offre pas l'OPFS synchrone dans un Worker : `coquille-revocation-page.spec.mjs` l'exige par
+`test.skip(condition, raison)` après avoir mesuré `indisponible`, au lieu de contourner la limite.
+
 ### La frontière de la coquille de PRODUIT (#161)
 
 Depuis #161, la frontière d'origine est éprouvée **deux fois**, et les deux épreuves ne portent pas

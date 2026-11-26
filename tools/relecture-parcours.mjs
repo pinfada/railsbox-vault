@@ -34,6 +34,11 @@ import {
   REFUS_SANS_CODE,
 } from "../src/coquille/conduites-du-parcours.mjs";
 import {
+  TEXTES_PAR_CLE,
+  confirmationDeRevocation,
+} from "../src/coquille/textes-de-la-revocation.mjs";
+import { CLES_DE_TEXTE } from "../src/coquille/cles-de-la-revocation.mjs";
+import {
   ECRANS,
   ETAPES,
   LIBELLES_DE_LA_PAGE,
@@ -401,6 +406,45 @@ function sectionDeStructure(libelles) {
   ].join("\n\n");
 }
 
+/**
+ * Ce que la VUE écrit de la révocation (#265, ADR 0049) : un texte par clé du catalogue, tel que la page
+ * l'écrit selon l'état du coffre, puis la confirmation pour chacun des trois moyens d'ouverture. C'est la
+ * section que la relectrice lit pour juger si la page dit vrai : chaque texte annonce ce qu'il AFFIRME.
+ */
+function sectionDeLaRevocation(libelles) {
+  const AFFIRME = {
+    aucune: "n'affirme rien du coffre",
+    revoque: "dit que la révocation a été faite (seulement après la réponse du coffre)",
+    "peut-etre": "dit qu'une révocation a peut-être eu lieu",
+    seance: "dit qu'aucun geste de révocation n'a été fait dans cette séance",
+    "non-lancee": "dit que la demande n'a pas été lancée",
+  };
+  const textes = Object.keys(CLES_DE_TEXTE).map((cle) => {
+    const { titre, corps } = TEXTES_PAR_CLE[cle];
+    const entete = titre === null ? "" : `**${titre}**\n\n`;
+    return `### Message « ${cle} »\n\n_Ce message ${AFFIRME[CLES_DE_TEXTE[cle].affirme]}._\n\n${citation([`${entete}${corps}`.trim()])}`;
+  });
+  const moyens = [
+    ["phrase", ["phrase", "recuperation"]],
+    ["webauthn-prf", ["webauthn-prf", "phrase", "recuperation"]],
+    ["recuperation", ["recuperation", "phrase"]],
+  ].map(
+    ([moyen, presents]) =>
+      `- Ouvert par ${moyen === "phrase" ? "la phrase" : moyen === "recuperation" ? "le code" : "la passkey"} : ${confirmationDeRevocation(moyen, presents)}`,
+  );
+  return [
+    "## Ce que la page dit de la révocation d'urgence",
+    "La révocation retire des moyens d'ouvrir le coffre : elle ne se défait pas. La page la demande en " +
+      "deux temps (un premier bouton ouvre la confirmation, un second envoie), et elle ne dit « révoqué » " +
+      "qu'après la réponse du coffre. Chacun des messages ci-dessous dit ce qu'il affirme ; signalez " +
+      "tout message qui vous paraît dire plus que ce que la page peut savoir.",
+    sectionDEcran("etat-du-coffre", libelles),
+    ...textes,
+    "### La confirmation, selon le moyen avec lequel le coffre a été ouvert",
+    moyens.join("\n"),
+  ].join("\n\n");
+}
+
 function sectionDesConduites() {
   const parClasse = Object.values(CLASSES_DE_CONDUITE).map((classe) => {
     const conduites = [
@@ -436,6 +480,7 @@ export async function genererLaRelecture() {
     INTRODUCTION,
     sectionDeStructure(libelles),
     ...ETAPES.map((etape) => sectionDEtape(etape, libelles)),
+    sectionDeLaRevocation(libelles),
     sectionDesConduites(),
   ].join("\n\n");
   const options = (await prettier.resolveConfig(CHEMIN_DE_LA_RELECTURE)) ?? {};

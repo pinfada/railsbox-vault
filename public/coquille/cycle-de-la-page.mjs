@@ -7,7 +7,7 @@
 // branchement que par le RELEVÉ et par le pont que `main.mjs` lui passe.
 
 import { ISSUES_DETAPE, journalDuCycle } from "/src/coquille/cycle-de-vie.mjs";
-import { brancherLesGestesDuCycle } from "/src/coquille/gestes-du-cycle.mjs";
+import { brancherLeCycleSurLaRevocation } from "/src/coquille/cycle-sur-la-revocation.mjs";
 import { brancherLesGestesDePortabilite } from "/src/coquille/gestes-de-portabilite.mjs";
 import { brancherLeGesteDeMiseAJour } from "/src/coquille/geste-de-mise-a-jour.mjs";
 import { ETATS_DU_VOLUME } from "/src/coquille/etat-de-la-coquille.mjs";
@@ -136,6 +136,9 @@ export function creerCycle({
       kekRetenue: mortDuWorker.kekRetenue,
     };
     pont.canal.rejeterTout(refusDeMort);
+    // La mort est un FAIT : la table la range partout (e7). Appliquée après le rejet des demandes en vol,
+    // pour que l'envoi d'une révocation en vol devienne un doute, jamais un refus.
+    pont.revocation.appliquer({ type: "worker-mort" });
     remonterLInterface();
     if (offrirLeGesteQuiRouvre) offrirLaReouverture();
     publier();
@@ -155,6 +158,8 @@ export function creerCycle({
       deriverPhrase: () => Promise.reject(refusDeMort()),
       deriverPasskey: () => Promise.reject(refusDeMort()),
       agent: navigator.userAgent,
+      portes: pont.revocation,
+      reessayer: () => Promise.reject(refusDeMort()),
     });
   }
 
@@ -208,9 +213,11 @@ export function creerCycle({
       deriverPhrase: (appel) => siVivant(() => derivations.deriverPhrase(appel)),
       deriverPasskey: (appel) => siVivant(() => derivations.deriverPasskey(appel)),
       agent: navigator.userAgent,
-      // « Réessayer » (#231) : la sonde du stockage, puis l'inventaire, puis l'état publié — sans recharger.
+      portes: pont.revocation,
+      // « Réessayer » (#231) : la relecture est celle du MAGASIN (la sonde du stockage, puis l'inventaire),
+      // puis l'état publié — sans recharger.
       reessayer: async () => {
-        await interfaceDeDeverrouillage.rafraichirLInventaire();
+        await pont.revocation.reessayerLaLecture();
         await pont.canal.demanderLEtat();
       },
       surEtat: (reponse) => {
@@ -234,10 +241,15 @@ export function creerCycle({
         publier();
       },
     });
-    await interfaceDeDeverrouillage.rafraichirLInventaire();
+    pont.interface = interfaceDeDeverrouillage;
+    // La première lecture de l'inventaire est celle du MAGASIN : rien n'est publié avant qu'il l'ait acceptée.
+    pont.revocation.demarrer();
+    await pont.revocation.attendre((etat) => etat.phase !== "F0" && etat.phase !== "FL");
     await pont.canal.demanderLEtat();
     rapport.journal.push("interface-de-deverrouillage-montee");
-    const gestes = brancherLesGestesDuCycle({
+    const gestes = brancherLeCycleSurLaRevocation({
+      // La table de la révocation tranche aussi le verrouillage (e14) : la liaison est dans `src/`, mutée.
+      revocation: pont.revocation,
       racine: document,
       demander: pont.canal.demanderAuWorker,
       cycle,
@@ -253,15 +265,17 @@ export function creerCycle({
       publier,
       demarrer: gestes.demarrerLApplication,
     });
-    // Sauvegarder, restaurer, révoquer en urgence (#207, ADR 0039). Après une restauration ou une
-    // révocation, l'enveloppe a changé : l'interface redit ce que le coffre porte.
-    brancherLesGestesDePortabilite({
+    // Sauvegarder et restaurer (#207, ADR 0039). La restauration ÉCRIT l'enveloppe : elle passe par
+    // `modifier`, qui relit l'inventaire après l'issue. La révocation n'est plus un geste d'ici (#265).
+    pont.portabilite = brancherLesGestesDePortabilite({
       racine: document,
       demander: pont.canal.demanderAuWorker,
       rapport,
       publier,
-      apresRestauration: () => interfaceDeDeverrouillage.rafraichirLInventaire(),
-      apresRevocation: () => interfaceDeDeverrouillage.rafraichirLInventaire(),
+      modifier: pont.revocation.modifier,
+      lirePublic: pont.revocation.lirePublic,
+      relireLInventaire: pont.revocation.relireLInventaire,
+      causeDeLEchec: pont.revocation.causeDeLEchec,
     });
 
     inscrire("backendPuisVm", ISSUES_DETAPE.differee, "volume-verrouille");

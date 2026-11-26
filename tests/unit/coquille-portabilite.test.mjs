@@ -383,10 +383,8 @@ test("chaque geste PUBLIE son relevé avant de dire son état final (revue #208,
   const journal = [];
   const rapport = {};
   const reponses = {
-    inventaire: { present: false },
     sauvegarder: { taille: 3, archive: null, applicationArretee: false },
     restaurer: { versionEnveloppe: 2, etat: "verrouille" },
-    revoquerEnUrgence: { nombreRetires: 1, nombreRestants: 1, retires: {}, restants: {} },
   };
   const gestes = brancherLesGestesDePortabilite({
     racine: pageEnregistree(journal),
@@ -395,27 +393,95 @@ test("chaque geste PUBLIE son relevé avant de dire son état final (revue #208,
       return reponses[type];
     },
     rapport,
+    // Restaurer ÉCRIT l'enveloppe : il passe par `modifier` du magasin (#265, C2-3).
+    modifier: (lanceur) => {
+      lanceur().catch(() => {});
+      return { accepte: true, annonce: null };
+    },
+    lirePublic: () => ({ present: true, nombreDeCodes: 1 }),
     publier: () => journal.push({ publie: JSON.parse(JSON.stringify(rapport.portabilite)) }),
     enregistrer: () => {},
   });
 
   await gestes.sauvegarder();
   await gestes.restaurer({ name: "archive" });
-  await gestes.revoquer();
   reponses.refuser = true;
   await gestes.restaurer({ name: "archive" });
 
-  const finals = /^portabilite:(sauvegarde-prete|restauree|revoque|restauration-refusee)/;
+  const finals = /^portabilite:(sauvegarde-prete|restauree|restauration-refusee)/;
   const etats = journal
     .map((entree, rang) => ({ ...entree, rang }))
     .filter((entree) => entree.dit === "portabilite-etat" && finals.test(entree.texte));
-  assert.equal(etats.length, 4);
+  assert.equal(etats.length, 3);
   const geste = { "sauvegarde-prete": "sauvegarde", restauree: "restauration" };
   for (const { texte, rang } of etats) {
     const precedent = journal[rang - 1];
     const nom = texte.split(":")[1].replace(/-refusee$/, "");
-    const cle = geste[nom] ?? (nom === "revoque" ? "revocation" : nom);
+    const cle = geste[nom] ?? nom;
     assert.ok(precedent.publie !== undefined, `« ${texte} » dit avant la publication`);
     assert.notEqual(precedent.publie[cle], null, `« ${texte} » : le relevé publié ne le porte pas`);
   }
+});
+
+// --- Revue de #321, point 1 : la porte du magasin, et elle seule (voir coquille-sauvegarde-et-porte) -----
+
+function portabilite({ lirePublic }) {
+  const demandes = [];
+  const noeuds = new Map();
+  const noeud = (id) => {
+    if (!noeuds.has(id))
+      noeuds.set(id, { id, textContent: "", hidden: false, addEventListener() {} });
+    return noeuds.get(id);
+  };
+  const offres = [];
+  const etatPendant = [];
+  const gestes = brancherLesGestesDePortabilite({
+    racine: { querySelector: (s) => noeud(s.replace("#", "")) },
+    demander: async (type) => {
+      demandes.push(type);
+      etatPendant.push(noeud("portabilite-etat").textContent);
+      return { taille: 3, archive: {}, applicationArretee: false };
+    },
+    modifier: () => ({ accepte: false }),
+    lirePublic,
+    relireLInventaire: () => ({ demandee: true }),
+    causeDeLEchec: () => null,
+    rapport: {},
+    publier() {},
+    enregistrer: () => offres.push(noeud("portabilite-avertissement").textContent),
+  });
+  return { gestes, demandes, offres, noeud, etatPendant };
+}
+
+test("[#321 point 1] porte ouverte, aucun moyen de récupération : l'avertissement est dit AVANT l'offre de l'archive", async () => {
+  const p = portabilite({ lirePublic: () => ({ present: true, nombreDeCodes: 0 }) });
+  await p.gestes.sauvegarder();
+  assert.deepEqual(p.demandes, ["sauvegarder"]);
+  assert.equal(p.offres.length, 1);
+  assert.match(p.offres[0], /récupération/i, "au moment de l'offre");
+});
+
+test("[#321 point 1] porte ouverte, un code : aucun avertissement à l'offre", async () => {
+  const p = portabilite({ lirePublic: () => ({ present: true, nombreDeCodes: 1 }) });
+  await p.gestes.sauvegarder();
+  assert.deepEqual(p.offres, [""]);
+  assert.deepEqual(
+    p.etatPendant,
+    ["portabilite:sauvegarde-en-cours"],
+    "l'état est dit AVANT la demande",
+  );
+});
+
+test("[#321 point 1] un coffre ABSENT n'est pas averti d'une récupération qu'il n'a pas", async () => {
+  const p = portabilite({ lirePublic: () => ({ present: false, nombreDeCodes: 0 }) });
+  await p.gestes.sauvegarder();
+  assert.deepEqual(p.offres, [""]);
+});
+
+test("[#321 point 1] porte FERMÉE : ni sauvegarde ni lecture ; relecture demandée = « en cours », sinon la cause consignée", async () => {
+  const p = portabilite({ lirePublic: () => null });
+  const rendu = await p.gestes.sauvegarder();
+  assert.deepEqual(p.demandes, []);
+  assert.equal(rendu.refus, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+  assert.match(p.noeud("portabilite-refus").textContent, /en cours de relecture/);
 });

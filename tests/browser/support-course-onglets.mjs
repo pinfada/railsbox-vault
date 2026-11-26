@@ -121,7 +121,9 @@ export async function verrouiller(page) {
 /** Révoque tout sauf soi (si `revoquer`), puis verrouille. */
 export async function revoquerPuisVerrouiller(page, { dejaRevoque = false } = {}) {
   if (!dejaRevoque) {
+    // Deux temps (#265) : « Révoquer… » ouvre la confirmation, « Oui » envoie.
     await page.click("#revoquer-en-urgence");
+    await page.click("#revocation-oui");
     await expect(page.locator("#portabilite-etat")).toContainText("portabilite:revoque:1-retires", {
       timeout: DELAI,
     });

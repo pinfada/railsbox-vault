@@ -8,7 +8,9 @@
 //
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
-import { MOYEN_NOMME, lesAutresRetires } from "./moyens-nommes.mjs";
+import { ecran } from "./fabrique-d-ecran.mjs";
+import { ECRANS_DE_LA_REVOCATION } from "./ecrans-de-la-revocation.mjs";
+import { avertissementDeRevocation } from "./textes-de-la-revocation.mjs";
 import { enMegaoctets } from "./taille-en-clair.mjs";
 import {
   ATTENTE_DE_LA_MISE_A_JOUR,
@@ -81,6 +83,14 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
     "« Fichier de sauvegarde » (champ)",
     "« Restaurer ma sauvegarde sur cet appareil »",
   ],
+  // Les blocs de la VUE (#265) : leur texte est écrit dans le conteneur d'affichage, à partir de l'état.
+  impose: [
+    "ce que l'état du coffre impose : lecture, modification, révocation en cours ou à vérifier",
+  ],
+  fin: [
+    "la fin du parcours atteinte par l'indice seul, qui ne dit que : aucun geste dans cette séance",
+  ],
+  "vue-codes": ["le compte des codes de récupération que ce coffre porte déjà"],
   revocation: ["« Révoquer tous les autres moyens d'ouvrir ce coffre »"],
   "sans-revoquer": ["« Terminer sans révoquer »"],
   continuer: ["« Continuer : » suivi du titre de l'étape suivante"],
@@ -246,7 +256,7 @@ export const ECRANS = Object.freeze({
       "lui, une phrase oubliée est un coffre perdu, et personne ne peut vous aider. Ce code ne " +
       "s'affichera QU'UNE SEULE FOIS : préparez une feuille de papier et un stylo avant de cliquer.",
     attendu: "Quand vous êtes prêt à écrire, cliquez sur « Afficher mon code de récupération ».",
-    blocs: ["feuille-annonce", "feuille-revenir", "revocation"],
+    blocs: ["vue-codes", "feuille-annonce", "feuille-revenir", "revocation"],
   }),
   "code-feuille": ecran(3, {
     titre: "Recopier votre code de récupération",
@@ -285,7 +295,7 @@ export const ECRANS = Object.freeze({
     // Les cas rares se replient sous « Je n'ai plus ma feuille », comme à l'écran voisin (#266 M3).
     casRares: SI_LA_FEUILLE_EST_PERDUE,
     attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
-    blocs: ["nouveau-code", "verrouiller"],
+    blocs: ["vue-codes", "nouveau-code", "verrouiller"],
   }),
   travailler: ecran(4, {
     titre: "Travailler dans l'application",
@@ -411,49 +421,10 @@ export const ECRANS = Object.freeze({
       "Si personne n'a vu votre phrase ni votre feuille, cliquez sur « Terminer sans révoquer ». " +
       "Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce " +
       "coffre », puis notez le nouveau numéro de feuille sur votre feuille.",
-    blocs: ["revocation", "sans-revoquer", "retour"],
+    blocs: ["sans-revoquer", "revocation", "retour"],
   }),
-  "termine-sans-revoquer": ecran(9, {
-    // Distinct de « Parcours terminé » : ici, rien n'a été retiré (#246).
-    titre: "Parcours terminé, rien n'a été révoqué",
-    ceQuiVaSePasser:
-      "Vous avez fait le tour de votre coffre, sans rien révoquer : chacun des moyens qui l'ouvraient " +
-      "l'ouvre toujours. Si un jour l'un de ces moyens a pu être vu, la révocation " +
-      "reste disponible sur l'écran de votre application.",
-    attendu:
-      "Pour vous servir de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours depuis " +
-      "le début, effacez les données du site dans les réglages du navigateur : supprimer les " +
-      "cookies ne suffit pas.",
-    blocs: ["retour"],
-  }),
-  termine: ecran(9, {
-    titre: "Parcours terminé",
-    ceQuiVaSePasser:
-      "Seul le moyen que vous avez utilisé pour ouvrir ce coffre l'ouvre désormais. Les sauvegardes " +
-      "déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de " +
-      "tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
-    attendu:
-      "Notez sur votre feuille le nouveau numéro de feuille. Pour vous servir de votre " +
-      "application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours depuis " +
-      "le début, effacez les données du site dans les réglages du navigateur : supprimer les " +
-      "cookies ne suffit pas.",
-    blocs: ["retour"],
-  }),
+  ...ECRANS_DE_LA_REVOCATION,
 });
-
-/** @param {number | null} rang */
-function ecran(rang, { titre, ceQuiVaSePasser, attendu, casRares = null, attente = null, blocs }) {
-  return Object.freeze({
-    etape: rang,
-    titre,
-    ceQuiVaSePasser,
-    attendu,
-    // Les cas rares, repliés sous « Je n'ai plus ma feuille » (R1-bis, point 6).
-    casRares,
-    attente,
-    blocs: Object.freeze([...blocs]),
-  });
-}
 
 /**
  * Les libellés que la MISE EN FORME ajoute à la page (#194 ; revue de la PR #216, constat 6). Le repli
@@ -520,6 +491,7 @@ export const PRINCIPAL_DE_L_ECRAN = Object.freeze({
   revoquer: "parcours-sans-revoquer",
   "termine-sans-revoquer": "parcours-retour-application",
   termine: "parcours-retour-application",
+  "termine-sans-attestation": "parcours-retour-application",
 });
 
 /**
@@ -668,12 +640,8 @@ export const MESSAGES = Object.freeze({
   phasePreparation: "Étape en cours : préparation de l'application.",
   phaseDemarrage: "Étape en cours : démarrage de l'application.",
   phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",
-  avertissementDeRevocation: (moyen, moyens = null) =>
-    MOYEN_NOMME[moyen] === undefined
-      ? "Seul le moyen avec lequel vous avez ouvert ce coffre continuera de l'ouvrir ; tous les " +
-        "autres ne fonctionneront plus."
-      : `Seul le moyen avec lequel vous venez d'ouvrir ce coffre — ${MOYEN_NOMME[moyen]} — ` +
-        `continuera de l'ouvrir. ${lesAutresRetires(moyen, moyens)}`,
+  // Une seule source : `textes-de-la-revocation.mjs` (D4, C2-5′).
+  avertissementDeRevocation,
   codesDejaRendus: (nombre) =>
     nombre <= 1
       ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas " +

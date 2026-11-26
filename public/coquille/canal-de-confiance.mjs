@@ -16,8 +16,6 @@ import {
   enveloppeDeMessage,
   REPONSES_PRIVILEGIEES,
   enveloppePrivilegiee,
-  feuilleEprouveeDuMessage,
-  tailleDeSauvegardeDuMessage,
 } from "/src/coquille/contrat-de-messages.mjs";
 import { chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
 import { CAUSES_DE_MORT } from "/src/coquille/mort-du-worker.mjs";
@@ -154,22 +152,16 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
     if (decode.type === TYPES_PRIVILEGIES.etatReponse) {
       rapport.etat = decode.message.etat;
       rapport.barrieres = decode.message.barrieres;
-      // Un coffre qui n'est plus ouvert ne porte plus de preuve lisible (#239).
-      if (rapport.etat !== "ouvert") rapport.feuilleEprouvee = false;
       pont.verrouillage.refletDeLEtat();
       publier();
     }
-    // Le constat de la feuille (#239) est publié DANS LE MÊME relevé que l'état ouvert : le parcours
-    // ne voit jamais un coffre ouvert sans savoir si sa feuille est éprouvée.
-    if (decode.type === TYPES_PRIVILEGIES.inventaireReponse) {
-      rapport.feuilleEprouvee = feuilleEprouveeDuMessage(decode.message);
-      rapport.tailleDeSauvegarde = tailleDeSauvegardeDuMessage(decode.message);
-      publier();
-    }
+    // Le CONSTAT de la feuille (#239) et la taille d'une sauvegarde (#269) ne sont PLUS écrits ici (#265,
+    // ADR 0049, C2-1′) : une réponse d'inventaire ne devient donnée de la page qu'une fois ACCEPTÉE par le
+    // magasin de la révocation — lecture courante, normalisée —, et c'est l'effet `publier` qui écrit
+    // alors le miroir. Une réponse périmée, abandonnée ou malformée n'écrit donc rien.
     if (decode.type === TYPES_PRIVILEGIES.deverrouillageReponse) {
       rapport.etat = decode.message.etat;
       rapport.barrieres = decode.message.barrieres;
-      rapport.feuilleEprouvee = feuilleEprouveeDuMessage(decode.message);
       pont.verrouillage.refletDeLEtat();
       publier();
     }

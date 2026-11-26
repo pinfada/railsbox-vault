@@ -28,6 +28,7 @@
 import { fileURLToPath } from "node:url";
 
 import { MUTATIONS_DE_LA_REVOCATION } from "./mutants-de-la-revocation.mjs";
+import { MUTATIONS_DU_CABLAGE } from "./mutants-du-cablage-de-la-revocation.mjs";
 import { campagneDeMutation } from "./moteur-de-mutation.mjs";
 
 const ADMISSION = "src/coquille/admission-applicative.mjs";
@@ -1124,9 +1125,8 @@ export const MUTATIONS = Object.freeze([
     nom: "l'étape 9 est facultative : « Terminer sans révoquer » (décision du 19/09)",
     garde: "ecranOuvert — la fin de visite sans révocation",
     fichier: PARCOURS,
-    avant:
-      '    9: revocationFaite ? "termine" : sansRevoquer ? "termine-sans-revoquer" : "revoquer",\n',
-    apres: '    9: revocationFaite ? "termine" : "revoquer",\n',
+    avant: '    9: fin ?? (sansRevoquer ? "termine-sans-revoquer" : "revoquer"),\n',
+    apres: '    9: fin ?? "revoquer",\n',
     epreuves: [EPREUVE_PARCOURS],
   },
   {
@@ -1265,15 +1265,6 @@ export const MUTATIONS = Object.freeze([
     avant: "    CODE_PHRASE_FAIBLE,\n    S.unsupported,\n",
     apres: "    S.unsupported,\n",
     epreuves: [EPREUVE_PARCOURS_CONDUITES],
-  },
-  {
-    nom: "un refus de GESTE n'est pas un refus d'inventaire",
-    garde: "coffreObserve — la ligne des moyens d'un refus d'inventaire",
-    fichier: PARCOURS,
-    avant:
-      '  if (REFUS_D_INVENTAIRE.includes(dernierRefus) && texte.startsWith("Ce coffre ne peut pas")) {\n',
-    apres: '  if (texte.startsWith("Ce coffre ne peut pas")) {\n',
-    epreuves: [EPREUVE_PARCOURS],
   },
   {
     nom: "un code du chemin rend SA conduite, jamais la phrase générique",
@@ -1591,12 +1582,12 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un stockage inaccessible n'est pas un coffre absent : le refus typé le reconnaît",
-    garde: "coffreObserve — `COFFRE.inaccessible` (#231, revue de la PR #305)",
-    fichier: PARCOURS,
-    avant:
-      "  if (dernierRefus === STORAGE_ERROR_CODES.indeterminate) return COFFRE.inaccessible;\n",
+    garde:
+      "coffreDeLEtat — `COFFRE.inaccessible` (#231, revue de la PR #305 ; décision d'écran de C2)",
+    fichier: "src/coquille/ecran-de-la-revocation.mjs",
+    avant: "  if (code === STORAGE_ERROR_CODES.indeterminate) return COFFRE.inaccessible;\n",
     apres: "",
-    epreuves: [EPREUVE_PARCOURS],
+    epreuves: ["tests/unit/coquille-ecran-de-la-revocation.test.mjs"],
   },
   {
     nom: "l'écran d'un stockage inaccessible est celui du réessai, non « chargement »",
@@ -1800,10 +1791,9 @@ export const MUTATIONS = Object.freeze([
       "ouvrirParLaPhrase — la garde sur `inventaire.refus`, avant la politique de phrase (#231)",
     fichier: INTERFACE,
     avant:
-      "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n" +
-      "  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);\n",
-    apres:
-      "  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.\n",
+      "  const refusee = contexte.portes.lirePublic()?.refus ?? null;\n" +
+      "  if (refusee !== null) return montrerLeRefus(contexte, refusee);\n",
+    apres: "",
     epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
   },
   // #231, revue de la PR #305 (relecteur 2, seconde passe) : la condition qui CHOISIT la politique de
@@ -1812,14 +1802,17 @@ export const MUTATIONS = Object.freeze([
   // la relecture d'un inventaire dont on ne sait rien.
   {
     nom: "un inventaire INCONNU n'est pas un coffre à créer : aucune politique de création",
-    garde: "relireLaPhrase — `inventaire.inconnu !== true` dans le choix de la création (#231)",
+    garde: "relireLaPhrase — le refus typé `indeterminate` dans le choix de la création (#231)",
     fichier: INTERFACE,
-    avant: "  const creation = !inventaire.present && inventaire.inconnu !== true;\n",
-    apres: "  const creation = !inventaire.present;\n",
+    avant:
+      "  const creation =\n    donnees?.present !== true && donnees?.refus?.code !== STORAGE_ERROR_CODES.indeterminate;\n",
+    apres: "  const creation = donnees?.present !== true;\n",
     epreuves: [EPREUVE_INTERFACE_INVENTAIRE],
   },
   // Le modèle d'état de la révocation (#310, ADR 0049) : sa table est séparée.
   ...MUTATIONS_DE_LA_REVOCATION,
+  // Le câblage de la révocation (#265, C2) : rendeur, affichage, vue, câblage, décision d'écran.
+  ...MUTATIONS_DU_CABLAGE,
   // --- #311, tranche C5 : la course entre onglets au déverrouillage ------------------------------
   {
     nom: "la revalidation exige le MÊME emplacement (#311)",

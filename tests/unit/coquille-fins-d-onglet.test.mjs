@@ -441,6 +441,7 @@ function coquilleFeinte({ delaiMs = 60_000, bootQuiEchoue = false } = {}) {
     cycle: { issueDe: () => null, conclure: () => {}, releve: () => [] },
     rapport: {},
     publier: () => {},
+    accepteLeVerrouillage: () => true,
     avantVerrouillage: () => {},
     // La conduite de `public/main.mjs`, recopiée à l'identique : c'est elle qui est éprouvée.
     apresRefusDOrdre: (code, declencheur) => {

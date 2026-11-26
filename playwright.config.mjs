@@ -127,6 +127,12 @@ const DEVERROUILLAGE_COQUILLE = [
   // Un stockage INACCESSIBLE POUR L'INSTANT n'est pas un coffre ABSENT (#231, revue de la PR #305) :
   // l'inventaire inconnu, « Réessayer », la reprise sans rechargement.
   "**/coquille-stockage-indetermine.spec.mjs",
+  // L'AFFICHAGE de la révocation (#265, ADR 0049 § C2) : le masquage vérifié, la publication d'un seul
+  // geste et la règle CSS « masqué sans estampille » se mesurent sur le DOM réel des trois moteurs.
+  "**/coquille-affichage-dom.spec.mjs",
+  // La RÉVOCATION D'URGENCE câblée sur la coquille réelle (#265, C2) : la confirmation en deux temps, le
+  // pré-vol, la vue autoritaire, sur le vrai Worker de confiance.
+  "**/coquille-revocation-page.spec.mjs",
 ];
 
 /**
