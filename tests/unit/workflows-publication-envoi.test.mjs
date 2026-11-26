@@ -30,12 +30,40 @@ test("deployer : environnement production, envoi demandé, après la publication
   assert.match(bloc, /publier-envoi\.mjs --envoyer/u);
 });
 
+test("deployer : UN seul appel d'envoi pour les DEUX arbres, précédé de la garde de l'environnement", () => {
+  const bloc = job("deployer");
+  assert.equal(
+    (bloc.match(/publier-envoi\.mjs/gu) ?? []).length,
+    1,
+    "un appel : les deux cibles sont contrôlées avant tout envoi",
+  );
+  assert.equal((bloc.match(/--cible /gu) ?? []).length, 2);
+  assert.ok(bloc.indexOf("publier-garde-environnement.mjs") !== -1, "la garde existe");
+  assert.ok(
+    bloc.indexOf("publier-garde-environnement.mjs") < bloc.indexOf("publier-envoi.mjs"),
+    "la garde précède l'envoi",
+  );
+  assert.ok(
+    bloc.indexOf("--cible artifacts/publication/application") <
+      bloc.indexOf("--cible artifacts/publication/coquille"),
+    "l'application d'abord",
+  );
+  // La garde ne reçoit AUCUN secret : son étape n'a que le jeton du workflow.
+  const etape = bloc.slice(
+    bloc.indexOf("publier-garde-environnement.mjs") - 600,
+    bloc.indexOf("publier-envoi.mjs"),
+  );
+  assert.doesNotMatch(etape.slice(etape.lastIndexOf("- name:")), /CLOUDFLARE/u);
+  assert.doesNotMatch(bloc, /--profil/u, "le profil d'envoi n'est pas un choix");
+});
+
 test("la répétition à blanc ne référence ni secret ni environnement, et n'envoie pas", () => {
   const bloc = job("repetition");
   assert.ok(bloc, "le job repetition existe");
   assert.doesNotMatch(bloc, /secrets\./u);
   assert.doesNotMatch(bloc, /^ {4}environment:/mu);
   assert.match(bloc, /publier-envoi\.mjs --repetition/u);
+  assert.equal((bloc.match(/--cible /gu) ?? []).length, 2);
   assert.doesNotMatch(bloc, /publier-envoi\.mjs --envoyer/u);
   assert.match(bloc, /^ {4}if: \$\{\{ !inputs\.envoyer \}\}$/mu);
 });
