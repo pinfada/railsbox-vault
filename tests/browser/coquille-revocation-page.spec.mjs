@@ -11,8 +11,8 @@
 //  - ajouter un code pendant une confirmation l'OUBLIE ;
 //  - après rechargement, l'indice persisté n'ouvre que « aucun geste de révocation dans cette séance ».
 //
-// WebKit n'offre pas l'OPFS synchrone dans un Worker : la coquille y publie `indisponible`, aucun coffre
-// ne s'y ouvre, et la limite est EXIGÉE ici — `test.skip` avec sa raison mesurée —, pas contournée.
+// WebKit n'offre pas l'OPFS synchrone dans un Worker (`indisponible`) ou rejette `getDirectory()` en session
+// éphémère (`indetermine`, #231) : aucun coffre ne s'y ouvre, et la limite est EXIGÉE ici — `test.skip` avec sa raison mesurée —, pas contournée.
 
 import { expect, test } from "../support/test.mjs";
 
@@ -69,10 +69,11 @@ async function ouvrirLaCoquille(page, requete = "?vue=complete") {
   await expect(page.locator("html")).toHaveAttribute("data-coquille", /prete|sans-cadre/, {
     timeout: DELAI,
   });
-  if ((await releve(page)).etat === ETATS_DU_VOLUME.indisponible) {
+  const etat = (await releve(page)).etat;
+  if ([ETATS_DU_VOLUME.indisponible, ETATS_DU_VOLUME.indetermine].includes(etat)) {
     test.skip(
       true,
-      "WebKit : pas d'OPFS synchrone dans un Worker, aucun coffre ne s'y ouvre (mesuré)",
+      `WebKit : état « ${etat} » (OPFS synchrone absent, ou getDirectory() rejeté en session éphémère, #231) : aucun coffre ne s'y ouvre (mesuré)`,
     );
   }
 }
