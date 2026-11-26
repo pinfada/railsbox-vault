@@ -83,6 +83,29 @@ export function verifierMutations(attestations) {
       ecarts.push(`lot ${i} : ${a.survivants} survivant(s).`);
     }
     if (a.tues !== a.mutants) ecarts.push(`lot ${i} : ${a.tues} tués ≠ ${a.mutants} mutants.`);
+    // Chaque campagne dit elle-même si elle a réussi, et ses comptes doivent se tenir : le `ok` global
+    // ne suffit pas (relecture 3 de #329 : une campagne à `ok: false` passait avec un lot nominal).
+    const campagnes = a.campagnes ?? [];
+    for (const c of campagnes) {
+      const nom = nomEntree(c);
+      if (c.ok !== true) ecarts.push(`lot ${i} : campagne ${nom} en échec.`);
+      if (c.tues !== c.mutants) {
+        ecarts.push(`lot ${i} : campagne ${nom} : ${c.tues} tués ≠ ${c.mutants} mutants.`);
+      }
+      if (c.mutants !== c.tues + c.survivants) {
+        ecarts.push(
+          `lot ${i} : campagne ${nom} : décompte incohérent (tués + survivants ≠ mutants).`,
+        );
+      }
+    }
+    const somme = (cle) => campagnes.reduce((total, c) => total + c[cle], 0);
+    if (
+      a.mutants !== somme("mutants") ||
+      a.tues !== somme("tues") ||
+      a.survivants !== somme("survivants")
+    ) {
+      ecarts.push(`lot ${i} : comptes du lot ≠ somme des campagnes.`);
+    }
   }
   return ecarts;
 }

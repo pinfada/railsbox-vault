@@ -271,6 +271,14 @@ pour un lot manquant, en double, inattendu, vide, avec un survivant ou des entr�
 sélection vide (`--campagnes=,,`), une tranche valide mais vide et une table vide sont refusées
 (code non nul), au lieu de rendre 0/0.
 
+**Campagne `outillage-ci` (relecture 3 de #329).** Dix-septième campagne, dans le lot 4
+(`tools/muter-gardes-outillage-ci.mjs`) : **27/27 mutants tués**, un par garde du vérificateur
+d'attestations (lot et tranche absents, en double, hors bornes, vides, survivants, `ok` global ET de
+chaque campagne, comptes de chaque campagne et leur somme, CLI), du refus des tranches et tables
+vides (`moteur-de-mutation.mjs`) et du refus des sélections et campagnes vides
+(`rejouer-les-campagnes.mjs`). Neuf mutants ont d'abord survécu : les épreuves ont été resserrées ou
+ajoutées, jamais les mutants retirés.
+
 **Limites.** Les durées par lot dépendent de l'exécutant (#243). Une attestation prouve le comptage
 déposé par le lot, pas son exactitude : un lot qui écrirait une attestation fausse la passerait ;
 les artefacts d'un run ne se mélangent pas à ceux d'un autre.

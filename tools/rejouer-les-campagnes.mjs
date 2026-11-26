@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// LE LANCEUR des seize campagnes de mutation (#196) : il les rejoue en SÉQUENCE, s'arrête au premier
+// LE LANCEUR des dix-sept campagnes de mutation (#196) : il les rejoue en SÉQUENCE, s'arrête au premier
 // code de sortie non nul, et publie une table (campagne, mutants, tués, survivants, durée).
 //
 //     npm run check:mutations                          # TOUT, en séquence (poste de développement)
@@ -43,7 +43,7 @@ import { fileURLToPath } from "node:url";
 const RACINE = fileURLToPath(new URL("..", import.meta.url));
 
 /**
- * Les seize campagnes, dans l'ordre où elles sont jouées. Ajouter une campagne, c'est ajouter
+ * Les dix-sept campagnes, dans l'ordre où elles sont jouées. Ajouter une campagne, c'est ajouter
  * une ligne ici ET la placer dans un lot de `LOTS` — le lanceur ne connaît rien d'autre du contrat que le nom du script et `--json`.
  */
 export const CAMPAGNES = Object.freeze([
@@ -57,6 +57,7 @@ export const CAMPAGNES = Object.freeze([
   { nom: "hors-ligne", script: "tools/muter-gardes-hors-ligne.mjs" },
   { nom: "instantane", script: "tools/muter-gardes-instantane.mjs" },
   { nom: "magasin", script: "tools/muter-gardes-magasin.mjs" },
+  { nom: "outillage-ci", script: "tools/muter-gardes-outillage-ci.mjs" },
   { nom: "paquet-applicatif", script: "tools/muter-gardes-paquet-applicatif.mjs" },
   { nom: "persistance", script: "tools/muter-gardes-persistance.mjs" },
   { nom: "recuperation", script: "tools/muter-gardes-recuperation.mjs" },
@@ -89,6 +90,7 @@ export const LOTS = Object.freeze([
     "fins-d-onglet",
     "hierarchie-de-cles",
     "instantane",
+    "outillage-ci",
     "paquet-applicatif",
     "persistance",
     "revocation-urgence",
@@ -153,7 +155,7 @@ const RAPPORT_JSON = "reports/mutations.json";
  * l'enfant s'est arrêté (signal, crash) avant d'en rendre un, et c'est nommé comme tel plutôt que
  * deviné.
  */
-function jouer(campagne) {
+export function jouer(campagne) {
   const debut = Date.now();
   const environnement = { ...process.env };
   delete environnement.VAULT_MUTATION_TRANCHE;

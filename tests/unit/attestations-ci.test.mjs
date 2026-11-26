@@ -42,7 +42,7 @@ test("un lot manquant, en double ou inattendu fait échouer la vérification", (
 test("un compte vide, un survivant, un lot en échec ou des entrées différentes sont refusés", () => {
   const vide = tous();
   vide[1] = attestationMutations(2, { ok: true, campagnes: [] });
-  assert.match(verifierMutations(vide).join("\n"), /lot 2/u);
+  assert.match(verifierMutations(vide).join("\n"), /lot 2 : vide/u);
 
   const zero = tous();
   zero[0] = attestationMutations(1, {
@@ -64,7 +64,7 @@ test("un compte vide, un survivant, un lot en échec ou des entrées différente
 
   const faux = tous();
   faux[0] = { ...faux[0], tues: faux[0].mutants - 1, survivants: 0 };
-  assert.match(verifierMutations(faux).join("\n"), /lot 1/u);
+  assert.match(verifierMutations(faux).join("\n"), /lot 1 : \d+ tués ≠ \d+ mutants/u);
 });
 
 const stats = (o = {}) => ({ stats: { expected: 300, unexpected: 0, flaky: 0, skipped: 3, ...o } });
@@ -120,7 +120,7 @@ test("le vérificateur lit le succès de CHAQUE campagne et la cohérence des co
 
   const incoherent = tous();
   incoherent[1].campagnes[0] = { ...incoherent[1].campagnes[0], tues: 4 };
-  assert.match(verifierMutations(incoherent).join("\n"), /lot 2.*campagne .*tués/u);
+  assert.match(verifierMutations(incoherent).join("\n"), /campagne \S+ : \d+ tués ≠/u);
 
   const somme = tous();
   somme[2] = { ...somme[2], mutants: somme[2].mutants + 1, tues: somme[2].tues + 1 };
@@ -152,4 +152,36 @@ test("une campagne qui ne rend aucun mutant fait échouer le lanceur (jouer)", a
   const plein = join(dossier, "plein.mjs");
   writeFileSync(plein, "process.stdout.write(JSON.stringify({ resultats: [{ tue: true }] }));\n");
   assert.equal(jouer({ nom: "plein", script: plein }).ok, true);
+});
+
+test("chaque garde du vérificateur répond à son propre cas, sans l'aide d'une autre (relecture 3)", () => {
+  const lotVide = tous();
+  lotVide[1] = { ...lotVide[1], mutants: 0, tues: 0, survivants: 0 };
+  assert.match(verifierMutations(lotVide).join("\n"), /lot 2 : vide/u);
+
+  const entreeVide = tous();
+  entreeVide[0].campagnes[0] = { ...entreeVide[0].campagnes[0], mutants: 0, tues: 0 };
+  assert.match(verifierMutations(entreeVide).join("\n"), /lot 1 : vide/u);
+
+  const global = tous();
+  global[0] = { ...global[0], ok: false };
+  assert.match(verifierMutations(global).join("\n"), /lot 1 : en échec/u);
+
+  const hors = [...navigateur(), { ...navigateur()[0], tranche: TRANCHES_NAVIGATEUR + 1 }];
+  assert.match(verifierNavigateur(hors).join("\n"), /inattendue/u);
+
+  assert.match(
+    verifierNavigateur([navigateur()[0], attestationNavigateur(2, stats({ flaky: 1 }))]).join("\n"),
+    /tranche 2.*reprise/u,
+  );
+});
+
+test("le CLI sort en code 1 sur un dossier d'attestations illisible", () => {
+  const r = spawnSync(
+    process.execPath,
+    ["tools/attestations-ci.mjs", "verifier", "mutations", "/inexistant-attestations-ci"],
+    { encoding: "utf8", cwd: new URL("../..", import.meta.url) },
+  );
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /illisible/u);
 });

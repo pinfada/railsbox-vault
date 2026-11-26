@@ -72,7 +72,7 @@ test("la tranche i/n garde les mutants d'indice ≡ i-1 mod n, et les n tranches
 
 test("une tranche mal formée est refusée au lieu de jouer une table vide", () => {
   for (const mauvaise of ["0/3", "4/3", "1/0", "a/b", "2", "1/2/3", "-1/2", "1.5/2"]) {
-    assert.throws(() => filtrerParTranche([{ nom: "x" }], mauvaise), /tranche/u, mauvaise);
+    assert.throws(() => filtrerParTranche([{ nom: "x" }], mauvaise), /invalide/u, mauvaise);
   }
 });
 
