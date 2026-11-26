@@ -911,11 +911,11 @@ décision n'est rouvert.
    du navigateur sur **profil persistant**, origine arrêtée, déverrouillage et boot (E2E, critère 1)
    ; après un changement de contrôleur, dans la même page, zéro nouveau Worker (sonde de comptage à
    **témoin positif** et **témoin de mordant**) et zéro requête de démarrage (E2E, critère 13c) —
-   **la « nouvelle ouverture dans la même page » n'existe pas dans le produit : écart déclaré, point
-   9** ; retrait **interrompu entre la suppression des caches et la désinscription**, puis geste
-   suivant (unitaire et 3 moteurs, critère 7). **Limite écrite** : la sonde est désactivée pendant
-   les vrais boots (elle fait mourir le Worker de confiance pendant un boot réel, cause non
-   cherchée).
+   **la « nouvelle ouverture dans la même page » n'existe pas dans le produit : écart décidé le
+   26/11/2026, point 9** ; retrait **interrompu entre la suppression des caches et la
+   désinscription**, puis geste suivant (unitaire et 3 moteurs, critère 7). **Limite écrite** : la
+   sonde est désactivée pendant les vrais boots (elle fait mourir le Worker de confiance pendant un
+   boot réel, cause non cherchée).
 8. **Limites inchangées et écrites** : Safari réel, éviction réelle, navigation privée réelle,
    hébergeur réel ; boot Rails Chromium seul ; l'origine applicative n'est pas dans la réserve ;
    TOFU et origine hostile avant le jalon 6 ; `tests/browser/reserve-messages.spec.mjs` ignorée sous
