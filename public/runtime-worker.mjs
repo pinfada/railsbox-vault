@@ -54,6 +54,8 @@ import {
 } from "/src/coquille/contrat-de-messages.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "/src/coquille/identites-du-coffre.mjs";
 import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
+import { capaciteInitiale, etatPublie } from "/src/coquille/capacite-du-stockage.mjs";
+import { creerLaCapaciteDuWorker } from "./capacite-du-worker.mjs";
 import { brancherLeRelaisDuWorker } from "./relais-du-worker.mjs";
 import { brancherLaPortabilite } from "./portabilite-du-worker.mjs";
 import { battementDuWorker } from "./battement-du-worker.mjs";
@@ -81,7 +83,7 @@ import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coq
 import { inventorierEnveloppe } from "/src/vm/enveloppe-de-cle.mjs";
 import { TYPES_KEK } from "/src/vm/enveloppe/identite-enveloppe.mjs";
 import { octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
-import { STORAGE_ERROR_CODES, StorageError } from "/src/vm/storage-errors.mjs";
+import { StorageError } from "/src/vm/storage-errors.mjs";
 import { supportEnveloppeOpfs } from "/src/vm/ouverture-par-enveloppe.mjs";
 
 /** Nom du volume que la coquille de produit ouvre. Un seul, tant qu'une seule application existe. */
@@ -105,7 +107,7 @@ const IDENTIFIANT_VOLUME = IDENTIFIANT_DU_COFFRE;
  * parce que ce n'est pas le geste qui a échoué. Confondre les deux ferait redemander à
  * l'utilisateur une phrase qui n'ouvrirait rien.
  */
-const PEUT_OUVRIR =
+const API_DU_STOCKAGE_PRESENTE =
   typeof navigator?.storage?.getDirectory === "function" &&
   typeof FileSystemFileHandle !== "undefined" &&
   typeof FileSystemFileHandle.prototype.createSyncAccessHandle === "function";
@@ -116,7 +118,7 @@ const PEUT_OUVRIR =
 const interne = {
   // L'état de DÉPART dit déjà ce que ce moteur sait faire : la toute première réponse d'état est
   // donc juste, avant qu'aucun geste n'ait eu lieu et sans qu'aucune course ne puisse l'inverser.
-  etat: PEUT_OUVRIR ? ETATS_DU_VOLUME.verrouille : ETATS_DU_VOLUME.indisponible,
+  etat: etatPublie(capaciteInitiale({ apiPresente: API_DU_STOCKAGE_PRESENTE })),
   barrieres: 0,
   /** Backend du volume ouvert. Il tient le handle exclusif ; il n'est jamais posté. */
   backend: null,
@@ -135,6 +137,17 @@ const interne = {
   /** Les emplacements dont le CODE a ouvert ce coffre, lus au secteur 1 de `coquille` (#239). */
   eprouves: [],
 };
+
+/**
+ * La CAPACITÉ du stockage (`public/capacite-du-worker.mjs`) : WebKit 26.6+ expose `getDirectory` mais le
+ * REJETTE (`UnknownError`) en contexte éphémère (#231). Elle est tenue par une machine explicite que
+ * seules la sonde et un échec de lecture font changer ; sa première sonde est attendue par
+ * `surMessagePrivilegie` et `publierLEtat`, sans `await` de module.
+ */
+const capaciteDuWorker = creerLaCapaciteDuWorker({
+  interne,
+  apiPresente: API_DU_STOCKAGE_PRESENTE,
+});
 
 /** Le port privilégié, transféré UNE fois par la coquille avant tout document applicatif. */
 let portPrivilegie = null;
@@ -203,7 +216,12 @@ self.addEventListener("message", (event) => {
     const sortir = decode.ok ? portabilite.entrer(decode.type) : () => {};
     chaine = chaine
       .then(() => surMessagePrivilegie(message))
-      .catch((erreur) => repondreRefus(erreur, correlation))
+      .catch((erreur) => {
+        // Un geste dont la LECTURE rejette (panne du stockage) retire `verrouille` : le prochain message
+        // relance la sonde (revue complète de la PR #305).
+        capaciteDuWorker.noterUnEchecDeLecture(erreur);
+        repondreRefus(erreur, correlation);
+      })
       .finally(sortir);
   });
   port.start();
@@ -235,8 +253,16 @@ function refuserSurLeGlobal(code) {
 
 /** @param {MessageEvent} event */
 async function surMessagePrivilegie(event) {
+  // Rien de ce que ce canal rend ne dépend de la capacité tant que la sonde n'a pas conclu (#231).
+  await capaciteDuWorker.premiereSonde;
   const decode = decoderMessage(event.data);
   if (!decode.ok) return repondreCode(decode.code, null);
+  // Un GESTE ou une demande d'INVENTAIRE présentés alors que la capacité est réessayable (`indetermine`,
+  // `panne`) relancent la sonde : rien n'est figé, et un inventaire n'est jamais lu sur une capacité
+  // dont on sait qu'elle ne répond pas.
+  if (capaciteDuWorker.reessayable() && decode.type !== TYPES_PRIVILEGIES.etat) {
+    await capaciteDuWorker.reessayerLaSonde();
+  }
   const correlation = correlationDe(decode.message);
   if (decode.type === TYPES_PRIVILEGIES.etat) return publierLEtat(correlation);
   if (decode.type === TYPES_PRIVILEGIES.inventaire) return publierLInventaire(correlation);
@@ -284,9 +310,12 @@ function correlee(correlation) {
  * (`main.mjs`, `demanderLEtat`). Le document applicatif n'apprend donc rien de l'exclusivité.
  */
 async function publierLEtat(correlation) {
+  // ATTENDRE d'abord, LIRE ensuite : un littéral qui lisait `interne.etat` avant son `await` publiait
+  // le `verrouille` d'avant la sonde (revue de la PR #305). `exclusiviteConstatee` attend la sonde.
+  const exclusivite = await exclusiviteConstatee;
   repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {
     ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),
-    exclusivite: await exclusiviteConstatee,
+    exclusivite,
     application: interne.application === null ? "arretee" : "demarree",
     // Ce qu'une révocation d'urgence a laissé et retiré : des noms et des nombres (#207).
     revocation: interne.revocation,
@@ -344,27 +373,43 @@ function support() {
  * assumé de l'ADR 0020 —, et rien de tout cela ne franchit jamais le port RESTREINT.
  */
 async function publierLInventaire(correlation) {
+  let corps;
+  try {
+    corps = await lireLInventaire();
+  } catch (erreur) {
+    // Une lecture qui rejette APRÈS une sonde réussie : l'inventaire est INCONNU, pas un refus privé que
+    // la page lirait comme un démarrage en erreur (revue complète de la PR #305).
+    if (!capaciteDuWorker.noterUnEchecDeLecture(erreur)) throw erreur;
+    corps = capaciteDuWorker.corpsDInventaireInconnu();
+  }
+  return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, corps);
+}
+
+/** Lit l'inventaire, et rend le CORPS de la réponse. */
+async function lireLInventaire() {
   // La réponse porte l'ÉTAT, et c'est la correction du constat 3 : la page apprend dans le MÊME
   // message ce que le coffre porte et ce que ce moteur sait faire. Rien n'est muté ici — l'état de
   // ce Worker ne dépend pas de la lecture de l'enveloppe, et le laisser en dépendre était la course.
   const vide = { present: false, versionEnveloppe: null, emplacements: [], refus: null };
-  if (!PEUT_OUVRIR) return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, vide);
+  if (!capaciteDuWorker.peutOuvrir()) {
+    // INDÉTERMINÉ ou en PANNE : le fichier n'a pas pu être lu, l'inventaire est INCONNU — il n'est pas
+    // vide. « Aucun coffre » ferait créer un coffre à qui en possède un. Le refus typé le dit.
+    if (capaciteDuWorker.reessayable()) return capaciteDuWorker.corpsDInventaireInconnu();
+    return vide;
+  }
   // Un coffre ANTÉRIEUR ou une restauration COUPÉE est dit dès l'inventaire, avant qu'aucune phrase
   // ne soit dérivée : l'utilisateur n'attend rien pour apprendre qu'il n'y a rien à ouvrir (#207).
   const refusDuCoffre = refusDOuverture(await portabilite.constater());
   if (refusDuCoffre !== null) {
-    return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
-      ...vide,
-      refus: { code: refusDuCoffre, message: messageDeRefus(refusDuCoffre) },
-    });
+    return { ...vide, refus: { code: refusDuCoffre, message: messageDeRefus(refusDuCoffre) } };
   }
   const observe = await support().etat();
-  if (!observe.present) return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, vide);
+  if (!observe.present) return vide;
   const inventaire = await inventorierEnveloppe({
     support: support(),
     identifiantVolume: IDENTIFIANT_VOLUME,
   });
-  return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
+  return {
     refus: null,
     present: true,
     // Relu contre l'enveloppe du MOMENT : une feuille retirée fait tomber la preuve (#239).
@@ -384,7 +429,7 @@ async function publierLInventaire(correlation) {
         ? {}
         : { parametresHex: octetsEnHex(emplacement.parametres) }),
     })),
-  });
+  };
 }
 
 /**
@@ -397,12 +442,11 @@ async function publierLInventaire(correlation) {
  * `deverrouillage-frontiere.spec.mjs` EXIGE des scénarios qui touchent un volume.
  */
 function exigerUnVolumeAtteignable() {
-  if (PEUT_OUVRIR) return;
-  throw new StorageError(
-    STORAGE_ERROR_CODES.unsupported,
-    "Ce navigateur n'offre pas l'accès synchrone à l'OPFS dans un Worker : aucun volume n'est atteignable ici. Le geste n'a pas échoué — il n'a pas pu être tenté.",
-    { volume: VOLUME },
-  );
+  // `UNSUPPORTED` n'est rendu que pour une absence ÉTABLIE ; l'indétermination rend INDETERMINE ; une
+  // panne rend SON code précis (`refusDeCapacite`).
+  const refus = capaciteDuWorker.refus();
+  if (refus === null) return;
+  throw new StorageError(refus.code, refus.message, { volume: VOLUME });
 }
 
 /** Annonce la barrière sur le canal privilégié. La coquille la relaie au port restreint. */
@@ -419,7 +463,9 @@ function annoncerLaBarriere() {
  * cadre, puisque le cadre attend l'établissement du canal, qui attend une réponse d'état, qui attend
  * cette promesse. L'ordre de l'étape 2 est ainsi tenu par une DÉPENDANCE, non par une convention.
  */
-const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR });
+const exclusiviteConstatee = capaciteDuWorker.premiereSonde.then(() =>
+  constaterLExclusivite({ volume: VOLUME, peutOuvrir: capaciteDuWorker.peutOuvrir() }),
+);
 
 /** Un geste LONG, exécuté en battant (`battement-du-worker.mjs`, #163 et #192). */
 const enBattant = battementDuWorker({
@@ -587,7 +633,7 @@ async function relacherTout(capturer) {
     interne.kek = null;
     oublierLeMoyenRetenu();
     interne.revocation = null;
-    interne.etat = PEUT_OUVRIR ? ETATS_DU_VOLUME.verrouille : ETATS_DU_VOLUME.indisponible;
+    interne.etat = capaciteDuWorker.etatPublie();
   }
 }
 

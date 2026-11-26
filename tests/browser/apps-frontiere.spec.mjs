@@ -18,6 +18,7 @@
 // garantie que les deux autres ne tiennent peut-être pas.
 
 import { expect, test } from "../support/test.mjs";
+import { ecarts, opfsNonMesures, temoinsOpfsToleres } from "../support/temoins-opfs.mjs";
 
 import {
   ACTIFS_A,
@@ -120,21 +121,91 @@ function parNom(sondes) {
 }
 
 /**
- * Compare un relevé à une table d'attentes en laissant passer `indisponible`.
- *
- * Une capacité absente du moteur n'est pas une frontière ; c'est un trou dans la mesure, et il
- * doit se voir comme tel plutôt que d'être compté comme un refus. Les écarts sont rendus, jamais
- * avalés.
+ * LE CONTEXTE de ces épreuves : la fixture `context` de Playwright est ÉPHÉMÈRE, et c'est sous WebKit
+ * que `getDirectory()` y rejette `UnknownError` (26.6 et 27.2, `docs/compatibility.md`). L'épreuve
+ * connaît son contexte PAR SA FIXTURE, jamais par le nom de l'erreur observée : une panne transitoire
+ * de n'importe quel moteur porterait le même nom.
  */
-function ecarts(sondes, attendu) {
-  return sondes
-    .filter((sonde) => sonde.resultat !== "indisponible")
-    .filter((sonde) => sonde.resultat !== attendu[sonde.nom])
-    .map(
-      (sonde) =>
-        `${sonde.nom} : ${sonde.resultat} au lieu de ${attendu[sonde.nom]} — ${sonde.detail}`,
-    );
+const estWebkit = (browserName) => browserName === "webkit";
+
+/** Pose un rejet de `getDirectory()` sur TOUT document que ce contexte chargera désormais. */
+async function injecterUnRejet(context, nom, message) {
+  await context.addInitScript(
+    ([nomDuRejet, messageDuRejet]) => {
+      if (!globalThis.StorageManager) return;
+      StorageManager.prototype.getDirectory = () =>
+        Promise.reject(new DOMException(messageDuRejet, nomDuRejet));
+    },
+    [nom, message],
+  );
 }
+
+/**
+ * Une PANNE d'OPFS n'est pas une indisponibilité : si `getDirectory()` rejette autre chose que le cas
+ * mesuré, le dépôt de A le DIT (`panne`) — il ne le range pas sous `indisponible` —, et les sondes de
+ * B ne le laissent pas passer en trou de mesure ni en preuve d'isolation. Sans cette épreuve, un rejet
+ * quelconque ferait disparaître en silence les trois témoins OPFS de la frontière.
+ */
+test("une PANNE de getDirectory() n'est pas rangée sous « indisponible »", async ({ context }) => {
+  await injecterUnRejet(context, "QuotaExceededError", "panne simulée");
+  const topologie = "meme-origine-prefixe-de-chemin";
+  const { page: pageA, depots } = await poserApplicationA(context, topologie);
+  const sondes = await lireDepuisApplicationB(context, topologie);
+  await pageA.close();
+
+  expect(depots.opfs).toMatch(/^panne: QuotaExceededError/);
+  const opfs = sondes.filter((sonde) => sonde.mecanisme === "OPFS");
+  expect(opfs.length).toBeGreaterThan(0);
+  for (const sonde of opfs) {
+    // `panne`, ni `indisponible` ni `invisible` : un `invisible` serait lu, dans une topologie
+    // isolée, comme la PREUVE de l'isolation.
+    expect(sonde.resultat, sonde.nom).toBe("panne");
+  }
+  expect(ecarts(sondes, ATTENDU_MEME_ORIGINE).length).toBeGreaterThan(0);
+});
+
+/**
+ * Un `UnknownError` n'est PAS une preuve d'absence : le moteur le dit lui-même « transitoire ». Il ne
+ * retire donc jamais un témoin de la comparaison. Ici le rejet arrive APRÈS le dépôt de A : un témoin
+ * déposé qui devient illisible reste ROUGE, sur les trois moteurs. Seul le contexte éphémère WebKit,
+ * où A n'a rien pu déposer non plus, est toléré — et l'épreuve le dit.
+ */
+test("un UnknownError APRÈS le dépôt de A ne retire AUCUN témoin : la comparaison reste rouge", async ({
+  context,
+  browserName,
+}, info) => {
+  const topologie = "meme-origine-prefixe-de-chemin";
+  const { page: pageA, depots } = await poserApplicationA(context, topologie);
+  await injecterUnRejet(
+    context,
+    "UnknownError",
+    "The operation failed for an unknown transient reason.",
+  );
+  const sondes = await lireDepuisApplicationB(context, topologie);
+  await pageA.close();
+  await joindre(info, "unknown-error-apres-depot", { depots, sondes });
+
+  const options = { contexteEphemereMesure: estWebkit(browserName), depots };
+  const opfs = sondes.filter((sonde) => sonde.mecanisme === "OPFS");
+  for (const sonde of opfs) expect(sonde.resultat, sonde.nom).toBe("indetermine");
+
+  if (depots.opfs === "depose") {
+    // A a DÉPOSÉ son témoin OPFS : ne plus pouvoir le lire est une disparition, jamais un trou toléré.
+    expect(temoinsOpfsToleres(sondes, options)).toEqual([]);
+    expect(ecarts(sondes, ATTENDU_MEME_ORIGINE).length).toBeGreaterThan(0);
+  } else {
+    // Contexte éphémère WebKit : A n'a rien pu déposer. La limite est DITE, pas silencieuse.
+    expect(estWebkit(browserName)).toBe(true);
+    expect(depots.opfs).toMatch(/^indetermine: /);
+    expect(temoinsOpfsToleres(sondes, options).length).toBe(opfs.length);
+    await info.attach("limite-contexte-ephemere", {
+      body:
+        "Contexte éphémère de la fixture, WebKit : getDirectory() rejette UnknownError, A ne dépose " +
+        "aucun témoin OPFS ; les témoins OPFS ne sont pas mesurables ici, et c'est écrit.",
+      contentType: "text/plain",
+    });
+  }
+});
 
 test("le contrat du spike #46 déclare la MÊME origine applicative que l'ADR 0002", () => {
   // Les deux contrats vivent dans deux modules — `src/spike/origin-topology.mjs` n'est pas
@@ -146,6 +217,7 @@ test("le contrat du spike #46 déclare la MÊME origine applicative que l'ADR 00
 
 test("témoin négatif : sur une même origine, un préfixe de chemin n'isole rien", async ({
   context,
+  browserName,
 }, info) => {
   const topologie = "meme-origine-prefixe-de-chemin";
   const { page: pageA, depots } = await poserApplicationA(context, topologie);
@@ -161,9 +233,19 @@ test("témoin négatif : sur une même origine, un préfixe de chemin n'isole ri
   await joindre(info, "sondes-meme-origine", { temoinA, temoinB, sondes });
 
   expect(sondes).toHaveLength(NOMBRE_DE_SONDES);
-  expect(depots.opfs === "depose" || depots.opfs.startsWith("indisponible")).toBe(true);
+  expect(
+    depots.opfs === "depose" ||
+      / absent$/.test(depots.opfs) ||
+      (estWebkit(browserName) && depots.opfs.startsWith("indetermine: ")),
+    `dépôt OPFS de A : ${depots.opfs}`,
+  ).toBe(true);
   expect(depots.localStorage).toBe("depose");
-  expect(ecarts(sondes, ATTENDU_MEME_ORIGINE)).toEqual([]);
+  expect(
+    ecarts(sondes, ATTENDU_MEME_ORIGINE, {
+      contexteEphemereMesure: estWebkit(browserName),
+      depots,
+    }),
+  ).toEqual([]);
 
   // Le témoin doit être POSITIF : si rien n'était lu, les refus de la topologie suivante ne
   // prouveraient rien. Au moins huit mécanismes traversent, moteurs les plus pauvres compris.
@@ -182,6 +264,7 @@ test("témoin négatif : sur une même origine, un préfixe de chemin n'isole ri
 
 test("une origine par application : aucune lecture croisée n'aboutit", async ({
   context,
+  browserName,
 }, info) => {
   const topologie = "origine-par-application";
   const { page: pageA, depots } = await poserApplicationA(context, topologie);
@@ -198,6 +281,15 @@ test("une origine par application : aucune lecture croisée n'aboutit", async ({
 
   const abouties = sondes.filter((sonde) => sonde.resultat === "lu");
   expect(abouties.map((sonde) => `${sonde.nom} — ${sonde.detail}`)).toEqual([]);
+
+  // « Rien n'aboutit » ne vaut preuve d'isolation que si les témoins OPFS ont été MESURÉS : un
+  // `indetermine` ou une `panne` n'est pas un refus. Seul le contexte éphémère WebKit, où A n'a rien
+  // pu déposer, est toléré — et alors dit.
+  const options = { contexteEphemereMesure: estWebkit(browserName), depots };
+  expect(
+    opfsNonMesures(sondes, options).map((sonde) => `${sonde.nom} — ${sonde.resultat}`),
+    "témoins OPFS non mesurés : l'isolation de l'OPFS n'est pas prouvée",
+  ).toEqual([]);
 });
 
 test("deux origines qui ne diffèrent que par le port partagent leurs cookies", async ({

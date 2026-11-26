@@ -208,6 +208,11 @@ export function creerCycle({
       deriverPhrase: (appel) => siVivant(() => derivations.deriverPhrase(appel)),
       deriverPasskey: (appel) => siVivant(() => derivations.deriverPasskey(appel)),
       agent: navigator.userAgent,
+      // « Réessayer » (#231) : la sonde du stockage, puis l'inventaire, puis l'état publié — sans recharger.
+      reessayer: async () => {
+        await interfaceDeDeverrouillage.rafraichirLInventaire();
+        await pont.canal.demanderLEtat();
+      },
       surEtat: (reponse) => {
         rapport.etat = reponse.etat;
         rapport.barrieres = reponse.barrieres;

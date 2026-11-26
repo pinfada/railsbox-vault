@@ -125,6 +125,11 @@ test("verrouiller n'invente pas un verrou sur un moteur qui n'a jamais rien pu o
   assert.equal(conduite.etat, ETATS_DU_VOLUME.indisponible);
 });
 
+test("verrouiller n'invente pas un verrou sur un stockage INDÉTERMINÉ non plus (#231)", () => {
+  const conduite = conduiteApresLeVerrouillage({ etatConnu: ETATS_DU_VOLUME.indetermine });
+  assert.equal(conduite.etat, ETATS_DU_VOLUME.indetermine);
+});
+
 test("rien n'est gardé « pour plus tard » : ni KEK, ni dérivation, ni poussée de barrière", () => {
   const conduite = conduiteApresLeVerrouillage({ etatConnu: ETATS_DU_VOLUME.ouvert });
   assert.equal(conduite.kekRetenue, false);

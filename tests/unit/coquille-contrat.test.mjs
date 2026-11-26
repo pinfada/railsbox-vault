@@ -205,7 +205,7 @@ test("l'état publié ne porte QUE l'état et le compte de barrières", () => {
   assert.ok(Object.isFrozen(charge));
 });
 
-test("l'état publié refuse une valeur hors des quatre états, et un compte qui n'en est pas un", () => {
+test("l'état publié refuse une valeur hors des cinq états, et un compte qui n'en est pas un", () => {
   assert.throws(() => chargeUtileDEtat({ etat: "presque-ouvert", barrieres: 0 }), /inconnu/);
   assert.throws(() => chargeUtileDEtat({ etat: ETATS_DU_VOLUME.ouvert, barrieres: -1 }), /entier/);
   assert.throws(() => chargeUtileDEtat({ etat: ETATS_DU_VOLUME.ouvert, barrieres: 1.5 }), /entier/);
@@ -215,7 +215,15 @@ test("« indisponible » et « verrouillé » sont deux états distincts, et ce 
   // L'un dit « il faut un geste », l'autre dit « ce moteur ne sait pas ». Les confondre ferait
   // redemander à l'utilisateur une phrase qui n'ouvrirait rien — c'est la conduite, pas le mot.
   assert.notEqual(ETATS_DU_VOLUME.indisponible, ETATS_DU_VOLUME.verrouille);
-  assert.equal(Object.keys(ETATS_DU_VOLUME).length, 4);
+  assert.equal(Object.keys(ETATS_DU_VOLUME).length, 5);
+});
+
+test("« indetermine » est un cinquième état, distinct de « indisponible » : l'un n'affirme aucune absence (#231)", () => {
+  // `indisponible` dit « ce moteur ne sait pas » ; `indetermine` dit « le stockage ne répond pas pour
+  // l'instant, cause non établie » : réessayable, et il ne conseille pas de changer de navigateur.
+  assert.equal(ETATS_DU_VOLUME.indetermine, "indetermine");
+  assert.notEqual(ETATS_DU_VOLUME.indetermine, ETATS_DU_VOLUME.indisponible);
+  assert.equal(chargeUtileDEtat({ etat: "indetermine", barrieres: 0 }).etat, "indetermine");
 });
 
 test("#239 : seul le booléen true vaut « feuille éprouvée » ; l'inconnu est refusé comme preuve", () => {

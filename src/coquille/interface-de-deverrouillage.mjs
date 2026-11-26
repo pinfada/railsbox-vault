@@ -98,6 +98,11 @@ export const CONDUITES = Object.freeze({
     "Ce navigateur ne sait pas ouvrir un coffre : il n'offre pas l'accès synchrone au stockage privé " +
     "depuis un Worker. Rien n'a échoué — rien n'a pu être tenté. Essayez un autre navigateur ; la " +
     "matrice de compatibilité du dépôt dit lesquels le savent.",
+  // Aucune absence n'est affirmée : le moteur dit lui-même transitoire le rejet qui l'a produit (#231).
+  [STORAGE_ERROR_CODES.indeterminate]:
+    "Le stockage du navigateur est inaccessible pour l'instant, cause non établie. Rien n'a été " +
+    "tenté sur le coffre : le même geste, dans un instant, peut aboutir. Si cela dure, essayez une autre " +
+    "fenêtre ou un autre navigateur.",
   [STORAGE_ERROR_CODES.volumeSansRacine]:
     "Ce coffre a été restauré, mais ce qui prouvait que son contenu vient bien de son archive n'est " +
     "plus là. Rien n'est perdu du côté de l'archive : restaurez-la à nouveau, puis ouvrez le coffre " +
@@ -172,6 +177,7 @@ export function monterLInterface({
   agent = "",
   surEtat = () => {},
   surMesure = () => {},
+  reessayer = null,
 }) {
   const contexte = {
     noeuds: poignees(doc, racine),
@@ -181,6 +187,7 @@ export function monterLInterface({
     deriverPasskey,
     surEtat,
     surMesure,
+    reessayer,
     inventaire: { present: false, versionEnveloppe: null, emplacements: [] },
     propose: moyensProposes({ emplacements: [], versionEnveloppe: null }),
     /** Le RELEVÉ de l'interface : ce qu'elle a MONTRÉ, jamais ce qu'elle a lu. */
@@ -227,6 +234,20 @@ function brancherLesGestes(contexte) {
   noeuds.ouvrirParCode.addEventListener("click", () => ouvrirParLeCode(contexte));
   noeuds.ouvrirParPasskey.addEventListener("click", () => ouvrirParLaPasskey(contexte));
   noeuds.creerRecuperation.addEventListener("click", () => creerLaFeuille(contexte));
+  noeuds.reessayer.addEventListener("click", () => reessayerLeStockage(contexte));
+}
+
+/**
+ * « Réessayer » (#231) : relance la sonde du stockage puis l'INVENTAIRE, sans recharger la page. Rien
+ * n'est choisi ni dérivé avant que l'inventaire ait été relu : c'est lui, et lui seul, qui dit ce que le
+ * coffre de cet appareil porte, et donc ce qu'il faut proposer.
+ */
+async function reessayerLeStockage(contexte) {
+  try {
+    await (contexte.reessayer ?? (() => rafraichirLInventaire(contexte)))();
+  } catch (erreur) {
+    montrerLeRefus(contexte, erreur);
+  }
 }
 
 /**
@@ -251,9 +272,21 @@ async function rafraichirLInventaire(contexte) {
   const refus = contexte.inventaire.refus ?? null;
   if (refus !== null) {
     releve.dernierRefus = refus.code;
-    dire(noeuds.moyens, "Ce coffre ne peut pas être ouvert par cette coquille.");
+    // Un inventaire INCONNU n'est pas un coffre refusé, et encore moins un coffre absent (#231).
+    dire(
+      noeuds.moyens,
+      contexte.inventaire.inconnu === true
+        ? "Le stockage du navigateur est inaccessible pour l'instant, cause non établie. Rien n'est proposé tant qu'il ne répond pas : réessayez."
+        : "Ce coffre ne peut pas être ouvert par cette coquille.",
+    );
     dire(noeuds.refus, conduiteDeRefus(refus.code, refus.message));
     return publier(contexte);
+  }
+  // La REPRISE (#231) : un inventaire lu efface l'inconnu qui l'a précédé — son refus typé comme son
+  // texte —, sans quoi l'écran resterait celui d'un stockage qui ne répond plus.
+  if (releve.dernierRefus === STORAGE_ERROR_CODES.indeterminate) {
+    releve.dernierRefus = null;
+    dire(noeuds.refus, "");
   }
   dire(
     noeuds.moyens,
@@ -379,7 +412,7 @@ function montrerLeRefus(contexte, erreur) {
  */
 function relireLaPhrase(contexte) {
   const { noeuds, inventaire } = contexte;
-  const creation = !inventaire.present;
+  const creation = !inventaire.present && inventaire.inconnu !== true;
   noeuds.phrase.required = true;
   // `minLength` compte en UNITÉS UTF-16 (la plateforme DOM), `evaluerPhrase` en POINTS DE CODE (la
   // notion humaine, ADR implicite de `politique-de-phrase.mjs`) : un caractère astral (emoji,
@@ -401,6 +434,9 @@ function relireLaPhrase(contexte) {
 }
 
 async function ouvrirParLaPhrase(contexte) {
+  // Un inventaire refusé ou INCONNU : aucune phrase n'est jugée, aucune dérivation ne part (#231). La
+  // politique de phrase de CRÉATION ne s'applique qu'à un coffre dont l'inventaire dit qu'il n'existe pas.
+  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);
   if (!relireLaPhrase(contexte)) {
     // Le refus porte son CODE, comme tout autre : le parcours lui donne sa conduite (#240), au lieu
     // de la phrase générique qu'un refus sans code reçoit.
@@ -525,6 +561,7 @@ function poignees(doc, racine) {
     codeVerdict: trouver("code-verdict"),
     ouvrirParCode: trouver("ouvrir-par-code"),
     creerRecuperation: trouver("creer-recuperation"),
+    reessayer: trouver("reessayer-le-stockage"),
     feuilleCode: trouver("feuille-code"),
     feuilleVersion: trouver("feuille-version"),
     feuilleConsigne: trouver("feuille-consigne"),

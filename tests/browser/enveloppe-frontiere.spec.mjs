@@ -1,7 +1,7 @@
 import { expect, test } from "../support/test.mjs";
+import { codesDeRefusDeCapacite } from "../support/refus-de-capacite.mjs";
 
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
-import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 
 // FRONTIÈRE de l'enveloppe de clé, sur les trois moteurs (#21, ADR 0020 ; `SEC-ORIGIN-001`).
 //
@@ -109,7 +109,7 @@ test("le cycle complet d'une enveloppe tient sur l'OPFS réel, ou le moteur le r
   });
 
   if (!porte) {
-    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    expect(codesDeRefusDeCapacite(page)).toContain(code);
     return;
   }
 
@@ -135,7 +135,7 @@ test("la révocation d'urgence réduit trois emplacements à UN sur l'OPFS réel
   });
 
   if (!porte) {
-    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    expect(codesDeRefusDeCapacite(page)).toContain(code);
     return;
   }
 
@@ -176,7 +176,7 @@ test("le coût de l'effacement de la page libre est MESURÉ sur l'OPFS réel, pa
   });
 
   if (!porte) {
-    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    expect(codesDeRefusDeCapacite(page)).toContain(code);
     return;
   }
 
@@ -196,7 +196,7 @@ test("un volume sans enveloppe est refusé par « aucune enveloppe », pas par �
   const { report, code } = await executerOuRefus(page, { scenario: "sans-enveloppe" });
 
   if (!porte) {
-    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    expect(codesDeRefusDeCapacite(page)).toContain(code);
     return;
   }
   expect(report.code).toBe(ENVELOPPE_ERROR_CODES.absente);
@@ -217,7 +217,7 @@ test("la PAGE n'obtient aucun handle sur le fichier d'enveloppes", async ({ page
   });
 
   expect(sonde.ouvert, "la page a ouvert le fichier de clés en accès exclusif").toBe(false);
-  expect(sonde.code).toBe(STORAGE_ERROR_CODES.unsupported);
+  expect(codesDeRefusDeCapacite(page)).toContain(sonde.code);
   // Le témoin qui empêche cette épreuve d'être vraie pour de mauvaises raisons : dans un moteur qui
   // porte OPFS, la page VOIT bien l'API — elle est simplement refusée par la garde du Worker dédié.
   if (porte) expect(sonde.getDirectory).toBe("function");

@@ -11,6 +11,11 @@
 // porter `VAULT-PERSIST-001` : il faut le dire, pas le contourner.
 
 import { toStorageError } from "./opfs-error-mapping.mjs";
+import {
+  REJET_TRANSITOIRE_MESURE,
+  VERDICTS_DU_STOCKAGE,
+  classerLeRejetDeRacine,
+} from "./sonde-du-stockage.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
 
 /** Répertoire OPFS où vivent les volumes. Isolé pour ne pas heurter d'autres usages du stockage. */
@@ -281,7 +286,23 @@ async function volumeDirectory({ create }) {
       { capability: "navigator.storage.getDirectory" },
     );
   }
-  const root = await storage.getDirectory();
+  let root;
+  try {
+    root = await storage.getDirectory();
+  } catch (cause) {
+    // Le rejet que le moteur dit TRANSITOIRE (`UnknownError`, WebKit ≥ 26.6 en contexte éphémère) ne
+    // prouve aucune absence : il devient `VAULT_STORAGE_INDETERMINE` — inaccessible pour l'instant,
+    // cause non établie, réessayable —, jamais `unsupported`. Tout autre rejet remonte tel quel, et
+    // reçoit le classement précis de `toStorageError` chez l'appelant : un échec est SIGNALÉ.
+    if (classerLeRejetDeRacine(cause) !== VERDICTS_DU_STOCKAGE.indetermine) throw cause;
+    throw new StorageError(
+      STORAGE_ERROR_CODES.indeterminate,
+      `Le stockage du navigateur est inaccessible pour l'instant, cause non établie : ` +
+        `navigator.storage.getDirectory() a rejeté ${REJET_TRANSITOIRE_MESURE} — le moteur parle d'une ` +
+        "raison passagère. Rien n'a été tenté sur le volume ; le même geste, plus tard, peut aboutir.",
+      { capability: "navigator.storage.getDirectory", cause: REJET_TRANSITOIRE_MESURE },
+    );
+  }
   return root.getDirectoryHandle(VOLUME_DIRECTORY, { create });
 }
 
