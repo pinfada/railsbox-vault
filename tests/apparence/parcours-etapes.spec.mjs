@@ -12,6 +12,7 @@
 // l'épreuve, comme le module du cycle de vie la publie. Aucune machine virtuelle ne tourne ici ; la preuve
 // réelle de l'étape 4 prête (aide repliée, cadre remonté, focus) reste l'E2E clavier.
 
+import { LIMITES } from "../../src/coquille/limites-de-cette-version.mjs";
 import {
   FORME_DU_CODE,
   LONG,
@@ -180,14 +181,29 @@ test("forced-colors : bordures et focus visibles à la création, au choix et à
   expect(cadre.style).toBe("solid");
   expect(parseFloat(cadre.largeur)).toBeGreaterThanOrEqual(1);
   await verifier(page, testInfo, "creation");
-  // Le lien d'évitement, puis le lien des limites (#195), puis « Commencer » : l'épreuve compte les arrêts
-  // jusqu'au geste, sans fixer leur nombre (au plus quatre), et exige qu'il soit atteint au clavier.
-  const commencer = bouton(page, "Commencer");
-  for (let arrets = 0; arrets < 4; arrets += 1) {
+  // La SÉQUENCE EXACTE des arrêts au clavier, de l'entrée jusqu'au geste (#195, revue de la PR #332) :
+  // le lien d'évitement, le lien des limites, « Commencer ». Un arrêt imprévu avant « Commencer », un
+  // arrêt de moins, ou un lien que le clavier n'atteint pas, fait échouer l'épreuve à l'arrêt fautif. À
+  // chaque arrêt, le focus est visible en couleurs forcées : un contour d'au moins trois pixels.
+  const arrets = [
+    page.getByRole("link", { name: "Aller au parcours", exact: true }),
+    page.getByRole("link", { name: LIMITES.detail.libelle, exact: true }),
+    bouton(page, "Commencer"),
+  ];
+  for (const [rang, arret] of arrets.entries()) {
     await page.keyboard.press("Tab");
-    if (await commencer.evaluate((noeud) => noeud === noeud.ownerDocument.activeElement)) break;
+    await expect(arret, `arrêt ${rang + 1} sur ${arrets.length}`).toBeFocused();
+    const contourDeLArret = await arret.evaluate((noeud) => ({
+      style: getComputedStyle(noeud).outlineStyle,
+      largeur: getComputedStyle(noeud).outlineWidth,
+    }));
+    expect(contourDeLArret.style, `arrêt ${rang + 1} : contour`).not.toBe("none");
+    expect(
+      parseFloat(contourDeLArret.largeur),
+      `arrêt ${rang + 1} : épaisseur`,
+    ).toBeGreaterThanOrEqual(3);
   }
-  await expect(commencer).toBeFocused();
+  const commencer = arrets.at(-1);
   const contour = await commencer.evaluate((noeud) => ({
     style: getComputedStyle(noeud).outlineStyle,
     largeur: getComputedStyle(noeud).outlineWidth,
