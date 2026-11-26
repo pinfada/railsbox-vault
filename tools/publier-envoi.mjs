@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // L'ÉTAPE D'ENVOI chez l'hébergeur, et sa RÉPÉTITION À BLANC (#45, ADR 0017 § 8).
 //
-//   node tools/publier-envoi.mjs --arbre <dir> --projet <nom-pages> [--profil cloudflare-pages]
+//   node tools/publier-envoi.mjs --cible <arbre>=<projet> [--cible <arbre>=<projet> …]
 //        [--repetition | --envoyer]
+//
+// Les cibles sont envoyées dans l'ordre donné, et TOUTES sont contrôlées (noms, limites) avant le premier
+// envoi : un échec sur la seconde donne zéro appel.
 //
 // Le dépôt ne choisit pas l'hébergeur ; cet outil sait envoyer vers Cloudflare Pages (`wrangler pages
 // deploy`), l'hébergeur recommandé sur #31, et ne le fait QUE si on le lui demande ET que les secrets
@@ -30,6 +33,9 @@ import {
 
 /** Version EXACTE de wrangler. Ni `latest`, ni plage : un envoi n'est pas rejoué avec un autre outil. */
 export const VERSION_DE_WRANGLER = "4.168.0";
+
+/** Le SEUL profil d'envoi : aucun envoi Netlify n'existe. `netlify` reste un profil de `--verifier`, informatif. */
+export const PROFIL_D_ENVOI = "cloudflare-pages";
 
 export const SECRETS_REQUIS = Object.freeze(["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"]);
 
@@ -89,43 +95,68 @@ export function decider({ envoyer, environnement }) {
   return { mode: "envoi", raison: "secrets présents et envoi demandé", manquants };
 }
 
-function lireOption(argv, nom, defaut = null) {
-  const index = argv.indexOf(`--${nom}`);
-  if (index < 0) return defaut;
-  const valeur = argv[index + 1];
-  if (valeur === undefined || valeur.startsWith("--"))
-    throw new Error(`L'option --${nom} attend une valeur.`);
-  return valeur;
+/**
+ * Les CIBLES, `--cible <arbre>=<projet>` répétable, dans l'ordre d'envoi. Le séparateur est le DERNIER « = » :
+ * un chemin peut en contenir, un nom de projet jamais.
+ */
+export function lesCibles(argv) {
+  const cibles = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] !== "--cible") continue;
+    const valeur = argv[index + 1] ?? "";
+    const coupure = valeur.lastIndexOf("=");
+    if (coupure <= 0 || coupure === valeur.length - 1) {
+      throw new Error(`--cible attend <arbre>=<projet>, reçu « ${valeur} ».`);
+    }
+    cibles.push({ arbre: valeur.slice(0, coupure), projet: valeur.slice(coupure + 1) });
+  }
+  if (cibles.length === 0)
+    throw new Error("Au moins une --cible <arbre>=<projet> est obligatoire.");
+  return cibles;
 }
 
 async function principal(argv, environnement) {
-  // L'arbre est affiché TEL QUE DONNÉ (relatif) : la commande imprimée est celle qui serait exécutée.
-  const arbre = lireOption(argv, "arbre");
-  if (arbre === null) throw new Error("--arbre est obligatoire.");
-  const projet = lireOption(argv, "projet");
-  const nomProfil = lireOption(argv, "profil", "cloudflare-pages");
-  const profil = profilNomme(nomProfil);
+  // Le profil d'envoi n'est PAS un choix : cet outil n'envoie que vers Cloudflare Pages, et un profil
+  // `netlify` y contrôlerait des limites pour un envoi qui partirait quand même chez Cloudflare.
+  if (argv.includes("--profil")) {
+    throw new Error(
+      `--profil est refusé : le profil d'envoi est ${PROFIL_D_ENVOI}, seul envoi qui existe.`,
+    );
+  }
   if (argv.includes("--repetition") && argv.includes("--envoyer")) {
     throw new Error("--repetition et --envoyer s'excluent.");
   }
+  const profil = profilNomme(PROFIL_D_ENVOI);
   const decision = decider({ envoyer: argv.includes("--envoyer"), environnement });
-  const commande = commandeDeWrangler({ arbre, projet });
-  const limites = await controlerLesLimites(resolve(arbre), profil);
+  // TOUT est contrôlé AVANT le premier envoi : les noms de projet, puis les limites de CHAQUE arbre.
+  // Un échec sur la seconde cible ne doit pas laisser la première en ligne.
+  const cibles = lesCibles(argv).map((cible) => ({
+    ...cible,
+    commande: commandeDeWrangler(cible),
+  }));
+  for (const cible of cibles)
+    cible.limites = await controlerLesLimites(resolve(cible.arbre), profil);
 
   const sortie = [
-    `## Envoi de l'arbre ${arbre}`,
-    "",
     decision.mode === "envoi"
       ? "MODE : ENVOI RÉEL"
       : `MODE : RÉPÉTITION À BLANC — ${decision.raison}`,
-    `projet Pages : ${projet}`,
-    `commande     : ${[commande.programme, ...commande.arguments].join(" ")}`,
-    `secrets      : ${SECRETS_REQUIS.map((n) => `${n} ${decision.manquants.includes(n) ? "ABSENT" : "présent"}`).join(", ")}`,
-    "",
-    decrireLesLimites(nomProfil, arbre, limites),
+    `secrets : ${SECRETS_REQUIS.map((n) => `${n} ${decision.manquants.includes(n) ? "ABSENT" : "présent"}`).join(", ")}`,
   ];
-  const depassements = limites.depassements.length;
+  for (const { arbre, projet, commande, limites } of cibles) {
+    sortie.push(
+      "",
+      `## Envoi de l'arbre ${arbre}`,
+      `projet Pages : ${projet}`,
+      `commande     : ${[commande.programme, ...commande.arguments].join(" ")}`,
+      decrireLesLimites(PROFIL_D_ENVOI, arbre, limites),
+    );
+  }
   process.stdout.write(`${sortie.join("\n")}\n`);
+  const depassements = cibles.reduce(
+    (somme, { limites }) => somme + limites.depassements.length,
+    0,
+  );
 
   if (decision.mode === "repetition") {
     if (depassements > 0) {
@@ -139,15 +170,18 @@ async function principal(argv, environnement) {
   }
   if (depassements > 0) {
     process.stderr.write(
-      `Envoi REFUSÉ : ${depassements} limite(s) de ${nomProfil} dépassée(s). Rien n'a été envoyé.\n`,
+      `Envoi REFUSÉ : ${depassements} limite(s) de ${PROFIL_D_ENVOI} dépassée(s). Rien n'a été envoyé.\n`,
     );
     return CODES_ENVOI.limites;
   }
-  const fils = spawnSync(commande.programme, commande.arguments, {
-    stdio: "inherit",
-    env: environnement,
-  });
-  return fils.status === 0 ? CODES_ENVOI.ok : CODES_ENVOI.echec;
+  for (const { commande } of cibles) {
+    const fils = spawnSync(commande.programme, commande.arguments, {
+      stdio: "inherit",
+      env: environnement,
+    });
+    if (fils.status !== 0) return CODES_ENVOI.echec;
+  }
+  return CODES_ENVOI.ok;
 }
 
 if (process.argv[1]?.endsWith("publier-envoi.mjs")) {

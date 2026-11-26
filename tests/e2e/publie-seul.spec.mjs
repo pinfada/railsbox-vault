@@ -6,7 +6,7 @@
 // construit avec `--avec-image` et servi SANS cette option : un fichier que l'arbre ne porte pas est un
 // 404, comme chez l'hébergeur.
 //
-// Ce que ce fichier prouve : (1) chaque artefact que le descripteur nomme est servi par l'arbre, à la
+// Ce que ce fichier prouve : (0) l'image servie est celle de l'arbre du job ; (1) chaque artefact que le descripteur nomme est servi par l'arbre, à la
 // taille annoncée ; (2) un arbre construit SANS `--avec-image` ne porte pas le descripteur (contre-épreuve :
 // la preuve dépend bien de l'arbre) ; (3) premier démarrage EN LIGNE : déverrouillage, boot Rails, page
 // rendue, sous les en-têtes de production. Ce qu'il ne prouve pas : un hébergeur réel, Firefox, WebKit,
@@ -50,6 +50,12 @@ function raisonDIndisponibilite() {
 }
 const raison = raisonDIndisponibilite();
 
+/**
+ * Le MÊME COMMIT que le job (`VAULT_COMMIT`, `--commit` : octets de git), pour que cet arbre soit celui qui part
+ * chez l'hébergeur, aux origines de TEST près (la CSP les inscrit, et il faut les servir sur localhost).
+ */
+const COMMIT = process.env.VAULT_COMMIT ?? "";
+
 function publier(sortie, ...options) {
   execFileSync(
     process.execPath,
@@ -63,6 +69,7 @@ function publier(sortie, ...options) {
       E2E_ORIGIN_PUBLIEE_APP,
       "--sequence",
       "1",
+      ...(COMMIT === "" ? [] : ["--commit", COMMIT]),
       ...options,
     ],
     { cwd: RACINE, stdio: "pipe" },
@@ -115,6 +122,21 @@ test("l'arbre publié AVEC l'image sert chaque artefact que le descripteur nomme
   }
 });
 
+test("l'image servie ici est OCTET POUR OCTET celle de l'arbre que le job publie (même inventaire sous /artifacts/)", async () => {
+  exigerLesPrealables(raison, "publie-seul.spec.mjs");
+  const publie = process.env.VAULT_ARBRE_PUBLIE;
+  test.skip(publie === undefined, "VAULT_ARBRE_PUBLIE : l'arbre du job, posé par publication.yml");
+  publier(AVEC_IMAGE, "--avec-image");
+  const sousArtifacts = (arbre) =>
+    JSON.parse(readFileSync(join(arbre, "inventaire.json"), "utf8"))
+      .fichiers.filter(({ chemin }) => chemin.startsWith("artifacts/"))
+      .map(({ chemin, octets, sha256 }) => `${chemin} ${octets} ${sha256}`)
+      .sort();
+  const attendu = sousArtifacts(resolve(RACINE, publie));
+  expect(attendu.length, "l'arbre du job porte l'image").toBeGreaterThanOrEqual(8);
+  expect(sousArtifacts(join(AVEC_IMAGE, "coquille"))).toEqual(attendu);
+});
+
 test("CONTRE-ÉPREUVE : sans --avec-image, l'arbre publié ne sert ni le descripteur ni l'image", async () => {
   exigerLesPrealables(raison, "publie-seul.spec.mjs");
   publier(SANS_IMAGE);
@@ -156,6 +178,11 @@ test("premier démarrage EN LIGNE sur l'arbre publié seul : déverrouillage, bo
       { timeout: BUDGET_DEMARRAGE_MS },
     );
     expect(await page.locator("#cycle-etat").textContent()).toBe("cycle:application-demarree");
+    // Une page Rails RÉELLEMENT rendue, dans le cadre imbriqué (courtier dans la coquille) : un boot
+    // annoncé ne suffit pas.
+    await expect(
+      page.frameLocator("#document-applicatif").frameLocator("#application-servie").locator("body"),
+    ).toHaveAttribute("data-application-de-reference", "rendue", { timeout: 300_000 });
 
     // Tout ce que le boot a demandé sous `/artifacts/` est dans l'ARBRE : rien n'est venu d'ailleurs.
     const demandes = origines.coquille.journal

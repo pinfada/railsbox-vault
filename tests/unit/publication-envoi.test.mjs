@@ -119,6 +119,23 @@ test("DEUX cibles conformes : deux appels d'envoi, l'application d'abord, dans l
   assert.match(appels[1], /--project-name projet-coq /);
 });
 
+test("un envoi qui ÉCHOUE rend 8 et n'envoie pas la cible suivante", async (t) => {
+  const a = await arbre(1);
+  const faux = await fauxNpx();
+  await writeFile(
+    join(faux.dossier, "npx"),
+    `#!/bin/sh\necho "$@" >> "${join(faux.dossier, "appels.txt")}"\nexit 1\n`,
+    { mode: 0o755 },
+  );
+  t.after(() => Promise.all([a, faux.dossier].map((d) => rm(d, { recursive: true, force: true }))));
+  const r = lancer(["--envoyer", "--cible", `${a}=projet-app`, "--cible", `${a}=projet-coq`], {
+    ...SECRETS,
+    PATH: faux.dossier,
+  });
+  assert.equal(r.status, envoi.CODES_ENVOI.echec);
+  assert.equal((await faux.appels()).length, 1);
+});
+
 test("un dépassement sur la SECONDE cible : code 7 et ZÉRO appel d'envoi, pas même pour la première", async (t) => {
   const bon = await arbre(1);
   const gros = await arbre(26 * MIO);

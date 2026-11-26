@@ -13,17 +13,38 @@
 //
 // Les octets viennent toujours du DISQUE (`image:build` ne versionne rien), y compris sous
 // `--commit` : c'est la même exception nommée que `vendor/v86/artefacts` (`publier-sources.mjs`).
-// Ils restent vérifiables : la taille de chaque fichier est confrontée au descripteur, et
-// l'empreinte du noyau, de l'initrd et des deux BIOS aussi (`boot.empreintes`). Celle du rootfs, du
-// paquet et de la graine porte sur l'image DÉCOMPRESSÉE : ce module ne la recalcule pas, c'est le
-// navigateur qui la vérifie au démarrage (`acquisition-du-disque-systeme.mjs`), et l'E2E
-// `tests/e2e/publie-seul.spec.mjs` le prouve sur l'arbre publié.
+// Leur IDENTITÉ est vérifiée AVANT d'être publiée : la taille de chaque fichier, l'empreinte du noyau, de
+// l'initrd et des deux BIOS, et l'empreinte DÉCOMPRESSÉE du rootfs, du paquet, de la graine et du paquet
+// précédent (`precedent.paquet`), recalculée en flux. Un fichier de même taille et d'un autre contenu est
+// refusé (code 4). L'E2E `tests/e2e/publie-seul.spec.mjs` le prouve ensuite de bout en bout.
 
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { copyFile, mkdir, readFile, stat } from "node:fs/promises";
+import { Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { createGunzip } from "node:zlib";
 import { dirname, join } from "node:path";
 
 import { formeDuDescripteur } from "../src/coquille/descripteur-applicatif.mjs";
+
+/** Empreinte et taille d'un fichier gzip DÉCOMPRESSÉ, en flux (l'image du rootfs fait plus de 400 Mio). */
+async function empreinteDecompressee(chemin) {
+  const hachage = createHash("sha256");
+  let octets = 0;
+  await pipeline(
+    createReadStream(chemin),
+    createGunzip(),
+    new Writable({
+      write(morceau, _encodage, suite) {
+        hachage.update(morceau);
+        octets += morceau.byteLength;
+        suite();
+      },
+    }),
+  );
+  return { octets, sha256: hachage.digest("hex") };
+}
 
 export const CHEMIN_DU_DESCRIPTEUR = "artifacts/application.json";
 
@@ -39,20 +60,25 @@ function sourceAbsente(message) {
  * elle porte sur les octets servis).
  *
  * @param {Record<string, any>} descripteur déjà validé
- * @returns {{ nom: string, octets: number, sha256: string | null }[]}
+ * @returns {{ nom: string, octets: number, sha256: string | null,
+ *            decompresse: { octets: number, sha256: string } | null }[]}
  */
 export function fichiersDeLImage(descripteur) {
   const servi = (morceau) => ({
     nom: morceau.nom,
     octets: morceau.transfertOctets ?? morceau.octets,
-    // Sans compression, `sha256` décrit les octets servis ; sinon il décrit l'image décompressée.
+    // Sans compression, `sha256` décrit les octets servis ; sinon il décrit l'image DÉCOMPRESSÉE, que
+    // `copierLImage` recalcule en flux (`decompresse`) : le publieur ne se fie ni au nom ni à la taille.
     sha256: morceau.compression === undefined ? morceau.sha256 : null,
+    decompresse:
+      morceau.compression === undefined ? null : { octets: morceau.octets, sha256: morceau.sha256 },
   });
   const boot = descripteur.boot;
   const brut = (cle) => ({
     nom: boot[cle],
     octets: boot.empreintes[cle].octets,
     sha256: boot.empreintes[cle].sha256,
+    decompresse: null,
   });
   const liste = [
     servi(descripteur.rootfs),
@@ -120,6 +146,22 @@ export async function copierLImage({ racine, destination }) {
       if (mesure !== fichier.sha256) {
         throw sourceAbsente(
           `Artefact de l'image ${fichier.nom} : empreinte ${mesure}, le descripteur déclare ${fichier.sha256}.`,
+        );
+      }
+    }
+    if (fichier.decompresse !== null) {
+      const mesure = await empreinteDecompressee(depuis).catch((erreur) => {
+        throw sourceAbsente(
+          `Artefact de l'image ${fichier.nom} : gzip illisible (${erreur.message}).`,
+        );
+      });
+      if (
+        mesure.octets !== fichier.decompresse.octets ||
+        mesure.sha256 !== fichier.decompresse.sha256
+      ) {
+        throw sourceAbsente(
+          `Artefact de l'image ${fichier.nom} : empreinte décompressée ${mesure.sha256} (${mesure.octets} octets), ` +
+            `le descripteur déclare ${fichier.decompresse.sha256} (${fichier.decompresse.octets} octets).`,
         );
       }
     }

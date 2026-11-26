@@ -37,6 +37,11 @@ test("un environnement SANS règle, ou avec une règle sans relecteur, est refus
     { name: "production" },
     { name: "production", protection_rules: [{ type: "wait_timer" }] },
     { name: "production", protection_rules: [{ type: "required_reviewers", reviewers: [] }] },
+    // Une AUTRE règle qui porterait une liste `reviewers` n'est pas un relecteur requis.
+    {
+      name: "production",
+      protection_rules: [{ type: "branch_policy", reviewers: [{ type: "User" }] }],
+    },
   ]) {
     assert.equal(garde.relecteursRequis(environnement), 0);
     const r = lancer(JSON.stringify(environnement));

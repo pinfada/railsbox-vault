@@ -252,6 +252,8 @@ jobs:
       - name: Démarrage sur l'arbre publié seul (Chromium)
         env:
           VAULT_E2E_EXIGER: "1"
+          # Le MÊME commit (`VAULT_COMMIT`, job) et l'arbre du job : l'image servie est comparée octet pour octet.
+          VAULT_ARBRE_PUBLIE: artifacts/publication/coquille
         run:
           npx playwright test --config playwright.e2e.config.mjs --project=chromium --workers=1
           tests/e2e/publie-seul.spec.mjs
@@ -336,7 +338,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      VAULT_PROFIL: ${{ inputs.profil-hebergeur || 'cloudflare-pages' }}
       VAULT_PROJET_COQUILLE: ${{ inputs.projet-pages-coquille || 'projet-coquille-a-definir' }}
       VAULT_PROJET_APPLICATION:
         ${{ inputs.projet-pages-application || 'projet-application-a-definir' }}
@@ -370,13 +371,10 @@ jobs:
       - name: Répétition à blanc
         run: |
           mkdir -p reports
-          {
-            node tools/publier-envoi.mjs --repetition --profil "$VAULT_PROFIL" \
-              --arbre artifacts/publication/application --projet "$VAULT_PROJET_APPLICATION"
-            echo
-            node tools/publier-envoi.mjs --repetition --profil "$VAULT_PROFIL" \
-              --arbre artifacts/publication/coquille --projet "$VAULT_PROJET_COQUILLE"
-          } | tee reports/repetition.txt
+          node tools/publier-envoi.mjs --repetition \
+            --cible "artifacts/publication/application=$VAULT_PROJET_APPLICATION" \
+            --cible "artifacts/publication/coquille=$VAULT_PROJET_COQUILLE" \
+            | tee reports/repetition.txt
           {
             echo '### Répétition à blanc de l'"'"'envoi'
             echo '```'
@@ -429,17 +427,28 @@ jobs:
           node tools/publier.mjs --verifier artifacts/publication/coquille
           node tools/publier.mjs --verifier artifacts/publication/application
 
-      # L'application d'abord : la coquille la cadre, et une coquille servie avant son territoire
-      # applicatif pointerait vers rien. Chaque appel refuse un dépassement de limite (code 7).
+      # La GARDE de l'environnement, AVANT l'étape qui reçoit les secrets : `environment: production` ne
+      # protège rien en soi (GitHub crée un environnement absent, sans règle). Cette étape n'a que le jeton
+      # du workflow (`contents: read`), qui lit l'environnement ; elle refuse s'il n'a aucun relecteur requis.
+      - name: Garde de l'environnement production (relecteur requis)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VAULT_DEPOT: ${{ github.repository }}
+        run: |
+          gh api "repos/$VAULT_DEPOT/environments/production" > environnement.json || echo '{}' > environnement.json
+          node tools/publier-garde-environnement.mjs < environnement.json
+
+      # UN seul appel pour les DEUX arbres : tous deux et leurs projets sont contrôlés AVANT le premier
+      # envoi, et un échec sur l'un donne zéro appel. L'application d'abord : la coquille la cadre, et une
+      # coquille servie avant son territoire applicatif pointerait vers rien. Le profil d'envoi est
+      # cloudflare-pages, seul envoi qui existe : `VAULT_PROFIL` ne le choisit pas.
       - name: Envoi (ou répétition à blanc si les secrets manquent)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          VAULT_PROFIL: ${{ inputs.profil-hebergeur || 'cloudflare-pages' }}
           VAULT_PROJET_COQUILLE: ${{ inputs.projet-pages-coquille }}
           VAULT_PROJET_APPLICATION: ${{ inputs.projet-pages-application }}
         run: |
-          node tools/publier-envoi.mjs --envoyer --profil "$VAULT_PROFIL" \
-            --arbre artifacts/publication/application --projet "$VAULT_PROJET_APPLICATION"
-          node tools/publier-envoi.mjs --envoyer --profil "$VAULT_PROFIL" \
-            --arbre artifacts/publication/coquille --projet "$VAULT_PROJET_COQUILLE"
+          node tools/publier-envoi.mjs --envoyer \
+            --cible "artifacts/publication/application=$VAULT_PROJET_APPLICATION" \
+            --cible "artifacts/publication/coquille=$VAULT_PROJET_COQUILLE"

@@ -21,6 +21,10 @@ const PUBLIER = "tools/publier.mjs";
 const E_LIMITES = "tests/unit/publication-limites-hebergeur.test.mjs";
 const E_ENVOI = "tests/unit/publication-envoi.test.mjs";
 const E_IMAGE = "tests/unit/publication-image.test.mjs";
+const PUBLICATION = ".github/workflows/publication.yml";
+const GARDE_ENV = "tools/publier-garde-environnement.mjs";
+const E_WORKFLOW_ENVOI = "tests/unit/workflows-publication-envoi.test.mjs";
+const E_GARDE_ENV = "tests/unit/publication-garde-environnement.test.mjs";
 const E_REPARTITION = "tests/unit/campagnes-de-mutation-repartition.test.mjs";
 
 /** `avant` doit apparaître EXACTEMENT UNE FOIS dans le fichier (le moteur refuse sinon). */
@@ -370,6 +374,122 @@ export const MUTATIONS = Object.freeze([
     fichier: IMAGE,
     avant: "if (!metadonnees?.isFile()) {",
     apres: "if (false) {",
+    epreuves: [E_IMAGE],
+  },
+  {
+    nom: "workflow — deployer exige l'environnement production",
+    garde: "deployer — environnement",
+    fichier: PUBLICATION,
+    avant: "    environment: production\n",
+    apres: "",
+    epreuves: [E_WORKFLOW_ENVOI],
+  },
+  {
+    nom: "workflow — deployer ne part que sur `envoyer`",
+    garde: "deployer — inerte par défaut",
+    fichier: PUBLICATION,
+    avant: "    if: ${{ inputs.envoyer }}\n",
+    apres: "    if: ${{ true }}\n",
+    epreuves: [E_WORKFLOW_ENVOI],
+  },
+  {
+    nom: "workflow — la répétition à blanc ne porte aucun secret",
+    garde: "repetition — pas de secret",
+    fichier: PUBLICATION,
+    avant:
+      "      VAULT_PROJET_COQUILLE: ${{ inputs.projet-pages-coquille || 'projet-coquille-a-definir' }}",
+    apres:
+      "      VAULT_PROJET_COQUILLE: ${{ inputs.projet-pages-coquille || 'projet-coquille-a-definir' }}\n      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}",
+    epreuves: [E_WORKFLOW_ENVOI],
+  },
+  {
+    nom: "workflow — la chaîne construit AVEC l'image",
+    garde: "publier — --avec-image",
+    fichier: PUBLICATION,
+    avant: "            --avec-image \\\n",
+    apres: "",
+    epreuves: [E_WORKFLOW_ENVOI],
+  },
+  {
+    nom: "workflow — wrangler n'est appelé que par l'outil",
+    garde: "deployer — wrangler direct",
+    fichier: PUBLICATION,
+    avant: "          node tools/publier-envoi.mjs --envoyer \\\n",
+    apres:
+      "          npx wrangler pages deploy x\n          node tools/publier-envoi.mjs --envoyer \\\n",
+    epreuves: [E_WORKFLOW_ENVOI],
+  },
+  {
+    nom: "workflow — la garde de l'environnement précède l'envoi",
+    garde: "deployer — garde supprimée",
+    fichier: PUBLICATION,
+    avant: "          node tools/publier-garde-environnement.mjs < environnement.json\n",
+    apres: "          true\n",
+    epreuves: [E_WORKFLOW_ENVOI],
+  },
+  {
+    nom: "workflow — l'E2E compare l'image à l'arbre du job",
+    garde: "publier — VAULT_ARBRE_PUBLIE",
+    fichier: PUBLICATION,
+    avant: "          VAULT_ARBRE_PUBLIE: artifacts/publication/coquille\n",
+    apres: "",
+    epreuves: [E_WORKFLOW_ENVOI],
+  },
+  {
+    nom: "garde — un environnement sans relecteur est refusé",
+    garde: "relecteursRequis — type de règle",
+    fichier: GARDE_ENV,
+    avant: 'regle?.type === "required_reviewers"',
+    apres: 'regle?.type !== "wait_timer"',
+    epreuves: [E_GARDE_ENV],
+  },
+  {
+    nom: "garde — une réponse illisible est refusée",
+    garde: "garde — échec fermé",
+    fichier: GARDE_ENV,
+    avant: "if (relecteursRequis(environnement) < 1) {",
+    apres: "if (environnement !== null && relecteursRequis(environnement) < 1) {",
+    epreuves: [E_GARDE_ENV],
+  },
+  {
+    nom: "envoi — le profil d'envoi n'est pas un choix",
+    garde: "principal — --profil refusé",
+    fichier: ENVOI,
+    avant: 'if (argv.includes("--profil")) {',
+    apres: "if (false) {",
+    epreuves: [E_ENVOI],
+  },
+  {
+    nom: "envoi — un échec d'envoi n'est pas un succès",
+    garde: "principal — statut de wrangler",
+    fichier: ENVOI,
+    avant: "if (fils.status !== 0) return CODES_ENVOI.echec;",
+    apres: "",
+    epreuves: [E_ENVOI],
+  },
+  {
+    nom: "image — l'empreinte décompressée est vérifiée",
+    garde: "copierLImage — empreinte décompressée",
+    fichier: IMAGE,
+    avant: "mesure.sha256 !== fichier.decompresse.sha256",
+    apres: "false",
+    epreuves: [E_IMAGE],
+  },
+  {
+    nom: "image — la vérification décompressée a lieu pour chaque morceau gzip",
+    garde: "copierLImage — décompression",
+    fichier: IMAGE,
+    avant: "if (fichier.decompresse !== null) {",
+    apres: "if (false) {",
+    epreuves: [E_IMAGE],
+  },
+  {
+    nom: "image — le paquet précédent est publié ET vérifié",
+    garde: "fichiersDeLImage — précédent",
+    fichier: IMAGE,
+    avant:
+      "if (descripteur.precedent !== undefined) liste.push(servi(descripteur.precedent.paquet));",
+    apres: "",
     epreuves: [E_IMAGE],
   },
 ]);

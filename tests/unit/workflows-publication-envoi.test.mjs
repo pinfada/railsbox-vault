@@ -44,16 +44,15 @@ test("deployer : UN seul appel d'envoi pour les DEUX arbres, précédé de la ga
     "la garde précède l'envoi",
   );
   assert.ok(
-    bloc.indexOf("--cible artifacts/publication/application") <
-      bloc.indexOf("--cible artifacts/publication/coquille"),
+    bloc.indexOf("artifacts/publication/application=") <
+      bloc.indexOf("artifacts/publication/coquille="),
     "l'application d'abord",
   );
   // La garde ne reçoit AUCUN secret : son étape n'a que le jeton du workflow.
-  const etape = bloc.slice(
-    bloc.indexOf("publier-garde-environnement.mjs") - 600,
-    bloc.indexOf("publier-envoi.mjs"),
-  );
-  assert.doesNotMatch(etape.slice(etape.lastIndexOf("- name:")), /CLOUDFLARE/u);
+  const debut = bloc.indexOf("- name: Garde de l'environnement");
+  const etape = bloc.slice(debut, bloc.indexOf("- name:", debut + 5));
+  assert.ok(etape.includes("publier-garde-environnement.mjs"), "l'étape de garde est isolée");
+  assert.doesNotMatch(etape, /CLOUDFLARE|secrets\./u);
   assert.doesNotMatch(bloc, /--profil/u, "le profil d'envoi n'est pas un choix");
 });
 
@@ -89,5 +88,6 @@ test("la chaîne publie avec l'image, mesure les limites et prouve le démarrage
   assert.match(bloc, /node tools\/publier\.mjs \\\n\s+--avec-image/u);
   assert.match(bloc, /--verifier "artifacts\/publication\/\$arbre" --profil "\$VAULT_PROFIL"/u);
   assert.match(bloc, /tests\/e2e\/publie-seul\.spec\.mjs/u);
+  assert.match(bloc, /VAULT_ARBRE_PUBLIE: artifacts\/publication\/coquille/u);
   assert.match(bloc, /VAULT_E2E_EXIGER: "1"/u);
 });
