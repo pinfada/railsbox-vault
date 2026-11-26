@@ -15,15 +15,15 @@ assert.ok(code, "Le code réellement exécuté dans le workflow doit être épro
 
 test("le contrôle déjà requis attend les tests, les deux couvertures et les audits", () => {
   assert.match(gate, /^ {4}name: Qualité et tests$/mu);
-  assert.match(gate, /^ {4}needs: \[check, couverture, audits\]$/mu);
+  assert.match(gate, /^ {4}needs: \[check-navigateur, check-parcours, couverture, audits\]$/mu);
   assert.match(gate, /^ {4}if: \$\{\{ always\(\) \}\}$/mu);
   assert.match(gate, /VAULT_RESULTATS_CI: \$\{\{ toJSON\(needs\) \}\}/u);
   assert.match(ci, /^ {2}audits:\n {4}uses: \.\/\.github\/workflows\/security.yml$/mu);
   assert.match(ci, /node: \[22, 24\]/u);
 });
 
-const reussis = () =>
-  Object.fromEntries(["check", "couverture", "audits"].map((nom) => [nom, { result: "success" }]));
+const ATTENDUS = ["check-navigateur", "check-parcours", "couverture", "audits"];
+const reussis = () => Object.fromEntries(ATTENDUS.map((nom) => [nom, { result: "success" }]));
 function executer(resultats) {
   return spawnSync(process.execPath, ["--input-type=module", "--eval", code], {
     env: { ...process.env, VAULT_RESULTATS_CI: JSON.stringify(resultats) },
@@ -32,12 +32,12 @@ function executer(resultats) {
   });
 }
 
-test("le gate accepte uniquement trois contrôles réussis", () => {
+test("le gate accepte uniquement quatre contrôles réussis", () => {
   const resultat = executer(reussis());
   assert.equal(resultat.status, 0, resultat.stderr);
 });
 
-for (const nom of ["check", "couverture", "audits"]) {
+for (const nom of ATTENDUS) {
   for (const etat of ["failure", "cancelled", "skipped", "", undefined]) {
     test(`le gate refuse ${nom} : ${etat ?? "absent"}`, () => {
       const resultats = reussis();
