@@ -232,7 +232,32 @@ l'installation. Le job est scindé en `check-navigateur` (`npm run check:navigat
 unitaires, suite navigateur) et `check-parcours` (`npm run check:parcours` : apparence, compat, fins
 d'onglet, `publier:check`). `npm run check` reste la suite complète (les deux, en séquence) ; le
 cliquet vérifie que l'union des deux moitiés est exactement l'ancienne liste de commandes. « Qualité
-et tests » exige chacun des deux jobs. **Durées mesurées par job : voir le tableau de la PR #328.**
+et tests » exige chacun des deux jobs. Le premier essai (un seul job navigateur) a mesuré **22 min
+45 s** (installation 4 min 47 s, suite 17 min 49 s), au-dessus de la moitié du plafond : la suite
+navigateur est donc coupée en deux tranches Playwright (`npm run test:browser -- --shard=i/2`, et
+non derrière l'alias `check:navigateur`, où npm absorbe `--shard` : le run 45802424036 a rejoué 541
+épreuves dans chaque tranche avant que ce défaut soit vu), et lint, format et unitaires rejoignent
+le job des parcours.
+
+**Durées mesurées (run CI 45805649681, PR #328, tous verts) :**
+
+| Job                                       | Durée                             | Plafond | Moitié du plafond |
+| ----------------------------------------- | --------------------------------- | ------- | ----------------- |
+| Mutations (lot 1)                         | 3 min 50 s                        | 15 min  | 7 min 30 s        |
+| Mutations (lot 2)                         | 4 min 05 s                        | 15 min  | 7 min 30 s        |
+| Mutations (lot 3)                         | 4 min 54 s                        | 15 min  | 7 min 30 s        |
+| Mutations (lot 4)                         | 4 min 03 s                        | 15 min  | 7 min 30 s        |
+| Campagnes de mutation (agrégat)           | 6 s                               | 15 min  | —                 |
+| Vérifications du produit (navigateur 1/2) | 9 min 58 s                        | 25 min  | 12 min 30 s       |
+| Vérifications du produit (navigateur 2/2) | 11 min 07 s                       | 25 min  | 12 min 30 s       |
+| Vérifications du produit (parcours)       | 7 min 52 s                        | 20 min  | 10 min            |
+| Qualité et tests (agrégat)                | 6 s ; 11 min 10 s de bout en bout | 2 min   | —                 |
+
+Les plafonds du produit BAISSENT (36 → 25 et 20). **Écart dit en chiffres :** ces durées ont
+l'installation des moteurs à 30–40 s ; le jour de l'annulation elle a pris 12 min 13 s. Dans ce cas
+un job navigateur approcherait 22 min, sous son plafond de 25 min mais PAS sous la moitié. La
+scission enlève la somme des deux moitiés d'un seul job ; elle ne supprime pas la variance de
+l'installation (non traitée ici).
 
 **Limites.** La présence des lots est gardée par un cliquet sur `ci.yml` et par le résultat agrégé
 de la matrice, pas par un décompte des artefacts à l'exécution. Les durées par lot dépendent de

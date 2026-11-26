@@ -81,6 +81,9 @@ jobs:
   # installation ; elles ne s'ajoutent plus. `npm run check` reste la suite complète en local.
   #
   # Moitié 1 : la suite navigateur (`npm run check:navigateur`), en DEUX tranches Playwright
+  # MESURE (run 45805649681, #328) : navigateur 1/2 en 9 min 58 s, 2/2 en 11 min 07 s, parcours en 7 min
+  # 52 s ; installation des moteurs 30 à 40 s ce jour-là (12 min 13 s le jour de l'annulation : au pire,
+  # navigateur ≈ 22 min, sous les 25 min de plafond mais pas sous la moitié — dit tel quel).
   # (`--shard`, passé à `npm run test:browser` : derrière l'alias `check:navigateur`, npm prendrait
   # `--shard` pour une de ses options et ne le transmettrait pas) : la mesure du premier run de #328 l'a donnée à 22 min 45 s en un seul job (installation 4
   # min 47 s, suite 17 min 49 s), au-dessus de la moitié du plafond de 36 min.
@@ -244,7 +247,8 @@ jobs:
   # de 15 min sur `main`, deux fois (run 45778067983). Le plafond de chaque lot NE BOUGE PAS (15 min).
   # La répartition (`LOTS` dans `tools/rejouer-les-campagnes.mjs`) est gardée par
   # `tests/unit/campagnes-de-mutation-repartition.test.mjs` : chaque campagne et chaque tranche une
-  # seule fois. MESURES par lot : voir `docs/testing.md`, « La scission des campagnes de mutation ».
+  # seule fois. MESURE (run 45805649681) : lots 1 à 4 en 3 min 50 s, 4 min 05 s, 4 min 54 s, 4 min 03 s,
+  # soit moins de la moitié du plafond (7 min 30 s) ; « Campagnes de mutation » (agrégat) en 6 s.
   mutations-lot:
     name: Mutations (lot ${{ matrix.lot }})
     runs-on: ubuntu-latest
