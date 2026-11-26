@@ -1,39 +1,72 @@
 # RailsBox Vault
 
-**RailsBox Vault explore une nouvelle forme de logiciel personnel : une application Rails distribuée
-comme un site web, mais exécutée et possédée localement comme un logiciel de bureau.**
+**Une application Rails distribuée comme un site web, mais exécutée et possédée localement comme un
+logiciel de bureau.**
 
-Le navigateur exécute l'application, sa base de données et ses dépendances. Les données de
-l'utilisateur restent locales, doivent pouvoir être chiffrées, sauvegardées et déplacées sans
-dépendre d'un serveur applicatif permanent.
+Vous ouvrez une adresse. Le navigateur télécharge l'application, puis l'exécute lui-même : Linux,
+Ruby, Rails et la base de données tournent dans l'onglet. Vos données restent sur votre appareil,
+chiffrées. Aucun serveur applicatif ne les reçoit.
+
+> RailsBox Vault est expérimental. Aucune version n'est publiée, et il ne doit protéger aucune
+> donnée réelle. Voir [Statut](#statut).
+
+## Comment ça marche
+
+- **Distribution.** L'application est publiée sous forme de fichiers statiques. Le serveur de
+  publication distribue le logiciel ; il n'héberge pas vos données.
+- **Exécution.** Une machine virtuelle ([v86](https://github.com/copy/v86)) démarre dans le
+  navigateur et y fait tourner une vraie application Rails avec SQLite, pas une approximation.
+- **Stockage.** Le disque de l'application vit dans le stockage local du navigateur (OPFS), dans un
+  volume chiffré et authentifié (AES-256-GCM).
+- **Ouverture.** Le coffre s'ouvre par une phrase, par une clé d'accès (WebAuthn) ou par un code de
+  récupération généré une seule fois. Un moyen compromis se révoque.
+- **Sortie.** Une sauvegarde est un fichier documenté et vérifiable, qui se restaure sur un autre
+  appareil ou une autre adresse.
+- **Séparation.** Une coquille de confiance tient les clés. L'application s'affiche sur une autre
+  origine et ne les voit jamais.
+
+Le détail est dans l'[architecture](docs/architecture.md) et le [modèle de menace](SECURITY.md).
 
 ## Statut
 
-RailsBox Vault est un projet expérimental. Il ne protège encore aucune donnée réelle et ne doit pas
-être utilisé en production.
+État au 26 novembre 2026.
 
-### Où en est le projet (26 novembre 2026)
+### Ce qui fonctionne
 
-Ce qui fonctionne, éprouvé en intégration continue sous Chromium :
+Éprouvé en intégration continue, sous Chromium :
 
-- le parcours guidé en neuf étapes, de la création du coffre à la révocation (ADR 0040) ;
-- une écriture acquittée par Rails est durable dès l'acquittement (#209) ;
-- la reprise par instantané après un verrouillage : p95 de 0,84 s
-  ([attributs de qualité](docs/quality-attributes.md)) ;
-- le démarrage hors connexion : le descripteur est scellé (ADR 0046) et, depuis le 26 novembre 2026,
-  un Service Worker de la coquille sert la réserve (ADR 0048).
+- le parcours complet en neuf étapes : créer un coffre, choisir comment l'ouvrir, confirmer son code
+  de récupération, travailler dans l'application, verrouiller et rouvrir, sauvegarder, restaurer
+  ailleurs, récupérer par le code, révoquer (ADR 0040) ;
+- une écriture acquittée par Rails est durable dès l'acquittement, pour SQLite et les pièces jointes
+  ActiveStorage de l'application de référence (#209) ;
+- la réouverture après un verrouillage reprend un instantané chiffré : p95 de 0,84 s ;
+- le démarrage hors connexion, une fois l'application installée (ADR 0046, ADR 0048).
 
-Ce qui manque avant un premier usage, même sur des données non sensibles :
+Les mesures et leurs protocoles sont dans les [attributs de qualité](docs/quality-attributes.md).
 
-- aucune version n'est publiée et la chaîne de publication n'a jamais été exercée sur un hébergeur
+### Ce qui manque avant un premier usage
+
+Même sur des données non sensibles :
+
+- aucune version n'est publiée, et la chaîne de publication n'a jamais été exercée sur un hébergeur
   réel (#124, #125) ;
 - aucune personne extérieure au projet n'a encore suivi le parcours sans aide (#195) ;
-- seuls Chrome et Edge mènent le parcours à son terme : Firefox n'atteint pas l'étape 4 (ADR 0038),
-  et Safari n'a pas été mesuré (#40) ;
 - le premier démarrage, à froid, prend environ deux minutes (p95 de 125,9 s), et son pic de mémoire
-  dépasse la cible (#238).
+  dépasse la cible (#238) ;
+- les écritures d'une application tierce hors de SQLite et d'ActiveStorage ne sont pas couvertes
+  (#210).
 
-L'usage sur des données sensibles reste fermé par les conditions de [SECURITY.md](SECURITY.md).
+### Navigateurs
+
+| Navigateur          | État                                                          |
+| ------------------- | ------------------------------------------------------------- |
+| Chrome, Edge        | le parcours aboutit                                           |
+| Firefox             | l'application ne démarre pas à l'étape 4 (voir « Prérequis ») |
+| Safari              | jamais mesuré sur un vrai Safari (#40)                        |
+| Navigateurs mobiles | expérimental                                                  |
+
+La matrice complète est dans la [compatibilité](docs/compatibility.md).
 
 ### Limites de sécurité à connaître
 
@@ -46,86 +79,108 @@ L'usage sur des données sensibles reste fermé par les conditions de [SECURITY.
 - perdre tous les moyens d'ouverture, code de récupération compris, rend le volume définitivement
   inaccessible : RailsBox Vault ne possède aucun séquestre.
 
-Le détail, les conséquences et les scénarios couverts figurent dans
-[le modèle de menace](SECURITY.md).
+Le détail, les conséquences et les scénarios couverts figurent dans le
+[modèle de menace](SECURITY.md). L'usage sur des données sensibles reste fermé par ses conditions.
 
-Le premier objectif est volontairement plus modeste que la vision complète :
+### Avancement
 
-> Modifier une base Rails, fermer entièrement le navigateur, retrouver les données hors ligne,
-> exporter le volume, puis le restaurer depuis une autre origine.
+| Jalon                                      | État                           |
+| ------------------------------------------ | ------------------------------ |
+| 0 — Fondation vérifiable                   | clos ; reste #40 (Safari réel) |
+| 1 — Persistance locale                     | clos                           |
+| 2 — Portabilité                            | clos                           |
+| 3 — Résilience transactionnelle            | clos                           |
+| 4 — Volume chiffré                         | tranches livrées               |
+| 5 — Déverrouillage et origine de confiance | clos                           |
+| 6 — Échanges chiffrés optionnels           | non commencé                   |
 
-Le chiffrement et la récupération de clés sont implémentés et éprouvés ; les conditions
-d'utilisation restent celles de [SECURITY.md](SECURITY.md). La collaboration reste une perspective.
+Les travaux en cours portent sur le parcours, l'installation d'une application extérieure, et la
+stabilité de l'outillage. La [feuille de route](docs/roadmap.md) fixe les critères de chaque jalon,
+et l'[issue #31](https://github.com/pinfada/railsbox-vault/issues/31) suit l'avancement.
 
-**Depuis le 13 septembre 2026** (ADR 0039), un coffre créé par une version de développement
-antérieure est refusé par la coquille (`VAULT_COQUILLE_COFFRE_ANTERIEUR`) et n'est pas migré :
-effacez les données du site et recréez-le.
+## Essayer en local
 
-**Persistance d'une écriture acquittée (#209)** : une écriture que Rails a acquittée — ligne SQLite
-et pièce jointe ActiveStorage de l'application de référence — est durable dès l'acquittement : le
-commit (`synchronous = extra`) et le téléversement (`DurableDisk`) ne rendent la main qu'après des
-barrières validées dans l'OPFS, sur un disque applicatif ext4 journalisé, cohérent à chaque barrière
-(ADR 0004, note du 13/09/2026). Mesuré le 13/09/2026 (coquille réelle, Chromium, local) : une note
-et sa pièce, « Verrouiller » après _d_ secondes, puis un boot à froid — relues 9 fois sur 9 à _d_ =
-0, 5 et 30 s, et le disque rouvert accepte chaque fois l'écriture suivante ; la sauvegarde part dès
-l'acquittement, sans attente. Non couverts : les écritures d'une application tierce hors de SQLite
-et d'ActiveStorage (#210), une coupure entre le commit et le téléversement (une ligne sans fichier,
-le 303 n'étant pas parti), Firefox et WebKit, non mesurés.
+### Prérequis
 
-## Essayer le parcours guidé en local
-
-La coquille guide une personne en neuf étapes (ADR 0040) : créer un coffre, choisir comment
-l'ouvrir, recevoir et confirmer son code de récupération, travailler dans l'application, verrouiller
-et rouvrir, sauvegarder, restaurer ailleurs, récupérer par le code, révoquer. Il faut Node 22.13 ou
-plus récent, jusqu’à Node 24 (champ `engines`), Docker (pour fabriquer l'image de l'application) et
-Chrome ou Edge récents.
+- Node 22.13 ou plus récent, jusqu'à Node 24 (champ `engines`) ;
+- Docker, pour fabriquer l'image de l'application ;
+- Chrome ou Edge récents.
 
 Sous Firefox, l'étape 4 du parcours guidé n'aboutit pas dans cette version : la machine virtuelle y
 tourne environ six fois plus lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ;
 le parcours le dit avant toute attente et propose Chrome ou Edge.
+
+### Lancer
 
 ```sh
 npm ci
 npm run vm:fetch          # le moteur de machine virtuelle
 npm run image:build       # l'image de l'application Rails de référence (quelques minutes)
 npm run image:manifest    # son descripteur
-# deux serveurs, deux origines : la coquille, et l'origine où l'application s'affiche
+```
+
+Puis deux serveurs, dans deux terminaux. Ce sont deux origines : la coquille, et l'origine où
+l'application s'affiche.
+
+```sh
 node tools/serve.mjs --role shell --host 127.0.0.1 --port 4179 --app-origin http://localhost:4180
 node tools/serve.mjs --role app --host localhost --port 4180
 ```
 
-`npm run image:manifest` réécrit `tools/build-reference-image/manifest.json`, un fichier suivi par
-git. Après une reconstruction locale, `git status` le montre donc modifié. Ne le commitez pas, sauf
-si vous avez changé une ENTRÉE de l'image (sources épinglées, Dockerfile, application) ; sinon,
-`git restore tools/build-reference-image/manifest.json` (#212).
+Ouvrez <http://127.0.0.1:4179/index.html> et suivez les écrans.
 
-Ouvrez <http://127.0.0.1:4179/index.html> et suivez les écrans. La création exige au moins 12
-caractères hors espaces de bord ; choisissez plusieurs mots sans lien entre eux ou un secret généré
-par votre gestionnaire. Les anciennes phrases restent utilisables à la réouverture. Pour l'étape 7
-(restaurer ailleurs), lancez un second couple de serveurs sur les ports 4181 et 4182
-(`--app-origin http://localhost:4182`), ouvrez <http://127.0.0.1:4181/index.html> et choisissez «
-J'ai déjà une sauvegarde ». La progression est retenue par le navigateur (un petit fichier du site,
-jamais le code) : pour tout reprendre de zéro, effacez les données du site dans les réglages du
-navigateur. `?vue=complete` est un paramètre des épreuves automatiques, pas un chemin du produit.
+### Ce que le parcours demande
 
-À l'étape 3, votre feuille s'éprouve en vous en servant : après l'avoir recopiée, verrouillez le
-coffre, puis rouvrez-le avec le code de votre feuille. Sur cet appareil, c'est la seule fois où le
-code est demandé : ensuite, votre phrase suffit — tant que vous ne l'avez pas révoquée —, et chaque
-ouverture vous ramène à votre application. L'étape 9 est facultative : « Terminer sans révoquer »
-finit la visite sans rien retirer. Révoquer garde le moyen avec lequel vous venez d'ouvrir et retire
-tous les autres — ouvert par la phrase, c'est votre feuille qui ne servira plus — ; l'écran dit
-lesquels avant le geste. Le fichier de progression ne constitue pas une preuve ; c'est le coffre
-lui-même qui retient qu'une feuille l'a ouvert (ADR 0040, amendement du 18/09/2026). Des étapes 5 à
-9, « Revenir à mon application » vous y ramène aussi ; après la dernière étape, l'écran de
+- **À la création**, une phrase d'au moins 12 caractères, hors espaces de bord. Choisissez plusieurs
+  mots sans lien entre eux, ou un secret généré par votre gestionnaire.
+- **À l'étape 3**, votre feuille de récupération s'éprouve en vous en servant : après l'avoir
+  recopiée, verrouillez le coffre, puis rouvrez-le avec le code de la feuille. Sur cet appareil,
+  c'est la seule fois où le code est demandé. Ensuite, votre phrase suffit, tant que vous ne l'avez
+  pas révoquée.
+- **À l'étape 4**, le premier démarrage de l'application prend environ deux minutes.
+- **À l'étape 7** (restaurer ailleurs), lancez un second couple de serveurs sur les ports 4181 et
+  4182 (`--app-origin http://localhost:4182`), ouvrez <http://127.0.0.1:4181/index.html> et
+  choisissez « J'ai déjà une sauvegarde ».
+- **L'étape 9 est facultative.** « Terminer sans révoquer » finit la visite sans rien retirer.
+  Révoquer garde le moyen avec lequel vous venez d'ouvrir et retire tous les autres : ouvert par la
+  phrase, c'est votre feuille qui ne servira plus. L'écran dit lesquels avant le geste.
+
+Des étapes 5 à 9, « Revenir à mon application » vous y ramène. Après la dernière étape, l'écran de
 l'application porte les gestes de tous les jours : verrouiller, sauvegarder, révoquer.
 
-Respectez les hôtes indiqués : les cookies sont partagés entre les ports d'un même hôte. Le serveur
-refuse les alias, notamment `localhost:4179` pour la coquille configurée sur `127.0.0.1` ; seul un
-alias déclaré au lancement (`--alias localhost`, réservé aux épreuves automatiques qui exigent un
-nom de domaine) est servi. Ce couple sépare les deux hôtes du projet, mais pas les autres services
-qui utiliseraient ces mêmes hôtes : pour vos coffres de développement, utilisez un profil de
-navigateur réservé. Changer d'origine change aussi l'espace de stockage OPFS ; exportez une
-sauvegarde avant de déplacer un coffre.
+### À savoir
+
+- **Respectez les hôtes indiqués.** Le serveur refuse les alias, notamment `localhost:4179` pour la
+  coquille configurée sur `127.0.0.1`. Seul un alias déclaré au lancement (`--alias localhost`,
+  réservé aux épreuves automatiques) est servi.
+- **Utilisez un profil de navigateur réservé** pour vos coffres de développement : les cookies sont
+  partagés entre les ports d'un même hôte, et d'autres services locaux peuvent utiliser ces hôtes.
+- **Changer d'origine change l'espace de stockage.** Exportez une sauvegarde avant de déplacer un
+  coffre.
+- **Pour repartir de zéro**, effacez les données du site dans les réglages du navigateur. La
+  progression du parcours y est retenue dans un petit fichier, qui ne contient jamais le code et ne
+  constitue pas une preuve : c'est le coffre lui-même qui retient qu'une feuille l'a ouvert (ADR
+  0040).
+- **Un coffre créé avant le 13 septembre 2026** par une version de développement est refusé
+  (`VAULT_COQUILLE_COFFRE_ANTERIEUR`) et n'est pas migré (ADR 0039) : effacez les données du site et
+  recréez-le.
+- **`npm run image:manifest` réécrit `tools/build-reference-image/manifest.json`**, un fichier suivi
+  par git. Ne le commitez pas, sauf si vous avez changé une entrée de l'image (sources épinglées,
+  Dockerfile, application). Sinon : `git restore tools/build-reference-image/manifest.json` (#212).
+- `?vue=complete` est un paramètre des épreuves automatiques, pas un chemin du produit.
+
+## Développer
+
+```sh
+npm ci
+npx playwright install chromium firefox webkit
+npm run check:statique    # lint, format et tests unitaires
+npm run check             # la suite complète, sans Docker
+```
+
+Le projet se développe en TDD, et chaque changement passe par une pull request. Lisez d'abord
+[Contribuer](CONTRIBUTING.md), puis [Développement](docs/development.md) et la
+[stratégie de test](docs/testing.md).
 
 ## Principes
 
@@ -153,21 +208,50 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 
 ## Documentation
 
-- [Direction visuelle et accessibilité du parcours](docs/direction-visuelle.md)
+**Comprendre le produit**
+
 - [Vision](docs/vision.md)
 - [Exigences produit](docs/product-requirements.md)
 - [Architecture exploratoire](docs/architecture.md)
+- [Direction visuelle et accessibilité du parcours](docs/direction-visuelle.md)
+
+**Sécurité**
+
+- [Modèle de menace](SECURITY.md)
+- [Format de volume, spécification pour la revue externe](docs/format-de-volume-v3.md)
+
+**Qualité**
+
 - [Attributs de qualité](docs/quality-attributes.md)
 - [Compatibilité](docs/compatibility.md)
-- [Versions et publications](docs/release-policy.md)
-- [Feuille de route](docs/roadmap.md)
-- [Démarrer dans l'équipe](docs/team-start.md)
-- [Évaluation de readiness](docs/readiness-assessment.md)
-- [Contribuer et travailler en TDD](CONTRIBUTING.md)
-- [Gouvernance de développement](docs/governance.md)
-- [Développement](docs/development.md)
 - [Stratégie de test](docs/testing.md)
-- [Modèle de menace](SECURITY.md)
+
+**Projet**
+
+- [Feuille de route](docs/roadmap.md)
+- [Passage du prototype à un produit viable](docs/viabilite.md)
+- [Versions et publications](docs/release-policy.md)
+- [Gouvernance de développement](docs/governance.md)
+- [Contribuer et travailler en TDD](CONTRIBUTING.md)
+- [Développement](docs/development.md)
+- [Démarrer dans l'équipe](docs/team-start.md)
+- [Évaluation de readiness (photographie du 23 août 2026)](docs/readiness-assessment.md)
+
+**Spikes**
+
+- [Spike #35 — protocole et mesures de la topologie d'origine](docs/spikes/0035-topologie-origine-de-confiance.md)
+- [Spike #4 — protocole et mesures du backend de blocs v86](docs/spikes/0004-backend-de-blocs-v86.md)
+- [Spike #41 — coût mesuré de l'isolation multi-origine sur le runtime v86](docs/spikes/0041-isolation-coop-coep.md)
+- [Spike #45 — où publier les deux origines, et comment vérifier ce qui est servi](docs/spikes/0045-chaine-de-publication.md)
+- [Spike #46 — ce que deux applications voient l'une de l'autre selon la topologie d'origine](docs/spikes/0046-isolation-entre-applications.md)
+
+### Décisions d'architecture (ADR)
+
+Chaque décision structurante est écrite, datée et numérotée.
+
+<details>
+<summary>Les 49 ADR</summary>
+
 - [ADR 0001 — un produit et un dépôt séparés](docs/decisions/0001-produit-et-depot-separes.md)
 - [ADR 0002 — la frontière coquille / application est une frontière d'origine](docs/decisions/0002-topologie-origine-de-confiance.md)
 - [ADR 0003 — le backend de blocs v86 est un adaptateur et un pont de durabilité](docs/decisions/0003-backend-de-blocs-v86.md)
@@ -184,14 +268,9 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0014 — une génération est validée par une racine d'un secteur alternée, et un volume rouvert présente la dernière génération validée](docs/decisions/0014-generation-transactionnelle.md)
 - [ADR 0015 — cinq menaces, cinq propriétés cryptographiques testables ; AES-256-GCM, nonces aléatoires, racine authentifiée](docs/decisions/0015-proprietes-cryptographiques-du-format.md)
 - [ADR 0016 — le format de volume v3 range le sceau hors de la charge : en-tête, région d'authentification, sceau de 34 octets](docs/decisions/0016-format-de-volume-v3-dispositions.md)
-- [Spike #35 — protocole et mesures de la topologie d'origine](docs/spikes/0035-topologie-origine-de-confiance.md)
-- [Spike #4 — protocole et mesures du backend de blocs v86](docs/spikes/0004-backend-de-blocs-v86.md)
 - [ADR 0017 — la chaîne de publication sert les mêmes en-têtes que le serveur de test, et inventorie ce qu'elle publie](docs/decisions/0017-chaine-de-publication.md)
-- [Spike #41 — coût mesuré de l'isolation multi-origine sur le runtime v86](docs/spikes/0041-isolation-coop-coep.md)
-- [Spike #45 — où publier les deux origines, et comment vérifier ce qui est servi](docs/spikes/0045-chaine-de-publication.md)
 - [ADR 0018 — le navigateur ne cloisonne le stockage que par origine : une origine par application dès la seconde, MVP mono-application accepté](docs/decisions/0018-isolation-entre-applications.md)
 - [ADR 0019 — la racine date la région d'authentification et un témoin voisin date la séquence : le retour arrière partiel est détecté, le complet reste nommé](docs/decisions/0019-fraicheur-du-volume.md)
-- [Spike #46 — ce que deux applications voient l'une de l'autre selon la topologie d'origine](docs/spikes/0046-isolation-entre-applications.md)
 - [ADR 0020 — l'enveloppe de clé vit hors du volume, en deux pages alternées, et une révocation retire l'emplacement](docs/decisions/0020-enveloppe-de-cle.md)
 - [ADR 0021 — une clé de déverrouillage se dérive d'une phrase Argon2id ou d'un PRF WebAuthn, et rien d'autre ne descend d'elle](docs/decisions/0021-derivation-des-cles-de-deverrouillage.md)
 - [ADR 0022 — la coquille sert `Referrer-Policy` et `Permissions-Policy` ; HSTS est écarté du code et confié à l'exploitant](docs/decisions/0022-entetes-de-durcissement.md)
@@ -222,6 +301,8 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0047 — un rejet « transitoire » du stockage n'est pas une absence : état et refus indéterminés, réessayables](docs/decisions/0047-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md)
 - [ADR 0048 — le Service Worker de la coquille sert la réserve hors connexion : un seul, vérifié avant de servir, borné au bootstrap puis aux clients contrôlés (en vigueur depuis D1h-b, #323)](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
 - [ADR 0049 — le modèle d'état de la révocation d'urgence](docs/decisions/0049-le-modele-d-etat-de-la-revocation.md)
+
+</details>
 
 ## Licence
 
