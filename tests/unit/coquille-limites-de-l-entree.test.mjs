@@ -19,7 +19,7 @@ const lire = (chemin) => readFile(new URL(`../../${chemin}`, import.meta.url), "
 /** Les sept limites que le mainteneur demande de dire, et le mot sans lequel elle ne le dirait pas. */
 const ATTENDUES = Object.freeze({
   chromium: /Chrome ou Edge/,
-  "premier-demarrage": /de 82 à 119 secondes/,
+  "premier-demarrage": /de 82 à 126 secondes/,
   telechargement: /200 Mo/,
   memoire: /512 Mo[\s\S]*1,5 Go[\s\S]*1,2 Go/,
   donnees: /aucune donnée (réelle|sensible)/i,

@@ -180,9 +180,13 @@ test("forced-colors : bordures et focus visibles à la création, au choix et à
   expect(cadre.style).toBe("solid");
   expect(parseFloat(cadre.largeur)).toBeGreaterThanOrEqual(1);
   await verifier(page, testInfo, "creation");
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
+  // Le lien d'évitement, puis le lien des limites (#195), puis « Commencer » : l'épreuve compte les arrêts
+  // jusqu'au geste, sans fixer leur nombre (au plus quatre), et exige qu'il soit atteint au clavier.
   const commencer = bouton(page, "Commencer");
+  for (let arrets = 0; arrets < 4; arrets += 1) {
+    await page.keyboard.press("Tab");
+    if (await commencer.evaluate((noeud) => noeud === noeud.ownerDocument.activeElement)) break;
+  }
   await expect(commencer).toBeFocused();
   const contour = await commencer.evaluate((noeud) => ({
     style: getComputedStyle(noeud).outlineStyle,

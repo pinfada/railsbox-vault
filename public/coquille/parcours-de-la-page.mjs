@@ -474,6 +474,8 @@ export function creerParcoursDeLaPage({
     noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
     // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
     noeud("promesse-garanties").hidden = ecranId === "rouvrir";
+    // Les limites se disent avant de créer ; à la réouverture, la personne les a déjà lues.
+    noeud("limites").hidden = ecranId === "rouvrir";
     marquerLePrincipal(ecranId);
     // Replier seulement les conseils quand Rails DÉMARRE. Le cadre reste à sa place :
     // le déplacer rechargerait son document et lui ferait perdre le port restreint.
