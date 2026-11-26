@@ -99,9 +99,13 @@ test("l'arbre publié AVEC l'image sert chaque artefact que le descripteur nomme
     expect(reponse.status).toBe(200);
     for (const { nom, octets } of fichiersDeLImage(descripteur)) {
       const url = `${E2E_ORIGIN_PUBLIEE}${descripteur.prefixeDesArtefacts}${nom}`;
-      const tete = await fetch(url, { method: "HEAD" });
-      expect(tete.status, url).toBe(200);
-      expect(Number(tete.headers.get("content-length")), url).toBe(octets);
+      // GET et non HEAD : le serveur de l'arbre ne rend pas de `content-length` à un HEAD. On COMPTE les
+      // octets servis, sans les garder.
+      const servi = await fetch(url);
+      expect(servi.status, url).toBe(200);
+      let recus = 0;
+      for await (const morceau of servi.body) recus += morceau.byteLength;
+      expect(recus, url).toBe(octets);
       expect(
         statSync(join(AVEC_IMAGE, "coquille", descripteur.prefixeDesArtefacts, nom)).size,
       ).toBe(octets);
