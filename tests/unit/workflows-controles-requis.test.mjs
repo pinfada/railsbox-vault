@@ -75,6 +75,6 @@ test("le workflow de sécurité est réutilisé sans doubler les déclenchements
 test("une publication attend aussi les audits", async () => {
   const publication = (await lire("publication")).replaceAll("\r\n", "\n");
   assert.match(publication, /^ {2}audits:\n {4}uses: \.\/\.github\/workflows\/security.yml$/mu);
-  assert.match(publication, /^ {2}publier:\n {4}name: [^\n]+\n {4}needs: audits$/mu);
+  assert.match(publication, /^ {2}publier:\n {4}name: [^\n]+\n {4}needs: \[audits, image\]$/mu);
   assert.match(publication, /ref: \$\{\{ inputs.commit \|\| github.sha \}\}/u);
 });

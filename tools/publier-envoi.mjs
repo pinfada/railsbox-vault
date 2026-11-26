@@ -99,8 +99,9 @@ function lireOption(argv, nom, defaut = null) {
 }
 
 async function principal(argv, environnement) {
-  const arbre = resolve(lireOption(argv, "arbre") ?? "");
-  if (lireOption(argv, "arbre") === null) throw new Error("--arbre est obligatoire.");
+  // L'arbre est affiché TEL QUE DONNÉ (relatif) : la commande imprimée est celle qui serait exécutée.
+  const arbre = lireOption(argv, "arbre");
+  if (arbre === null) throw new Error("--arbre est obligatoire.");
   const projet = lireOption(argv, "projet");
   const nomProfil = lireOption(argv, "profil", "cloudflare-pages");
   const profil = profilNomme(nomProfil);
@@ -109,7 +110,7 @@ async function principal(argv, environnement) {
   }
   const decision = decider({ envoyer: argv.includes("--envoyer"), environnement });
   const commande = commandeDeWrangler({ arbre, projet });
-  const limites = await controlerLesLimites(arbre, profil);
+  const limites = await controlerLesLimites(resolve(arbre), profil);
 
   const sortie = [
     `## Envoi de l'arbre ${arbre}`,

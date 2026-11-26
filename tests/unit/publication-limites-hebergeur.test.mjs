@@ -33,22 +33,63 @@ test("cloudflare-pages : 25 Mio par fichier, 20 000 fichiers, 100 règles — ch
   assert.equal(profil.fichiers, 20_000);
   assert.equal(profil.reglesHeaders, 100);
 
-  const pile = limites.mesurerLesLimites({ fichiers: [fichier("a", 25 * MIO)], headers: null, profil });
+  const pile = limites.mesurerLesLimites({
+    fichiers: [fichier("a", 25 * MIO)],
+    headers: null,
+    profil,
+  });
   assert.deepEqual(pile.depassements, [], "25 Mio exactement passe");
-  const trop = limites.mesurerLesLimites({ fichiers: [fichier("a", 25 * MIO + 1)], headers: null, profil });
-  assert.deepEqual(trop.depassements.map(({ regle, chemin }) => [regle, chemin]), [["octets-par-fichier", "a"]]);
+  const trop = limites.mesurerLesLimites({
+    fichiers: [fichier("a", 25 * MIO + 1)],
+    headers: null,
+    profil,
+  });
+  assert.deepEqual(
+    trop.depassements.map(({ regle, chemin }) => [regle, chemin]),
+    [["octets-par-fichier", "a"]],
+  );
 
   const nombre = (n) => Array.from({ length: n }, (_, i) => fichier(`f${i}`, 1));
-  assert.deepEqual(limites.mesurerLesLimites({ fichiers: nombre(20_000), headers: null, profil }).depassements, []);
-  assert.equal(limites.mesurerLesLimites({ fichiers: nombre(20_001), headers: null, profil }).depassements[0].regle, "nombre-de-fichiers");
+  assert.deepEqual(
+    limites.mesurerLesLimites({ fichiers: nombre(20_000), headers: null, profil }).depassements,
+    [],
+  );
+  assert.equal(
+    limites.mesurerLesLimites({ fichiers: nombre(20_001), headers: null, profil }).depassements[0]
+      .regle,
+    "nombre-de-fichiers",
+  );
 
-  const regles = (n) => `# commentaire\n${Array.from({ length: n }, (_, i) => `/r${i}\n  X-A: 1\n  X-B: 2`).join("\n")}\n`;
-  assert.deepEqual(limites.mesurerLesLimites({ fichiers: [], headers: regles(100), profil }).depassements, []);
-  assert.equal(limites.mesurerLesLimites({ fichiers: [], headers: regles(101), profil }).depassements[0].regle, "regles-headers");
+  const regles = (n) =>
+    `# commentaire\n${Array.from({ length: n }, (_, i) => `/r${i}\n  X-A: 1\n  X-B: 2`).join("\n")}\n`;
+  assert.deepEqual(
+    limites.mesurerLesLimites({ fichiers: [], headers: regles(100), profil }).depassements,
+    [],
+  );
+  assert.equal(
+    limites.mesurerLesLimites({ fichiers: [], headers: regles(101), profil }).depassements[0].regle,
+    "regles-headers",
+  );
 });
 
 test("les règles d'un _headers sont les lignes de motif : ni les en-têtes indentés, ni les commentaires", () => {
-  assert.deepEqual(limites.reglesDuFichierHeaders("# c\n/*\n  A: 1\n  B: 2\n\n/x/*\n  C: 3\n"), ["/*", "/x/*"]);
+  assert.deepEqual(limites.reglesDuFichierHeaders("# c\n/*\n  A: 1\n  B: 2\n\n/x/*\n  C: 3\n"), [
+    "/*",
+    "/x/*",
+  ]);
+});
+
+test("cloudflare-pages : une ligne de _headers de plus de 2000 caractères dépasse, 2000 passe", () => {
+  const profil = cloudflare();
+  const ligne = (n) => `/*\n  X-Long: ${"a".repeat(n - "  X-Long: ".length)}\n`;
+  assert.deepEqual(
+    limites.mesurerLesLimites({ fichiers: [], headers: ligne(2000), profil }).depassements,
+    [],
+  );
+  assert.equal(
+    limites.mesurerLesLimites({ fichiers: [], headers: ligne(2001), profil }).depassements[0].regle,
+    "longueur-ligne-headers",
+  );
 });
 
 test("netlify : aucune limite par fichier, un avertissement au-delà de 10 Mio, jamais un refus", () => {
@@ -59,11 +100,17 @@ test("netlify : aucune limite par fichier, un avertissement au-delà de 10 Mio, 
     profil,
   });
   assert.deepEqual(resultat.depassements, []);
-  assert.deepEqual(resultat.avertissements.map(({ chemin }) => chemin), ["gros"]);
+  assert.deepEqual(
+    resultat.avertissements.map(({ chemin }) => chemin),
+    ["gros"],
+  );
 });
 
 test("un profil inconnu est refusé en nommant les profils connus", () => {
-  assert.throws(() => limites.profilNomme("autre"), /cloudflare-pages.*netlify|netlify.*cloudflare-pages/);
+  assert.throws(
+    () => limites.profilNomme("autre"),
+    /cloudflare-pages.*netlify|netlify.*cloudflare-pages/,
+  );
 });
 
 async function arbreAvecUnGrosFichier(octets) {
@@ -76,7 +123,13 @@ async function arbreAvecUnGrosFichier(octets) {
     role: "épreuve",
     racine,
     origine: "http://localhost:1",
-    commit: { reference: "HEAD", empreinte: null, date: null, arbreGit: null, arbreDeTravailPropre: true },
+    commit: {
+      reference: "HEAD",
+      empreinte: null,
+      date: null,
+      arbreGit: null,
+      arbreDeTravailPropre: true,
+    },
     complet: true,
     banc: true,
     absentes: [],

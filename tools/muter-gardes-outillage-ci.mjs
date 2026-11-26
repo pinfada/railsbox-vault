@@ -14,6 +14,13 @@ const ATTESTATIONS = "tools/attestations-ci.mjs";
 const MOTEUR = "tools/moteur-de-mutation.mjs";
 const LANCEUR = "tools/rejouer-les-campagnes.mjs";
 const E_ATTESTATIONS = "tests/unit/attestations-ci.test.mjs";
+const LIMITES = "tools/publier-limites-hebergeur.mjs";
+const ENVOI = "tools/publier-envoi.mjs";
+const IMAGE = "tools/publier-image.mjs";
+const PUBLIER = "tools/publier.mjs";
+const E_LIMITES = "tests/unit/publication-limites-hebergeur.test.mjs";
+const E_ENVOI = "tests/unit/publication-envoi.test.mjs";
+const E_IMAGE = "tests/unit/publication-image.test.mjs";
 const E_REPARTITION = "tests/unit/campagnes-de-mutation-repartition.test.mjs";
 
 /** `avant` doit apparaître EXACTEMENT UNE FOIS dans le fichier (le moteur refuse sinon). */
@@ -236,6 +243,134 @@ export const MUTATIONS = Object.freeze([
     avant: "if (resultats.length === 0) {",
     apres: "if (false) {",
     epreuves: [E_ATTESTATIONS],
+  },
+  {
+    nom: "limites — 25 Mio pile passe (borne par fichier)",
+    garde: "mesurerLesLimites — octets par fichier",
+    fichier: LIMITES,
+    avant: "      if (octets > profil.octetsParFichier) {",
+    apres: "      if (octets >= profil.octetsParFichier) {",
+    epreuves: [E_LIMITES],
+  },
+  {
+    nom: "limites — 20 000 fichiers pile passe",
+    garde: "mesurerLesLimites — nombre de fichiers",
+    fichier: LIMITES,
+    avant: "fichiers.length > profil.fichiers",
+    apres: "fichiers.length >= profil.fichiers",
+    epreuves: [E_LIMITES],
+  },
+  {
+    nom: "limites — 100 règles pile passe",
+    garde: "mesurerLesLimites — règles _headers",
+    fichier: LIMITES,
+    avant: "regles.length > profil.reglesHeaders",
+    apres: "regles.length >= profil.reglesHeaders",
+    epreuves: [E_LIMITES],
+  },
+  {
+    nom: "limites — les en-têtes indentés ne sont pas des règles",
+    garde: "reglesDuFichierHeaders — lignes indentées",
+    fichier: LIMITES,
+    avant: " && !/^\\s/.test(ligne)",
+    apres: "",
+    epreuves: [E_LIMITES],
+  },
+  {
+    nom: "limites — une ligne _headers trop longue dépasse",
+    garde: "mesurerLesLimites — longueur de ligne",
+    fichier: LIMITES,
+    avant: "if (ligne.length > profil.longueurLigneHeaders) {",
+    apres: "if (false) {",
+    epreuves: [E_LIMITES],
+  },
+  {
+    nom: "limites — netlify avertit au-delà de 10 Mio",
+    garde: "mesurerLesLimites — avertissement",
+    fichier: LIMITES,
+    avant: "if (octets > profil.avertirAuDela) {",
+    apres: "if (false) {",
+    epreuves: [E_LIMITES],
+  },
+  {
+    nom: "--verifier rend 7 sur un dépassement",
+    garde: "verdictDesLimites — code dédié",
+    fichier: PUBLIER,
+    avant: "if (resultat.depassements.length === 0) return CODES.conforme;",
+    apres: "return CODES.conforme;",
+    epreuves: [E_LIMITES],
+  },
+  {
+    nom: "--verifier transmet le profil à la vérification",
+    garde: "principal — profil de --verifier",
+    fichier: PUBLIER,
+    avant: "return verifier(resolve(aVerifier), { tolererIncomplet, profil });",
+    apres: "return verifier(resolve(aVerifier), { tolererIncomplet, profil: null });",
+    epreuves: [E_LIMITES],
+  },
+  {
+    nom: "envoi — des secrets absents n'envoient pas",
+    garde: "decider — secrets manquants",
+    fichier: ENVOI,
+    avant: "if (manquants.length > 0) {",
+    apres: "if (false) {",
+    epreuves: [E_ENVOI],
+  },
+  {
+    nom: "envoi — --repetition n'envoie jamais",
+    garde: "decider — répétition demandée",
+    fichier: ENVOI,
+    avant: "if (!envoyer) {",
+    apres: "if (false) {",
+    epreuves: [E_ENVOI],
+  },
+  {
+    nom: "envoi — un dépassement refuse l'envoi réel",
+    garde: "principal — refus avant wrangler",
+    fichier: ENVOI,
+    avant: "  if (depassements > 0) {\n    process.stderr.write(",
+    apres: "  if (false) {\n    process.stderr.write(",
+    epreuves: [E_ENVOI],
+  },
+  {
+    nom: "envoi — wrangler est épinglé à une version exacte",
+    garde: "VERSION_DE_WRANGLER",
+    fichier: ENVOI,
+    avant: 'export const VERSION_DE_WRANGLER = "4.168.0";',
+    apres: 'export const VERSION_DE_WRANGLER = "latest";',
+    epreuves: [E_ENVOI],
+  },
+  {
+    nom: "envoi — un nom de projet douteux est refusé",
+    garde: "commandeDeWrangler — nom de projet",
+    fichier: ENVOI,
+    avant: 'if (!NOM_DE_PROJET.test(projet ?? "")) {',
+    apres: "if (false) {",
+    epreuves: [E_ENVOI],
+  },
+  {
+    nom: "image — une taille qui diverge du descripteur est refusée",
+    garde: "copierLImage — taille",
+    fichier: IMAGE,
+    avant: "if (metadonnees.size !== fichier.octets) {",
+    apres: "if (false) {",
+    epreuves: [E_IMAGE],
+  },
+  {
+    nom: "image — une empreinte de boot qui diverge est refusée",
+    garde: "copierLImage — empreinte",
+    fichier: IMAGE,
+    avant: "if (mesure !== fichier.sha256) {",
+    apres: "if (false) {",
+    epreuves: [E_IMAGE],
+  },
+  {
+    nom: "image — un artefact nommé et absent est refusé",
+    garde: "copierLImage — présence",
+    fichier: IMAGE,
+    avant: "if (!metadonnees?.isFile()) {",
+    apres: "if (false) {",
+    epreuves: [E_IMAGE],
   },
 ]);
 

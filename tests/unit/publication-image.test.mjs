@@ -31,11 +31,16 @@ async function racineDEpreuve({ corrompre = null } = {}) {
     if (cle === "graine") descripteur.graine.disqueOctets = 4096;
     await poser(descripteur[cle].nom, contenu);
   }
-  for (const [role, nom] of [["kernel", "vmlinuz"], ["initrd", "initrd"], ["bios", "seabios.bin"], ["vgaBios", "vgabios.bin"]]) {
+  for (const [role, nom] of [
+    ["kernel", "vmlinuz"],
+    ["initrd", "initrd"],
+    ["bios", "seabios.bin"],
+    ["vgaBios", "vgabios.bin"],
+  ]) {
     const contenu = Buffer.from(`boot ${role}`);
     descripteur.boot[role] = nom;
     descripteur.boot.empreintes[role] = { sha256: sha(contenu), octets: contenu.byteLength };
-    await poser(nom, role === corrompre ? Buffer.from("autre chose!") : contenu);
+    await poser(nom, role === corrompre ? Buffer.from(`boot ${role}`.replace(/.$/, "X")) : contenu);
   }
   await poser("intrus.ext4", Buffer.from("image brute que le descripteur ne nomme pas"));
   await writeFile(join(racine, "artifacts", "application.json"), JSON.stringify(descripteur));
@@ -53,7 +58,9 @@ test("fichiersDeLImage : les sept artefacts nommés, une fois chacun, taille ser
 test("copierLImage copie le descripteur et ce qu'il nomme à l'adresse annoncée — et RIEN d'autre", async (t) => {
   const racine = await racineDEpreuve();
   const destination = await mkdtemp(join(tmpdir(), "arbre-"));
-  t.after(() => Promise.all([rm(racine, { recursive: true }), rm(destination, { recursive: true })]));
+  t.after(() =>
+    Promise.all([rm(racine, { recursive: true }), rm(destination, { recursive: true })]),
+  );
   const { chemins } = await image.copierLImage({ racine, destination });
   const presents = (await readdir(destination, { recursive: true, withFileTypes: true }))
     .filter((e) => e.isFile())
@@ -62,13 +69,18 @@ test("copierLImage copie le descripteur et ce qu'il nomme à l'adresse annoncée
   assert.deepEqual(presents, chemins.slice().sort());
   assert.ok(presents.includes("artifacts/application.json"));
   assert.ok(presents.includes("artifacts/reference-image/rootfs.ext4.gz"));
-  assert.ok(!presents.some((chemin) => chemin.includes("intrus")), "un fichier non nommé n'est pas publié");
+  assert.ok(
+    !presents.some((chemin) => chemin.includes("intrus")),
+    "un fichier non nommé n'est pas publié",
+  );
 });
 
 test("un artefact nommé et absent du disque est un refus « source absente », pas un arbre amputé", async (t) => {
   const racine = await racineDEpreuve();
   const destination = await mkdtemp(join(tmpdir(), "arbre-"));
-  t.after(() => Promise.all([rm(racine, { recursive: true }), rm(destination, { recursive: true })]));
+  t.after(() =>
+    Promise.all([rm(racine, { recursive: true }), rm(destination, { recursive: true })]),
+  );
   await rm(join(racine, "artifacts", "reference-image", "rootfs.ext4.gz"));
   await assert.rejects(image.copierLImage({ racine, destination }), (erreur) => {
     assert.equal(erreur.sourceAbsente, true);
@@ -81,7 +93,29 @@ test("un descripteur absent ou une empreinte de boot qui ne correspond pas sont 
   const destination = await mkdtemp(join(tmpdir(), "arbre-"));
   const vide = await mkdtemp(join(tmpdir(), "vide-"));
   const corrompu = await racineDEpreuve({ corrompre: "kernel" });
-  t.after(() => Promise.all([rm(destination, { recursive: true }), rm(vide, { recursive: true }), rm(corrompu, { recursive: true })]));
-  await assert.rejects(image.copierLImage({ racine: vide, destination }), /Descripteur applicatif absent/);
+  t.after(() =>
+    Promise.all([
+      rm(destination, { recursive: true }),
+      rm(vide, { recursive: true }),
+      rm(corrompu, { recursive: true }),
+    ]),
+  );
+  await assert.rejects(
+    image.copierLImage({ racine: vide, destination }),
+    /Descripteur applicatif absent/,
+  );
   await assert.rejects(image.copierLImage({ racine: corrompu, destination }), /vmlinuz/);
+});
+
+test("une taille qui ne correspond pas au descripteur est refusée : deux fabrications mêlées", async (t) => {
+  const racine = await racineDEpreuve();
+  const destination = await mkdtemp(join(tmpdir(), "arbre-"));
+  t.after(() =>
+    Promise.all([rm(racine, { recursive: true }), rm(destination, { recursive: true })]),
+  );
+  await writeFile(join(racine, "artifacts", "reference-image", "rootfs.ext4.gz"), "tronqué");
+  await assert.rejects(
+    image.copierLImage({ racine, destination }),
+    /rootfs\.ext4\.gz.*octets sur le disque/s,
+  );
 });
