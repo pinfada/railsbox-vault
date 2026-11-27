@@ -682,3 +682,25 @@ test("le changement de contrôleur pendant la session est une ANOMALIE : aucun n
   assert.equal(p.fabrique.crees, 1);
   assert.equal(p.reserve.revocation.controleurChange(), true);
 });
+
+// CONSTAT #347 — ce n'est PAS une garantie. Le plancher et le retrait d'un Worker EN ATTENTE sont ce que ce
+// Worker DÉCLARE ; l'hébergeur le sert, et rien ne l'authentifie. Une origine hostile obtient donc à volonté,
+// sur la page légitime, le bandeau « révocation connue » et le refus du déverrouillage. L'épreuve fixe le
+// comportement actuel pour que tout changement soit délibéré : ne pas tenir ce plancher pour une révocation
+// établie toucherait la logique de révocation (ADR 0048 § 9), et reste une décision du mainteneur.
+test("CONSTAT #347 : un Worker en attente NON AUTHENTIFIÉ, de même séquence, qui annonce un plancher arbitraire fait refuser la page légitime — et l'état reste connu après son départ", async () => {
+  const actif = new FauxSW({ reponses: reponsesSaines() });
+  const reg = new FausseInscription({ active: actif });
+  enAttente(reg, reponsesSaines({ sequence: SEQUENCE, plancher: 2 ** 31 }));
+  const p = page({ controleur: actif, inscription: reg });
+  const issue = await p.ouvrir();
+  assert.equal(issue.code, C.reservePerimee, "le déverrouillage est refusé");
+  assert.equal(issue.cause, "plancher");
+  assert.equal(p.fabrique.crees, 0, "aucun Worker de confiance");
+  assert.ok(p.etats.includes(E.REVOCATION_CONNUE), "le bandeau dit « révocation connue »");
+  // Le Worker en attente disparaît : l'état reste « connu » pour la vie de la page (monotone, § 9).
+  reg.waiting = null;
+  const second = await p.ouvrir();
+  assert.equal(second.code, C.reservePerimee);
+  assert.equal(p.fabrique.crees, 0);
+});
