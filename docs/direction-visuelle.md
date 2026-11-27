@@ -1,5 +1,12 @@
 # Direction visuelle du parcours
 
+> **Mise à jour du 26 novembre 2026** : les couleurs, les formes et la typographie décrites
+> ci-dessous sont remplacées par l'[ADR 0051](decisions/0051-la-scene-sombre-petrole-et-laiton.md) :
+> une scène sombre, pétrole et laiton, une plaque par écran, des champs clairs, neuf crans pour le
+> rang, et un seul thème. Les règles d'accessibilité de ce document restent en vigueur. Le tableau
+> des contrastes plus bas est celui de la direction précédente : ses quatre premières lignes sont
+> remesurées à chaque exécution de `npm run test:apparence`, les autres sont à refaire.
+
 > **Mise à jour du 3 octobre 2026** : la place de l'application à l'écran, la promesse à l'entrée et
 > la règle du bouton principal sont désormais fixées par
 > l'[ADR 0043](decisions/0043-l-application-d-abord.md). La carte décrite ci-dessous reste celle des

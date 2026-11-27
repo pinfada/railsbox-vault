@@ -1,37 +1,32 @@
-/* Direction utilitaire choisie par le mainteneur pour #194. Aucune ressource distante. */
+/* Direction « scène » (ADR 0051) : une scène sombre, pétrole et laiton, et une plaque par écran.
+   Aucune ressource distante : ni police, ni image. Le cadran du fond est dessiné en CSS. */
 :root {
-  color-scheme: light dark;
-  --fond-page: #f9fafb;
-  --fond: #ffffff;
-  --texte: #111827;
-  --secondaire: #4b5563;
-  --bord: #111827;
-  --separateur: #d1d5db;
-  --support: #f3f4f6;
-  --survol: #e5e7eb;
-  --inverse: #ffffff;
+  color-scheme: dark;
+  --fond-page: #071519;
+  --fond: #0e2a32;
+  --texte: #eef3f3;
+  --secondaire: #b4c6c9;
+  --bord: #e7c67e;
+  --trait: #5e8e99;
+  --separateur: #2c5a66;
+  --support: #143843;
+  --survol: #1b4854;
+  --inverse: #1a1204;
+  --laiton: #c99a3f;
+  --laiton-clair: #f0d494;
+  --lien: #f4dda6;
+  --papier: #f6f2e8;
+  --encre: #12222a;
+  --encre-douce: #4a4435;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --titre: "Bricolage Grotesque", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, Consolas, "Courier New", monospace;
-  --espace: 24px;
-  --ombre: #111827;
-  --danger: #b91c1c;
+  --espace: 28px;
+  --ombre: #000000;
+  --danger: #f4a097;
+  --danger-sur-papier: #a8322a;
   --barre: 52px;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fond-page: #111318;
-    --fond: #1b1e25;
-    --texte: #f3f4f6;
-    --secondaire: #c3c8d2;
-    --bord: #e5e7eb;
-    --separateur: #686f7c;
-    --support: #262b34;
-    --survol: #343b47;
-    --inverse: #111318;
-    /* L'ombre d'un thème sombre est plus sombre que le fond, jamais claire (#266 m10). */
-    --ombre: #000000;
-    --danger: #fca5a5;
-  }
+  --crans: 0;
 }
 * {
   box-sizing: border-box;
@@ -52,38 +47,81 @@ html {
   background: var(--fond-page);
 }
 body {
+  position: relative;
+  min-height: 100vh;
   margin: 0;
-  padding: 40px 20px 48px;
+  padding: 48px 20px 56px;
   color: var(--texte);
   font: 16px/1.6 var(--sans);
   -webkit-font-smoothing: antialiased;
+  background: radial-gradient(1100px 760px at 78% 30%, #17414c 0%, #0b2229 48%, #071519 100%) fixed;
+}
+/* Le CADRAN du coffre, derrière la plaque : une couronne de crans et un anneau de laiton. Décoratif :
+   hors du flux, sans contenu, jamais devant un geste. Il est IMMOBILE : sa rotation continue coûtait
+   des à-coups d'affichage sous WebKit (ADR 0051, décision 5). Seul le cadran du démarrage tourne. */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  z-index: 0;
+  right: -220px;
+  bottom: -260px;
+  width: 880px;
+  height: 880px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+body::before {
+  background: repeating-conic-gradient(var(--trait) 0deg 0.5deg, transparent 0.5deg 3deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 93%, #000 93.4% 97%, transparent 97.4%);
+  mask: radial-gradient(closest-side, transparent 93%, #000 93.4% 97%, transparent 97.4%);
+  opacity: 0.55;
+}
+body::after {
+  background: repeating-conic-gradient(var(--laiton) 0deg 1.2deg, transparent 1.2deg 40deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 80%, #000 80.4% 84%, transparent 84.4%);
+  mask: radial-gradient(closest-side, transparent 80%, #000 80.4% 84%, transparent 84.4%);
+  opacity: 0.7;
+  transform: rotate(-14deg);
+}
+@keyframes cadran {
+  to {
+    transform: rotate(360deg);
+  }
 }
 main {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 520px;
   margin: 0 auto;
   background: var(--fond);
-  border: 1px solid var(--bord);
-  box-shadow: 6px 6px 0 var(--ombre);
+  border: 1px solid var(--separateur);
+  border-top: 3px solid var(--laiton);
+  border-radius: 18px;
+  box-shadow: 0 40px 90px -30px var(--ombre);
+}
+a {
+  color: var(--lien);
 }
 .entete-du-coffre {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 16px var(--espace);
-  border-bottom: 1px solid var(--bord);
+  padding: 18px var(--espace);
+  border-bottom: 1px solid var(--separateur);
 }
 .entete-du-coffre svg {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  color: var(--bord);
 }
 .entete-du-coffre h1 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+  font: 700 17px/1.2 var(--titre);
+  letter-spacing: -0.3px;
 }
 main > :not(header) {
   margin-left: var(--espace);
@@ -93,11 +131,10 @@ main > :not(header) {
   margin-top: 28px;
 }
 h2 {
-  font-size: 26px;
-  font-weight: 650;
-  line-height: 1.25;
-  letter-spacing: -0.8px;
+  font: 750 32px/1.12 var(--titre);
+  letter-spacing: -1px;
   margin: 0 0 16px;
+  text-wrap: balance;
 }
 p {
   margin: 0 0 16px;
@@ -110,6 +147,49 @@ p {
   letter-spacing: 1px;
   font-weight: 700;
   color: var(--secondaire);
+}
+/* Les NEUF CRANS : la position vient de `data-rang`, que le parcours pose sur le document avec la
+   ligne du rang. Décoratif : le rang est déjà dit par la ligne au-dessus. */
+#parcours-rang:not(:empty)::after {
+  content: "";
+  display: block;
+  width: 142px;
+  height: 6px;
+  margin-top: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--laiton) calc(var(--crans) * 16px),
+    var(--separateur) calc(var(--crans) * 16px)
+  );
+  -webkit-mask: repeating-linear-gradient(90deg, #000 0 14px, transparent 14px 16px);
+  mask: repeating-linear-gradient(90deg, #000 0 14px, transparent 14px 16px);
+}
+html[data-rang="1"] {
+  --crans: 1;
+}
+html[data-rang="2"] {
+  --crans: 2;
+}
+html[data-rang="3"] {
+  --crans: 3;
+}
+html[data-rang="4"] {
+  --crans: 4;
+}
+html[data-rang="5"] {
+  --crans: 5;
+}
+html[data-rang="6"] {
+  --crans: 6;
+}
+html[data-rang="7"] {
+  --crans: 7;
+}
+html[data-rang="8"] {
+  --crans: 8;
+}
+html[data-rang="9"] {
+  --crans: 9;
 }
 /* La HIÉRARCHIE (#266 M3) : ce qu'on FAIT se lit avant ce qu'on pourrait savoir. L'action est la plus
    grande ligne du corps de page, l'explication se lit à la taille du texte courant, et rien — le
@@ -200,12 +280,12 @@ input {
   display: block;
   width: 100%;
   min-width: 0;
-  min-height: 48px;
-  border: 1px solid var(--bord);
-  border-radius: 0;
-  padding: 12px 14px;
-  background: var(--fond-page);
-  color: var(--texte);
+  min-height: 56px;
+  border: 2px solid var(--encre);
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: var(--champ, var(--papier));
+  color: var(--encre);
   font: 16px/1.5 var(--mono);
 }
 /* Le code de 34 caractères tient dans son champ à 360 px (#266, m5). */
@@ -223,10 +303,11 @@ input[type="file"] {
   font: 14px/1.6 var(--sans);
 }
 input::file-selector-button {
-  border: 1px solid var(--bord);
-  padding: 8px;
-  background: var(--fond);
-  color: var(--texte);
+  border: 1px solid var(--encre);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--encre);
+  color: var(--papier);
   font: inherit;
   margin-right: 12px;
 }
@@ -236,13 +317,13 @@ input::file-selector-button {
 button,
 #sauvegarde-lien {
   width: 100%;
-  min-height: 48px;
-  padding: 13px 16px;
-  border: 1px solid var(--bord);
-  border-radius: 0;
+  min-height: 52px;
+  padding: 13px 18px;
+  border: 1px solid var(--trait);
+  border-radius: 12px;
   background: var(--fond);
   color: var(--texte);
-  font: 600 14px/1.5 var(--sans);
+  font: 600 15px/1.5 var(--sans);
   text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
@@ -252,20 +333,31 @@ button:not(:disabled):hover {
 }
 button[data-principal],
 button[data-principal-de-la-vue] {
-  background: var(--texte);
+  min-height: 60px;
+  border-color: var(--laiton);
+  /* Un laiton UNI : le dégradé essayé d'abord coûtait des à-coups d'affichage sous WebKit à chaque
+     apparition du bouton (ADR 0051, décision 2). */
+  background: var(--laiton);
   color: var(--inverse);
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: 0 16px 34px -16px var(--laiton);
 }
 /* Survolé, le principal RESTE principal (#266 Q1) : inversé, il prenait l'allure d'un secondaire sous
    le pointeur, et la recette l'a lu comme un bouton qui n'avait pas encore son style. */
 button[data-principal]:not(:disabled):hover,
 button[data-principal-de-la-vue]:not([aria-disabled="true"]):hover {
-  background: var(--texte);
+  background: var(--laiton-clair);
   color: var(--inverse);
   text-decoration: underline;
 }
 button[data-danger] {
   color: var(--danger);
-  border-color: var(--danger);
+  border: 2px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, var(--fond));
+}
+button[data-danger]:not(:disabled):hover {
+  background: color-mix(in srgb, var(--danger) 18%, var(--fond));
 }
 button:disabled,
 /* Un geste de la VUE fermé par la table (#265) : jamais `disabled` (le clic doit arriver, pour que la
@@ -274,6 +366,7 @@ button:disabled,
   background: var(--support);
   color: var(--secondaire);
   border-color: var(--separateur);
+  box-shadow: none;
   cursor: default;
 }
 /* L'ordre du DOM est l'ordre visuel ET l'ordre de tabulation (#265, ADR 0043) : « Terminer sans
@@ -295,6 +388,9 @@ button:disabled,
   outline-offset: 4px;
   box-shadow: 0 0 0 4px var(--fond);
 }
+input:focus-visible {
+  border-radius: 12px;
+}
 .evitement {
   position: absolute;
   top: 8px;
@@ -302,7 +398,8 @@ button:disabled,
   transform: translateY(-200%);
   padding: 8px 16px;
   min-height: 44px;
-  background: var(--texte);
+  border-radius: 10px;
+  background: var(--laiton-clair);
   color: var(--inverse);
   /* Au-dessus de la barre de l'application (z-index 3) et des bandeaux (4) : un lien d'évitement
      focalisé doit se voir. */
@@ -315,18 +412,20 @@ button:disabled,
 #parcours-refus:not(:empty),
 #parcours-reussite:not(:empty) {
   border-left: 3px solid var(--bord);
+  border-radius: 0 10px 10px 0;
   background: var(--support);
   padding: 12px 16px;
   font-size: 16px;
   margin-bottom: 24px;
 }
 #parcours-refus:not(:empty) {
-  border: 1px solid var(--bord);
+  border: 1px solid var(--danger);
   border-left-width: 4px;
+  border-radius: 10px;
 }
 /* Le champ refusé le montre, et cite le refus par `aria-describedby` (#266 M2). */
 input[aria-invalid="true"] {
-  border-color: var(--danger);
+  border-color: var(--danger-sur-papier);
   outline: 2px solid var(--danger);
 }
 /* Les lignes de validation EN DIRECT gardent leur place (#266 S2, même mécanisme que #251) : elles
@@ -383,25 +482,44 @@ progress {
   display: block;
   width: 100%;
   height: 8px;
-  accent-color: var(--texte);
+  accent-color: var(--laiton);
 }
 [data-bloc="feuille"] {
-  border: 1px dashed var(--bord);
-  padding: 20px;
-  background: var(--fond-page);
+  border: 2px dashed var(--encre);
+  border-radius: 6px;
+  padding: 24px;
+  background: var(--papier);
+  color: var(--encre);
   margin-bottom: 24px;
+  box-shadow: 0 30px 60px -28px var(--ombre);
 }
 #feuille-code {
-  font: 18px/1.9 var(--mono);
-  letter-spacing: 1px;
+  font: 700 20px/1.9 var(--mono);
+  letter-spacing: 1.5px;
   overflow-wrap: anywhere;
   user-select: text;
 }
 #parcours-consigne-feuille {
   font-size: 13px;
+  color: var(--encre-douce);
+}
+/* Sur le papier, le geste principal est à l'encre : le laiton y serait trop peu contrasté. */
+[data-bloc="feuille"] button[data-principal] {
+  border-color: var(--encre);
+  background: var(--encre);
+  color: var(--papier);
+  box-shadow: none;
+}
+[data-bloc="feuille"] button[data-principal]:not(:disabled):hover {
+  background: var(--encre);
+  color: var(--papier);
+}
+[data-bloc="feuille"] :focus-visible {
+  outline-color: var(--encre);
+  box-shadow: 0 0 0 4px var(--papier);
 }
 #parcours-suivante {
-  border-top: 1px solid var(--bord);
+  border-top: 1px solid var(--separateur);
   padding-top: 20px;
   font-size: 13px;
   color: var(--secondaire);
@@ -443,11 +561,14 @@ pre {
   font-size: 13px;
   color: var(--secondaire);
 }
+/* L’application garde SON thème : sans cette ligne, le cadre hériterait du thème sombre de la scène,
+   et une application claire passerait au sombre sans que personne l’ait demandé (ADR 0051). */
 #cadre-applicatif iframe {
+  color-scheme: light dark;
   display: block;
   width: 100%;
   height: 640px;
-  border: 1px solid var(--bord);
+  border: 1px solid var(--separateur);
   background: var(--fond);
 }
 /* Tant que l'application n'a pas démarré, le cadre est REPLIÉ (#242, défaut 11) : le paragraphe
@@ -464,10 +585,9 @@ html[data-vue="parcours"] [data-application="attente"] #cadre-applicatif iframe 
   border-bottom: 1px solid var(--separateur);
 }
 #promesse-phrase {
-  font-size: 21px;
-  font-weight: 650;
-  line-height: 1.35;
-  letter-spacing: -0.4px;
+  font: 800 30px/1.12 var(--titre);
+  letter-spacing: -0.9px;
+  text-wrap: balance;
 }
 #promesse-garanties {
   list-style: none;
@@ -477,7 +597,7 @@ html[data-vue="parcours"] [data-application="attente"] #cadre-applicatif iframe 
   gap: 10px;
 }
 #promesse-garanties li {
-  border-left: 3px solid var(--bord);
+  border-left: 3px solid var(--laiton);
   padding-left: 12px;
   font-size: 14px;
   color: var(--secondaire);
@@ -502,7 +622,7 @@ html[data-vue="parcours"] [data-application="attente"] #cadre-applicatif iframe 
   gap: 8px;
 }
 #limites-liste li {
-  border-left: 3px solid var(--bord);
+  border-left: 3px solid var(--separateur);
   padding-left: 12px;
   font-size: 14px;
   color: var(--secondaire);
@@ -528,10 +648,16 @@ html[data-vue="parcours"] [data-application="attente"] #cadre-applicatif iframe 
 html[data-travail-pret="true"] body {
   padding: 0;
   overflow: hidden;
+  background: var(--fond-page);
+}
+html[data-travail-pret="true"] body::before,
+html[data-travail-pret="true"] body::after {
+  display: none;
 }
 html[data-travail-pret="true"] main {
   max-width: none;
   border: 0;
+  border-radius: 0;
   box-shadow: none;
   background: var(--fond-page);
 }
@@ -543,6 +669,7 @@ html[data-travail-pret="true"] .entete-du-coffre {
   padding: 0 12px;
   flex-wrap: nowrap;
   background: var(--fond);
+  border-bottom: 1px solid var(--laiton);
 }
 /* Le titre de la barre est le nom du coffre, pas celui de l'étape (R1-bis, point 2). */
 html[data-travail-pret="true"] .entete-du-coffre h1 {
@@ -591,12 +718,13 @@ html[data-travail-pret="true"] #menu-du-coffre {
   width: 104px;
   min-height: 44px;
   padding: 10px 14px;
-  border: 1px solid var(--bord);
+  border: 1px solid var(--trait);
+  border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
 }
 #menu-du-coffre[open] > summary {
-  background: var(--texte);
+  background: var(--laiton-clair);
   color: var(--inverse);
 }
 #menu-du-coffre > p {
@@ -607,7 +735,8 @@ html[data-travail-pret="true"] #menu-du-coffre {
   padding: 8px 12px;
   white-space: nowrap;
   background: var(--fond);
-  border: 1px solid var(--bord);
+  border: 1px solid var(--trait);
+  border-radius: 10px;
   font-size: 13px;
 }
 #menu-du-coffre a {
@@ -621,7 +750,7 @@ html[data-travail-pret="true"] [data-bloc="espace-de-travail"] {
   display: flex;
   flex-direction: column;
   background: var(--fond-page);
-  border-top: 1px solid var(--bord);
+  border-top: 0;
 }
 html[data-travail-pret="true"] #cadre-applicatif {
   flex: 1;
@@ -647,12 +776,12 @@ html[data-travail-pret="true"] [data-application="attente"] #cadre-applicatif {
 }
 html[data-travail-pret="true"] [data-application="attente"] #cycle-description {
   display: block;
-  max-width: 32ch;
+  max-width: 22ch;
   margin: 0 16px 120px;
-  font-size: 21px;
-  font-weight: 650;
-  line-height: 1.35;
+  font: 800 40px/1.08 var(--titre);
+  letter-spacing: -1.2px;
   text-align: center;
+  text-wrap: balance;
   color: var(--texte);
 }
 html[data-travail-pret="true"]:has([data-application="attente"])
@@ -684,7 +813,7 @@ html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coqu
   margin: 0;
   transform: translateX(-50%);
   background: var(--fond);
-  box-shadow: 4px 4px 0 var(--ombre);
+  box-shadow: 0 24px 50px -20px var(--ombre);
 }
 html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coquille:not([hidden]) {
   bottom: 96px;
@@ -696,7 +825,8 @@ html[data-travail-pret="true"]:has(#menu-du-coffre[open]) main {
   margin: 0 0 0 auto;
   padding-top: var(--barre);
   overflow: auto;
-  border-left: 1px solid var(--bord);
+  border-left: 1px solid var(--separateur);
+  background: var(--fond);
 }
 html[data-travail-pret="true"]:has(#menu-du-coffre[open]) [data-bloc="espace-de-travail"] {
   right: min(440px, 100%);
@@ -716,8 +846,11 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
   width: auto;
   min-height: 44px;
   margin: 0;
-  padding: 10px 14px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-size: 14px;
   white-space: nowrap;
+  box-shadow: none;
 }
 #gestes-de-la-barre > [data-hors-etape],
 #gestes-du-panneau > [data-hors-etape] {
@@ -749,6 +882,564 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
   html[data-travail-pret="true"]:has(#menu-du-coffre[open]) [data-bloc="espace-de-travail"] {
     right: 0;
     visibility: hidden;
+  }
+}
+/* LA SCÈNE EN PLEIN ÉCRAN (ADR 0051, décision 6). À partir de 1024 px, hors de l'application, la page
+   n'est plus une carte au milieu du vide : elle occupe la fenêtre. À gauche, ce que l'écran dit, en
+   grand. À droite, sur une plaque, ce que l'on fait. Rien n'est déplacé dans le document : l'ordre
+   de lecture et celui du clavier restent ceux du fichier. La dernière rangée est élastique, pour
+   que la hauteur du volet de gauche n'écarte jamais les gestes de la plaque.
+   La scène ne vaut qu'à l'ÉCRAN : à l'impression, une page large resterait sombre et en colonnes. */
+@media screen and (min-width: 1024px) {
+  html:not([data-travail-pret="true"]) body {
+    padding: 0;
+  }
+  html:not([data-travail-pret="true"]) body::before,
+  html:not([data-travail-pret="true"]) body::after {
+    display: none;
+  }
+  html:not([data-travail-pret="true"]) main {
+    max-width: none;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0 max(48px, calc((100vw - 1320px) / 2)) 56px;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 520px);
+    /* 1 : l'en-tête. 2 : le haut de la plaque. 3 à 16 : un enfant de <main> par rangée, dans l'ordre
+       du document. 17 : le bas de la plaque. 18 : élastique. */
+    grid-template-rows: auto 64px repeat(14, auto) 28px 1fr;
+    column-gap: 72px;
+    align-content: start;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--fond-page)
+      radial-gradient(1100px 760px at 22% 62%, #17414c 0%, #0b2229 50%, #071519 100%);
+  }
+  /* Le cadran, derrière le volet de gauche : une seule couronne, crans et repères de laiton. */
+  html:not([data-travail-pret="true"]) main::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    left: -260px;
+    bottom: -420px;
+    width: 1000px;
+    height: 1000px;
+    border-radius: 50%;
+    pointer-events: none;
+    background:
+      repeating-conic-gradient(var(--laiton) 0deg 0.9deg, transparent 0.9deg 40deg),
+      repeating-conic-gradient(var(--trait) 0deg 0.5deg, transparent 0.5deg 3deg);
+    -webkit-mask: radial-gradient(
+      closest-side,
+      transparent 80%,
+      #000 80.3% 83%,
+      transparent 83.3% 93%,
+      #000 93.3% 97%,
+      transparent 97.3%
+    );
+    mask: radial-gradient(
+      closest-side,
+      transparent 80%,
+      #000 80.3% 83%,
+      transparent 83.3% 93%,
+      #000 93.3% 97%,
+      transparent 97.3%
+    );
+    opacity: 0.5;
+  }
+  /* La plaque des gestes : un fond posé dans la colonne de droite, sous tout ce qu'elle porte. */
+  html:not([data-travail-pret="true"]) main::before {
+    content: "";
+    grid-column: 2;
+    grid-row: 2 / 18;
+    /* Au-dessus du cadran, sous ce que la plaque porte (même rang, plus loin dans le document). */
+    z-index: 1;
+    margin-top: 36px;
+    border: 1px solid var(--separateur);
+    border-top: 3px solid var(--laiton);
+    border-radius: 18px;
+    background: var(--fond);
+    box-shadow: 0 40px 90px -30px var(--ombre);
+  }
+  html:not([data-travail-pret="true"]) main > * {
+    position: relative;
+    z-index: 1;
+    grid-column: 2;
+  }
+  html:not([data-travail-pret="true"]) main > :not(header, #promesse, #parcours) {
+    margin-left: var(--espace);
+    margin-right: var(--espace);
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(3) {
+    grid-row: 3;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(4) {
+    grid-row: 4;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(5) {
+    grid-row: 5;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(6) {
+    grid-row: 6;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(7) {
+    grid-row: 7;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(8) {
+    grid-row: 8;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(9) {
+    grid-row: 9;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(10) {
+    grid-row: 10;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(11) {
+    grid-row: 11;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(12) {
+    grid-row: 12;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(13) {
+    grid-row: 13;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(14) {
+    grid-row: 14;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(15) {
+    grid-row: 15;
+  }
+  html:not([data-travail-pret="true"]) main > :nth-child(16) {
+    grid-row: 16;
+  }
+  html:not([data-travail-pret="true"]) main > header {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    padding: 28px 0 0;
+    border-bottom: 0;
+    margin: 0;
+  }
+  html:not([data-travail-pret="true"]) main > #promesse,
+  html:not([data-travail-pret="true"]) main > #parcours {
+    grid-column: 1;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  html:not([data-travail-pret="true"]) main > #promesse {
+    grid-row: 2 / -1;
+    margin-top: 72px;
+    padding-bottom: 28px;
+    border-bottom: 0;
+  }
+  html:not([data-travail-pret="true"]) main > #parcours {
+    grid-row: 2 / -1;
+    margin-top: 96px;
+  }
+  /* À l'entrée, la promesse tient le volet de gauche : l'étape rejoint ses gestes sur la plaque. */
+  html:not([data-travail-pret="true"]) main:has(#promesse:not([hidden])) > #parcours {
+    grid-column: 2;
+    grid-row: 3;
+    margin: 0 var(--espace);
+  }
+  html:not([data-travail-pret="true"]) #parcours-titre {
+    font-size: clamp(44px, 4.6vw, 72px);
+    line-height: 1;
+    letter-spacing: -0.035em;
+    margin-bottom: 28px;
+  }
+  html:not([data-travail-pret="true"]) main:has(#promesse:not([hidden])) #parcours-titre {
+    font-size: 34px;
+    line-height: 1.1;
+    letter-spacing: -1px;
+    margin-bottom: 16px;
+  }
+  html:not([data-travail-pret="true"]) #promesse-phrase {
+    font-size: 60px;
+    line-height: 1;
+    letter-spacing: -2.2px;
+    margin-bottom: 28px;
+  }
+  html:not([data-travail-pret="true"]) #promesse-garanties {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+  }
+  html:not([data-travail-pret="true"]) #limites-liste {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 20px;
+  }
+  html:not([data-travail-pret="true"]) #parcours-ce-qui-va-se-passer {
+    max-width: 60ch;
+    font-size: 19px;
+    line-height: 1.55;
+  }
+  html:not([data-travail-pret="true"]) #parcours-attendu {
+    max-width: 52ch;
+    font-size: 21px;
+  }
+  html:not([data-travail-pret="true"]) #parcours-aide {
+    max-width: none;
+  }
+}
+/* LA SAUVEGARDE, montrée comme un OBJET (ADR 0051, décision 10) : l'annonce de sa taille est gravée
+   sur une plaque sombre, à côté d'un cadran. Les couleurs sont dites ici, sans jeton : la plaque
+   reste sombre sur le papier comme sur la scène. */
+#sauvegarde-annonce:not(:empty) {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 18px 20px;
+  border: 1px solid #4a7a85;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #24505c 0%, #0e2a32 60%, #0a1f25 100%);
+  color: #eef3f3;
+  font-size: 15px;
+  line-height: 1.5;
+  box-shadow: 0 24px 46px -24px #000000;
+}
+#sauvegarde-annonce:not(:empty)::before {
+  content: "";
+  flex: 0 0 56px;
+  height: 56px;
+  border: 2px solid #e7c67e;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #e7c67e 0 5px, transparent 5.5px),
+    repeating-conic-gradient(#e7c67e 0deg 3deg, transparent 3deg 45deg), #071519;
+}
+/* L'ENTRÉE sur un petit écran : la promesse et les limites se resserrent, pour que « Commencer »
+   ne soit pas à quatre écrans de l'ouverture. Rien n'est caché : les sept limites restent écrites. */
+@media (max-width: 1023px) {
+  #promesse {
+    margin-top: 20px;
+    padding-bottom: 16px;
+  }
+  #promesse-phrase {
+    font-size: 25px;
+    letter-spacing: -0.6px;
+    margin-bottom: 12px;
+  }
+  #promesse-garanties {
+    gap: 8px;
+  }
+  #promesse-garanties li,
+  #limites-liste li {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  #limites {
+    margin-top: 14px;
+  }
+  #limites-liste {
+    gap: 6px;
+  }
+}
+@media (min-width: 560px) and (max-width: 1023px) {
+  #limites-liste {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+  }
+}
+/* ROUVRIR, à toutes les largeurs : c'est l'écran de tous les jours, sur un téléphone aussi. Le
+   verrou ouvre l'écran, la promesse se réduit à une ligne, et les garanties comme les limites, déjà
+   lues à la création, ne repoussent plus le champ. */
+html:not([data-travail-pret="true"])
+  main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+  #promesse {
+  margin-top: 16px;
+  padding-bottom: 12px;
+}
+html:not([data-travail-pret="true"])
+  main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+  #promesse-phrase {
+  font: 400 14px/1.5 var(--sans);
+  letter-spacing: 0;
+  margin: 0;
+  color: var(--secondaire);
+}
+html:not([data-travail-pret="true"])
+  main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+  #promesse-garanties,
+html:not([data-travail-pret="true"])
+  main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+  #limites {
+  display: none;
+}
+html:not([data-travail-pret="true"])
+  main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+  > #parcours {
+  text-align: center;
+}
+html:not([data-travail-pret="true"])
+  main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+  > #parcours::before {
+  content: "";
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 20px;
+  border: 3px solid var(--laiton);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 61%, var(--fond-page) 0 4px, transparent 4.5px),
+    linear-gradient(var(--laiton-clair), var(--laiton)) 50% 68% / 38px 28px no-repeat,
+    radial-gradient(
+      circle at 50% 43%,
+      transparent 0 9px,
+      var(--laiton-clair) 9.5px 13.5px,
+      transparent 14px
+    ),
+    var(--fond-page);
+}
+/* ROUVRIR (ADR 0051, décision 9). L'écran de tous les jours : le verrou au centre, le titre en
+   très grand, la phrase et son bouton. Il se reconnaît au bloc « J'ai oublié ma phrase », que seul
+   cet écran montre. Derrière, une silhouette floue d'application : un DÉCOR fixe, dessiné par la
+   feuille de style, qui ne lit ni ne montre rien du coffre. */
+@media screen and (min-width: 1024px) {
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden])) {
+    grid-template-columns: minmax(0, 560px);
+    justify-content: center;
+    column-gap: 0;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))::before {
+    display: none;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    > * {
+    grid-column: 1;
+    margin-left: 0;
+    margin-right: 0;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))::after {
+    inset: 0;
+    width: auto;
+    height: auto;
+    border-radius: 0;
+    -webkit-mask: none;
+    mask: none;
+    animation: none;
+    opacity: 0.16;
+    filter: blur(22px);
+    background:
+      linear-gradient(var(--texte), var(--texte)) 0 0 / 100% 64px no-repeat,
+      linear-gradient(var(--texte), var(--texte)) 18% 30% / 220px 84px no-repeat,
+      linear-gradient(var(--texte), var(--texte)) 40% 30% / 220px 84px no-repeat,
+      linear-gradient(var(--laiton), var(--laiton)) 18% 50% / 220px 84px no-repeat,
+      linear-gradient(var(--texte), var(--texte)) 40% 50% / 220px 84px no-repeat,
+      linear-gradient(var(--texte), var(--texte)) 29% 70% / 220px 84px no-repeat,
+      linear-gradient(var(--texte), var(--texte)) 86% 48% / 320px 420px no-repeat;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    > #parcours {
+    grid-column: 1;
+    grid-row: 3;
+    margin: 0;
+    text-align: center;
+  }
+  /* Le VERROU : un disque cerclé de laiton, l'anse, le corps et la serrure, en dégradés. */
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    > #parcours::before {
+    content: "";
+    display: block;
+    width: 132px;
+    height: 132px;
+    margin: 0 auto 26px;
+    border: 3px solid var(--laiton);
+    border-radius: 50%;
+    box-shadow:
+      0 0 0 14px var(--fond-page),
+      0 0 0 15px var(--separateur),
+      0 30px 70px -20px var(--ombre);
+    background:
+      radial-gradient(circle at 50% 61%, var(--fond-page) 0 5px, transparent 5.5px),
+      linear-gradient(var(--laiton-clair), var(--laiton)) 50% 68% / 52px 38px no-repeat,
+      radial-gradient(
+        circle at 50% 43%,
+        transparent 0 12.5px,
+        var(--laiton-clair) 13px 18px,
+        transparent 18.5px
+      ),
+      var(--fond-page);
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    #parcours-titre {
+    font-size: 72px;
+    line-height: 0.95;
+    letter-spacing: -2.6px;
+    margin-bottom: 18px;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    #parcours-ce-qui-va-se-passer,
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    #parcours-attendu {
+    max-width: none;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    #parcours-attendu {
+    margin-bottom: 12px;
+  }
+  /* La promesse se réduit à sa phrase, en bas : les garanties et les limites sont celles de la
+     création, et cette personne les a déjà lues. */
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    > #promesse {
+    grid-column: 1;
+    grid-row: 18;
+    align-self: end;
+    margin: 40px 0 0;
+    padding: 0;
+    text-align: center;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    #promesse-phrase {
+    font: 400 14px/1.5 var(--sans);
+    letter-spacing: 0;
+    margin: 0;
+    color: var(--secondaire);
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    #promesse-garanties,
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    #limites {
+    display: none;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    button[data-principal] {
+    min-height: 68px;
+    font-size: 19px;
+    text-align: center;
+  }
+  html:not([data-travail-pret="true"])
+    main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden]))
+    #saisie-phrase {
+    min-height: 68px;
+  }
+}
+/* LA PLAQUE EST DU PAPIER (ADR 0051, décision 3). Sur la scène sombre, ce que l'on fait est posé sur
+   une feuille claire : la palette est redéfinie pour tout ce que la plaque porte, et chaque
+   composant la suit sans autre règle. */
+@media screen and (min-width: 1024px) and (forced-colors: none) {
+  html:not([data-travail-pret="true"]) main:not(:has([data-bloc="perdu"]:not([hidden])))::before {
+    border-color: var(--papier);
+    border-top-color: var(--laiton);
+    background: var(--papier);
+  }
+  html:not([data-travail-pret="true"])
+    main:not(:has([data-bloc="perdu"]:not([hidden])))
+    > :not(header, #promesse, #parcours),
+  html:not([data-travail-pret="true"])
+    main:not(:has([data-bloc="perdu"]:not([hidden]))):has(#promesse:not([hidden]))
+    > #parcours {
+    --fond: #f6f2e8;
+    --fond-page: #ffffff;
+    --texte: #12222a;
+    --secondaire: #4a5257;
+    --bord: #12222a;
+    --trait: #12222a;
+    --separateur: #b9af98;
+    --support: #ebe5d6;
+    --survol: #e2dbc9;
+    --lien: #5a3d06;
+    --danger: #a8322a;
+    --champ: #ffffff;
+    color: var(--texte);
+  }
+  html:not([data-travail-pret="true"])
+    main:not(:has([data-bloc="perdu"]:not([hidden])))
+    button[data-principal],
+  html:not([data-travail-pret="true"])
+    main:not(:has([data-bloc="perdu"]:not([hidden])))
+    button[data-principal-de-la-vue] {
+    border-color: #8c6a28;
+  }
+  /* La FEUILLE de récupération : posée de biais sur la plaque, le code en grand. */
+  html:not([data-travail-pret="true"])
+    main:not(:has([data-bloc="perdu"]:not([hidden])))
+    [data-bloc="feuille"] {
+    transform: rotate(-1.2deg);
+    background: #ffffff;
+    padding: 28px;
+  }
+  html:not([data-travail-pret="true"])
+    main:not(:has([data-bloc="perdu"]:not([hidden])))
+    #feuille-code {
+    font-size: 23px;
+    letter-spacing: 2px;
+  }
+  /* L'ENTRÉE : le cadran passe à droite, plus grand et plus présent, derrière la plaque. */
+  html:not([data-travail-pret="true"]) main:has(#promesse:not([hidden]))::after {
+    left: auto;
+    right: -380px;
+    bottom: -300px;
+    width: 1180px;
+    height: 1180px;
+    opacity: 0.75;
+  }
+  html:not([data-travail-pret="true"]) main:has(#promesse:not([hidden])) #promesse-garanties li {
+    border-left: 0;
+    border-top: 3px solid var(--laiton);
+    padding: 14px 0 0;
+  }
+}
+/* LE DÉMARRAGE (ADR 0051, décision 5) : pendant l'attente, un cadran tourne autour de la phrase. Une
+   couronne de crans, lente, et un arc de laiton, plus vif. Décor : la durée et l'avancement restent
+   dits par le texte et par la barre de progression. */
+html[data-travail-pret="true"] [data-application="attente"]::before,
+html[data-travail-pret="true"] [data-application="attente"]::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 44px);
+  left: 50%;
+  width: min(720px, 92vmin);
+  height: min(720px, 92vmin);
+  margin: calc(min(720px, 92vmin) / -2) 0 0 calc(min(720px, 92vmin) / -2);
+  border-radius: 50%;
+  pointer-events: none;
+}
+html[data-travail-pret="true"] [data-application="attente"]::before {
+  background: repeating-conic-gradient(var(--trait) 0deg 0.5deg, transparent 0.5deg 3deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 94%, #000 94.3% 98%, transparent 98.3%);
+  mask: radial-gradient(closest-side, transparent 94%, #000 94.3% 98%, transparent 98.3%);
+  opacity: 0.6;
+  animation: cadran 120s linear infinite;
+}
+html[data-travail-pret="true"] [data-application="attente"]::after {
+  background: conic-gradient(
+    transparent 0deg 250deg,
+    var(--laiton) 345deg,
+    var(--laiton-clair) 360deg
+  );
+  -webkit-mask: radial-gradient(closest-side, transparent 86%, #000 86.3% 89%, transparent 89.3%);
+  mask: radial-gradient(closest-side, transparent 86%, #000 86.3% 89%, transparent 89.3%);
+  animation: cadran 2.6s linear infinite;
+}
+html[data-travail-pret="true"] [data-application="attente"] {
+  background: radial-gradient(700px 700px at 50% 50%, #17414c 0%, #0b2229 55%, #071519 100%);
+}
+html[data-travail-pret="true"] [data-application="attente"] > * {
+  position: relative;
+  z-index: 1;
+}
+@media (forced-colors: active) {
+  html[data-travail-pret="true"] [data-application="attente"]::before,
+  html[data-travail-pret="true"] [data-application="attente"]::after {
+    display: none;
   }
 }
 @media (max-width: 380px) {
@@ -783,8 +1474,70 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
   }
 }
 @media (forced-colors: active) {
-  main {
+  :root {
+    --fond-page: Canvas;
+    --fond: Canvas;
+    --texte: CanvasText;
+    --secondaire: CanvasText;
+    --bord: CanvasText;
+    --trait: CanvasText;
+    --separateur: CanvasText;
+    --support: Canvas;
+    --survol: Canvas;
+    --inverse: Canvas;
+    --laiton: CanvasText;
+    --laiton-clair: CanvasText;
+    --lien: LinkText;
+    --papier: Canvas;
+    --encre: CanvasText;
+    --encre-douce: CanvasText;
+    --danger: CanvasText;
+    --danger-sur-papier: CanvasText;
+  }
+  body,
+  html:not([data-travail-pret="true"]) main {
+    background: Canvas;
+  }
+  html:not([data-travail-pret="true"]) main > *,
+  html:not([data-travail-pret="true"]) main > #parcours {
+    --fond-page: Canvas;
+    --fond: Canvas;
+    --texte: CanvasText;
+    --secondaire: CanvasText;
+    --bord: CanvasText;
+    --trait: CanvasText;
+    --separateur: CanvasText;
+    --support: Canvas;
+    --survol: Canvas;
+    --lien: LinkText;
+    --danger: CanvasText;
+    --champ: Canvas;
+    color: CanvasText;
+  }
+  html:not([data-travail-pret="true"]) main::before {
+    background: Canvas;
+    border-color: CanvasText;
+  }
+  [data-bloc="feuille"] {
+    background: Canvas;
     box-shadow: none;
+  }
+  html:not([data-travail-pret="true"]) main > #parcours::before {
+    display: none;
+  }
+  /* Le bord de la page revient, en plein écran aussi : c'est lui qui la délimite quand les couleurs
+     sont imposées (mesuré par l'épreuve « forced-colors »). */
+  main,
+  html:not([data-travail-pret="true"]) main {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+  html:not([data-travail-pret="true"]) main::after {
+    display: none;
+  }
+  body::before,
+  body::after {
+    display: none;
   }
   :focus-visible {
     outline-color: Highlight;
@@ -802,6 +1555,11 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
   body {
     padding: 0;
     font-size: 12pt;
+    background: white;
+  }
+  body::before,
+  body::after {
+    display: none;
   }
   main {
     max-width: none;
@@ -819,6 +1577,12 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
   [data-bloc="feuille"] {
     break-inside: avoid;
     padding: 24px;
+    /* La feuille imprimée est blanche, droite et sans ombre : le papier crème et le biais sont de
+       l'écran. */
+    background: white;
+    color: black;
+    transform: none;
+    box-shadow: none;
   }
   [data-bloc="feuille"] button {
     display: none;

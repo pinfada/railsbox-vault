@@ -16,14 +16,23 @@ import {
 } from "./outils-d-apparence.mjs";
 import { exigerAucuneAlerteAvecTexte } from "../support/alertes.mjs";
 
-test("m7 : avant tout démarrage, la carte de l'étape 4 reste à la largeur des autres écrans", async ({
+test("m7 : avant tout démarrage, la plaque des gestes de l'étape 4 reste à la largeur des autres écrans", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await jusquAuTravail(page);
   await expect(titre(page, "Travailler dans l'application")).toBeVisible();
-  const carte = await page.locator("main").boundingBox();
-  expect(carte.width, "la moitié droite d'une carte de 1024 px serait vide").toBeLessThanOrEqual(
+  // Depuis l'ADR 0051, la scène occupe la fenêtre ; ce qui ne doit pas s'élargir à vide est la
+  // plaque des gestes, mesurée sur la section qui porte « Démarrer l'application ».
+  // Deux mesures : la plaque elle-même, que peint `main::before`, et la section qu'elle porte. La
+  // première seule voit un décor qui s'élargirait sans que son contenu bouge.
+  const largeurDeLaPlaque = await page
+    .locator("main")
+    .evaluate((main) => Number.parseFloat(getComputedStyle(main, "::before").width));
+  expect(Number.isFinite(largeurDeLaPlaque), "la plaque est peinte").toBe(true);
+  expect(largeurDeLaPlaque, "la plaque ne s'élargit pas à vide").toBeLessThanOrEqual(520);
+  const gestes = await page.locator("#cycle").boundingBox();
+  expect(gestes.width, "la moitié droite d'une plaque de 1024 px serait vide").toBeLessThanOrEqual(
     520,
   );
 });

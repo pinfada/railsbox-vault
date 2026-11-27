@@ -432,6 +432,8 @@ export function creerParcoursDeLaPage({
     const visibles = blocsDeLEcran(ecranId, observation, rapport);
     const rang = rangAffiche(ecranId, etat.pointeur, etat.progression);
     dire("parcours-rang", rang === null ? "" : MESSAGES.rang(rang));
+    // Le rang, redit à la feuille de style : elle en tire les neuf crans de l’en-tête (ADR 0051).
+    doc.documentElement.dataset.rang = rang === null ? "" : String(rang);
     dire("parcours-titre", ecran.titre);
     dire("parcours-ce-qui-va-se-passer", ecran.ceQuiVaSePasser);
     const surLApplication = ECRANS_DE_L_APPLICATION.includes(ecranId);

@@ -57,17 +57,35 @@ for (const theme of ["light", "dark"]) {
       ).toBeVisible();
       await expect(page.locator("#parcours-attente")).toHaveAttribute("aria-live", "polite");
       await expect(page.getByRole("alert")).toHaveCount(1);
+      // Depuis l'ADR 0051, la scène a DEUX surfaces : le fond sombre, et la plaque claire que peint
+      // `main::before`. Chaque couleur est donc confrontée au fond RÉELLEMENT peint sous son élément,
+      // et non au fond de `main` : un texte de la plaque qui pâlirait y échapperait.
       const couleurs = await page.locator("main").evaluate((main) => {
-        const principal = getComputedStyle(main);
-        const secondaire = getComputedStyle(
-          document.querySelector("#parcours-ce-qui-va-se-passer"),
-        );
+        const transparent = (couleur) => couleur === "transparent" || /, 0\)$/.test(couleur);
+        const fondPeint = (element) => {
+          for (let noeud = element; noeud !== null; noeud = noeud.parentElement) {
+            const fond = getComputedStyle(noeud).backgroundColor;
+            if (!transparent(fond)) return fond;
+            if (noeud.parentElement !== main) continue;
+            // Un enfant direct de `main` rangé dans la colonne de la plaque est posé SUR elle.
+            const plaque = getComputedStyle(main, "::before");
+            const surLaPlaque =
+              plaque.content !== "none" && getComputedStyle(noeud).gridColumnStart === "2";
+            if (surLaPlaque && !transparent(plaque.backgroundColor)) return plaque.backgroundColor;
+          }
+          return getComputedStyle(document.body).backgroundColor;
+        };
+        const lire = (selecteur) => {
+          const element = document.querySelector(selecteur);
+          return { couleur: getComputedStyle(element).color, fond: fondPeint(element) };
+        };
         const champ = getComputedStyle(document.querySelector("#saisie-phrase"));
         const bouton = getComputedStyle(document.querySelector("#ouvrir-par-phrase"));
         return {
-          texte: principal.color,
-          fond: principal.backgroundColor,
-          secondaire: secondaire.color,
+          titre: lire("#parcours-titre"),
+          secondaire: lire("#parcours-ce-qui-va-se-passer"),
+          etiquette: lire('label[for="saisie-phrase"]'),
+          saisie: { couleur: champ.color, fond: champ.backgroundColor },
           champ: champ.backgroundColor,
           bord: champ.borderColor,
           bouton: bouton.backgroundColor,
@@ -76,12 +94,14 @@ for (const theme of ["light", "dark"]) {
       });
 
       const mesures = {
-        texte: contraste(couleurs.texte, couleurs.fond),
-        secondaire: contraste(couleurs.secondaire, couleurs.fond),
+        texte: contraste(couleurs.titre.couleur, couleurs.titre.fond),
+        secondaire: contraste(couleurs.secondaire.couleur, couleurs.secondaire.fond),
+        etiquette: contraste(couleurs.etiquette.couleur, couleurs.etiquette.fond),
+        saisie: contraste(couleurs.saisie.couleur, couleurs.saisie.fond),
         bouton: contraste(couleurs.inverse, couleurs.bouton),
         champ: contraste(couleurs.bord, couleurs.champ),
       };
-      for (const nom of ["texte", "secondaire", "bouton"])
+      for (const nom of ["texte", "secondaire", "etiquette", "saisie", "bouton"])
         expect(mesures[nom], nom).toBeGreaterThanOrEqual(4.5);
       expect(mesures.champ).toBeGreaterThanOrEqual(3);
       await writeFile(
@@ -170,6 +190,38 @@ for (const theme of ["light", "dark"]) {
     }
     await page.emulateMedia({ media: "print" });
     await expect(code).toBeVisible();
+    // La feuille s'imprime en NOIR SUR BLANC, sans la scène, même sur une page de 1 440 px : les
+    // fonds sont lus tels qu'ils sont calculés, donc aussi « arrière-plans activés ».
+    const impression = await page.locator("main").evaluate((main) => {
+      const corps = getComputedStyle(document.body);
+      const scene = getComputedStyle(main);
+      const feuille = getComputedStyle(document.querySelector('[data-bloc="feuille"]'));
+      return {
+        largeur: innerWidth,
+        fondDuCorps: corps.backgroundColor,
+        imageDuCorps: corps.backgroundImage,
+        fondDeLaScene: scene.backgroundColor,
+        imageDeLaScene: scene.backgroundImage,
+        disposition: scene.display,
+        plaque: getComputedStyle(main, "::before").content,
+        cadran: getComputedStyle(main, "::after").content,
+        biais: feuille.transform,
+        fondDeLaFeuille: feuille.backgroundColor,
+        encre: getComputedStyle(document.querySelector("#feuille-code")).color,
+      };
+    });
+    const blancOuRien = ["rgb(255, 255, 255)", "rgba(0, 0, 0, 0)"];
+    expect(impression.largeur).toBe(1440);
+    expect(impression.fondDuCorps).toBe("rgb(255, 255, 255)");
+    expect(impression.imageDuCorps).toBe("none");
+    expect(blancOuRien).toContain(impression.fondDeLaScene);
+    expect(impression.imageDeLaScene).toBe("none");
+    expect(impression.disposition, "la scène en colonnes ne s'imprime pas").not.toBe("grid");
+    expect(impression.plaque, "aucune plaque à l'impression").toBe("none");
+    expect(impression.cadran, "aucun cadran à l'impression").toBe("none");
+    expect(impression.biais, "la feuille s'imprime droite").toBe("none");
+    expect(blancOuRien).toContain(impression.fondDeLaFeuille);
+    expect(contraste(impression.encre, "rgb(255, 255, 255)")).toBeGreaterThanOrEqual(7);
     await expect(page.locator("#parcours-consigne-feuille")).toContainText("Numéro de feuille");
     await expect(bouton(page, "J'ai recopié mon code")).toBeHidden();
     await capturer(page, {
@@ -206,7 +258,7 @@ for (const theme of ["light", "dark"]) {
   });
 }
 
-test("la direction utilitaire est servie localement et le focus clavier reste visible", async ({
+test("la scène est servie localement et le focus clavier reste visible", async ({
   page,
   browserName,
 }) => {
@@ -216,13 +268,14 @@ test("la direction utilitaire est servie localement et le focus clavier reste vi
   await expect(
     page.getByRole("heading", { name: "Créer votre coffre", exact: true }),
   ).toBeVisible();
-  const style = await page.locator("main").evaluate((node) => {
-    const css = getComputedStyle(node);
-    return { bord: css.borderTopWidth, rayon: css.borderTopLeftRadius, ombre: css.boxShadow };
-  });
-  expect(style.bord).toBe("1px");
-  expect(style.rayon).toBe("0px");
-  expect(style.ombre).toContain("6px 6px");
+  // La scène de l'ADR 0051 : le fond pétrole de la page, et le laiton du filet de l'en-tête. Deux
+  // couleurs de la feuille locale : si elle n'est pas servie, aucune des deux n'est là.
+  const style = await page.locator("main").evaluate((node) => ({
+    fond: getComputedStyle(node).backgroundColor,
+    icone: getComputedStyle(node.querySelector("header svg")).color,
+  }));
+  expect(style.fond).toBe("rgb(7, 21, 25)");
+  expect(style.icone).toBe("rgb(231, 198, 126)");
   await page.keyboard.press(tab);
   await expect(page.getByRole("link", { name: "Aller au parcours" })).toBeFocused();
   await page.keyboard.press("Enter");
@@ -240,7 +293,7 @@ test("la direction utilitaire est servie localement et le focus clavier reste vi
   ).toBeFocused();
 });
 
-test("la direction utilitaire et le focus clavier sur l'écran « stockage inaccessible » (WebKit éphémère)", async ({
+test("la scène et le focus clavier sur l'écran « stockage inaccessible » (WebKit éphémère)", async ({
   page,
   browserName,
 }) => {
@@ -252,13 +305,14 @@ test("la direction utilitaire et le focus clavier sur l'écran « stockage inacc
     exact: true,
   });
   await expect(inaccessible).toBeVisible();
-  const style = await page.locator("main").evaluate((node) => {
-    const css = getComputedStyle(node);
-    return { bord: css.borderTopWidth, rayon: css.borderTopLeftRadius, ombre: css.boxShadow };
-  });
-  expect(style.bord).toBe("1px");
-  expect(style.rayon).toBe("0px");
-  expect(style.ombre).toContain("6px 6px");
+  // La scène de l'ADR 0051 : le fond pétrole de la page, et le laiton du filet de l'en-tête. Deux
+  // couleurs de la feuille locale : si elle n'est pas servie, aucune des deux n'est là.
+  const style = await page.locator("main").evaluate((node) => ({
+    fond: getComputedStyle(node).backgroundColor,
+    icone: getComputedStyle(node.querySelector("header svg")).color,
+  }));
+  expect(style.fond).toBe("rgb(7, 21, 25)");
+  expect(style.icone).toBe("rgb(231, 198, 126)");
   await page.keyboard.press(tab);
   await expect(page.getByRole("link", { name: "Aller au parcours" })).toBeFocused();
   await page.keyboard.press("Enter");
