@@ -87,8 +87,11 @@ nomme une application (ADR 0018 § 4).
 
 **Ce qu'elle ne défend pas**, et qui compte autant :
 
-- **une publication compromise de la coquille elle-même** (`SEC-UPDATE-001`, #45). La frontière
-  suppose que la coquille servie est celle qu'on a écrite ;
+- **une publication compromise de la coquille elle-même** (`SEC-UPDATE-001`, #347). La frontière
+  suppose que la coquille servie est celle qu'on a écrite. **Ce risque n'a aujourd'hui aucune
+  défense** : #45 (fermée) a livré la chaîne de publication, pas une signature ; rien n'authentifie
+  la coquille servie, ni au premier chargement ni à la mise à jour. #347 porte cette signature, et
+  sa conception attend une décision du mainteneur ;
 - **un navigateur ou une extension compromis.** Tout ce qui précède s'appuie sur la partition
   d'origine du moteur ;
 - **l'adversaire qui ÉCRIT dans l'OPFS de l'origine de confiance** — celui de l'ADR 0019 § 6.9, qui
@@ -1073,7 +1076,8 @@ gate**.
 
 Ce que la frontière d'origine ne couvre pas :
 
-- une publication compromise de la coquille elle-même (`SEC-UPDATE-001`, #45) ;
+- une publication compromise de la coquille elle-même (`SEC-UPDATE-001`, #347) : **aucune défense
+  aujourd'hui** (voir plus haut) ;
 - deux applications partageant l'origine applicative, qui se lisent — et s'effacent — mutuellement.
   Le point est désormais **mesuré et tranché** par
   l'[ADR 0018](docs/decisions/0018-isolation-entre-applications.md) : sur une même origine, quatorze
@@ -1217,7 +1221,12 @@ connexion, après fermeture du navigateur.
 
 - **une origine hostile qui sert un Service Worker hostile.** La liste d'empreintes est dans le
   script que l'origine contrôle ; un SW altéré s'installe comme une mise à jour. **Rien n'y répond
-  avant la signature des paquets (jalon 6).** La liaison est _relative_ à la liste du SW ;
+  aujourd'hui.** Ce document renvoyait à « la signature des paquets (jalon 6) » : aucune issue ne la
+  portait (#26 est l'enveloppe des échanges entre coffres, #27 et #28 l'export et GenealogyApp, #45
+  ne la citait que comme travail futur). #347 la porte désormais, et sa conception attend une
+  décision du mainteneur. Scénario : l'hébergeur, son compte ou la CI de publication est compromis
+  APRÈS la création du coffre ; une coquille piégée est publiée, et elle reçoit la phrase au
+  prochain déverrouillage. La liaison est _relative_ à la liste du SW ;
 - la **première visite** et toute page **sans contrôleur** : confiance à la première utilisation, le
   bootstrap (`index.html`, `main.mjs` et ses imports) n'est pas vérifié ; la garantie commence au
   premier client **contrôlé** ;
@@ -1244,6 +1253,18 @@ ne recule jamais pendant la vie de la page), partagé par l'observateur et par t
 relu **dans le même tour**, sans `await`, juste avant la création du Worker de confiance : une
 révocation observée pendant une vérification suspendue n'est pas contournée. Une révocation **non
 encore observée** reste hors de portée.
+
+**Le Worker en attente n'est pas vérifié, et le bandeau le dit (#347).** Révocation connue, attente
+muette, mise à jour prête et version différente viennent de ce que DÉCLARE le Worker en attente : sa
+séquence, son plancher, son retrait. L'hébergeur le sert, et rien ne l'authentifie. Le bandeau et le
+refus `RESERVE_PERIMEE` n'invitent donc pas à l'adopter et ne l'attribuent pas à l'éditeur : ils
+disent que la version n'est pas vérifiée, et qu'elle s'appliquera à la prochaine ouverture du
+coffre, une fois toutes ses fenêtres fermées. **Constat, non tranché** : un Worker en attente qui
+annonce un plancher supérieur, même sans séquence plus récente, fait afficher « révocation connue »
+à la page légitime et refuser le déverrouillage, pour toute la vie de la page
+(`tests/unit/reserve-portail.test.mjs`, « CONSTAT #347 »). Une origine hostile l'obtient à volonté.
+C'est un déni, et une pression vers la version en attente ; le texte ne pousse plus à l'adopter,
+mais la logique de révocation ne change pas : c'est une décision du mainteneur (#347).
 
 **Le refus sans Service Worker est un coût d'accès, assumé.** Sans l'API, sans contrôleur ou sans
 réserve installable (navigation privée de certains navigateurs, modes ou politiques qui désactivent
@@ -1287,8 +1308,8 @@ Chromium n'expose pas `navigator.serviceWorker` aux Workers dédiés », excepti
 la réserve (ADR 0038, hors périmètre) ; la **séquence** de publication est, par défaut, le nombre de
 commits de l'historique (un dépôt superficiel ou une publication de production sans `--sequence <n>`
 retombe sur 1 avec un avertissement : une séquence trop basse est annoncée « version différente ou
-plus ancienne ») ; **TOFU / origine hostile avant le jalon 6** : le bootstrap n'est pas vérifié et
-rien n'y répond avant la signature des paquets.
+plus ancienne ») ; **TOFU / origine hostile, sans défense aujourd'hui** : le bootstrap n'est pas
+vérifié, et aucune signature des versions n'existe (#347, à décider).
 
 ## Gates d'utilisation
 
@@ -1641,9 +1662,12 @@ vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabil
   compatibilité du paquet** (#210), et non une propriété de sécurité : rien ne l'impose au guest
   aujourd'hui, et un montage en lecture seule — qui ferait échouer franchement — casserait Bootsnap
   et `tmp/` de la plupart des applications.
-- **Le paquet n'est pas signé par son auteur.** La signature de l'auteur et sa distribution E2EE
-  sont du jalon 6 (#26–#28). Jusque-là, **la seule garantie est l'empreinte servie par l'origine de
-  confiance** : qui contrôle l'origine contrôle ce que la coquille installe et boote. Le descripteur
+- **Le paquet n'est pas signé par son auteur, et aucune issue ne porte cette signature.** Ce
+  document la disait « du jalon 6 (#26–#28) » : #26 est l'enveloppe des échanges entre coffres, #27
+  et #28 l'export et GenealogyApp. #347 porte la signature des versions de la coquille, qui installe
+  et vérifie le paquet ; sa conception attend une décision du mainteneur. **Aujourd'hui, la seule
+  garantie est l'empreinte servie par l'origine de confiance**, et rien ne défend contre une origine
+  compromise : qui contrôle l'origine contrôle ce que la coquille installe et boote. Le descripteur
   v2 ne rend pas cette origine moins critique ; il rend seulement détectable un artefact altéré
   APRÈS que l'origine l'a décrit.
 - **Un paquet n'isole pas l'application du volume.** Le code du paquet s'exécute avec un accès plein
@@ -1685,17 +1709,18 @@ vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabil
 
 **Ce qui n'est PAS garanti**
 
-- **La version et le schéma sont ceux que l'origine DÉCLARE.** Sans signature de l'auteur (jalon 6,
-  qui suivra TUF 1.0.x : version monotone, `expires`, rôles), qui contrôle l'origine peut servir un
-  paquet qui ment sur son schéma. La précédence refuse un retour arrière déclaré ; elle ne détecte
-  pas un paquet ancien re-publié sous un numéro plus grand. Aucun champ `expires` n'est posé avant
-  la signature : non signé, il ne protégerait de rien.
+- **La version et le schéma sont ceux que l'origine DÉCLARE.** Sans signature de l'auteur (aucune
+  n'existe, voir plus haut ; l'ADR 0042 la voulait conforme à TUF 1.0.x : version monotone,
+  `expires`, rôles), qui contrôle l'origine peut servir un paquet qui ment sur son schéma. La
+  précédence refuse un retour arrière déclaré ; elle ne détecte pas un paquet ancien re-publié sous
+  un numéro plus grand. Aucun champ `expires` n'est posé avant la signature : non signé, il ne
+  protégerait de rien.
 - **Une migration peut échouer ou être incorrecte** : c'est le code de l'auteur du paquet. La
   sauvegarde proposée avant la mise à jour est le seul retour arrière des DONNÉES ; elle se restaure
   sur une origine qui sert l'ancien paquet.
 - **Des morceaux de deux publications réunis sous un même descripteur** (le rootfs de l'une, le
   paquet d'une autre) sont acceptés si leurs empreintes sont celles que le descripteur déclare :
-  l'origine est crue sur la COMPOSITION comme sur le reste, jusqu'à la signature du jalon 6.
+  l'origine est crue sur la COMPOSITION comme sur le reste, et rien n'y répond aujourd'hui (#347).
 - **Le manifeste est un fichier voisin réécrit en place** : une coupure pendant sa réécriture le
   laisse illisible, et le coffre est alors refusé (`VOLUME_APPLICATIF_SANS_MANIFESTE`) sans que les
   données soient perdues.
@@ -1721,12 +1746,13 @@ L'[ADR 0044](docs/decisions/0044-le-magasin-d-artefacts.md) range le rootfs et l
 - **Le hors-ligne gèle la version** : quand l'origine est injoignable, le dernier descripteur
   vérifié fait foi. Une révocation publiée pendant la coupure n'est pas vue avant le retour du
   réseau (gel de version au sens de TUF, accepté par l'amendement du 04/10 de l'ADR 0042 tant que
-  les paquets ne sont pas signés). **Il n'y a aucune durée maximale avant la signature des paquets
-  (jalon 6)** : une date d'expiration non signée ne protège de rien. La date de la dernière
-  vérification est dite à la personne (« Hors connexion, version du <date>. ») ; elle ne borne rien.
+  les paquets ne sont pas signés). **Il n'y a aucune durée maximale**, et aucune signature n'est en
+  cours (#347, à décider) : une date d'expiration non signée ne protège de rien. La date de la
+  dernière vérification est dite à la personne (« Hors connexion, version du <date>. ») ; elle ne
+  borne rien.
 - **Un adversaire qui écrit dans l'OPFS ET contrôle l'origine** : il peut servir un descripteur dont
   la racine désigne ses propres tranches. Le magasin n'ajoute rien à la confiance faite à l'origine
-  (ADR 0042) ; seule la signature du jalon 6 y répondra.
+  (ADR 0042) ; rien n'y répond aujourd'hui (#347).
 
 ### Le démarrage hors connexion : le descripteur scellé (#247, D1g, ADR 0046)
 
@@ -1787,7 +1813,7 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
 
 **Ce que le scellement ne protège pas.**
 
-- **Le gel de version** et l'**absence de durée maximale** (ci-dessus) jusqu'au jalon 6.
+- **Le gel de version** et l'**absence de durée maximale** (ci-dessus), sans échéance (#347).
 - **Le rejeu d'un ancien descripteur scellé valide** : accepté s'il n'est pas antérieur à la version
   du volume ; sa date est authentifiée, pas garantie fraîche.
 - **Le retour arrière complet de l'OPFS ET du volume ensemble** : l'anti-retour perd sa référence
@@ -1805,10 +1831,10 @@ coffre elle-même. Le démarrage a lieu après le déverrouillage : la clé est 
   WebKit, sont retirés). La confrontation au manifeste v86 scellé est conservée comme recoupement «
   `libv86` de la réserve ↔ `v86.wasm` rangé au magasin ». La liaison est **relative** : la liste est
   dans le script que l'origine sert, donc une origine hostile qui sert un SW hostile n'est arrêtée
-  par rien avant la signature des paquets (jalon 6) ; et **hors de l'arbre publié** (dépôt vivant,
-  `tools/serve.mjs`), `libv86` garde la confiance de l'origine, comme tout le code de la coquille.
-  **En production, le démarrage hors connexion fonctionne** sous les en-têtes de production, prouvé
-  par l'E2E sur l'arbre publié (`tests/e2e/hors-ligne.spec.mjs`, Chromium).
+  par rien aujourd'hui (#347) ; et **hors de l'arbre publié** (dépôt vivant, `tools/serve.mjs`),
+  `libv86` garde la confiance de l'origine, comme tout le code de la coquille. **En production, le
+  démarrage hors connexion fonctionne** sous les en-têtes de production, prouvé par l'E2E sur
+  l'arbre publié (`tests/e2e/hors-ligne.spec.mjs`, Chromium).
 
 ## Le modèle d'état de la révocation d'urgence : ce qu'il garantit, ce qu'il ne garantit pas (#310, ADR 0049)
 

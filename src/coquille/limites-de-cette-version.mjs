@@ -52,8 +52,8 @@ export const LIMITES = Object.freeze({
       cle: "paquet",
       titre: "Une application non signée",
       texte:
-        "L'application n'est pas signée : rien ne prouve encore que le code reçu est bien celui " +
-        "que l'auteur a publié. La signature est prévue plus tard (jalon 6).",
+        "L'application n'est pas signée : rien ne prouve que le code reçu est bien celui que " +
+        "l'auteur a publié. Aucune signature n'est prévue à ce jour (#347).",
     }),
     Object.freeze({
       cle: "hors-connexion",

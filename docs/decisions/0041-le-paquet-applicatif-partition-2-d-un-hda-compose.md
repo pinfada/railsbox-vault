@@ -18,6 +18,14 @@
   redimensionnement du disque de données (rouvrirait l'ADR 0035) et la signature de l'auteur d'un
   paquet (jalon 6).
 
+## Note datée du 28/11/2026 — aucune signature n'existe (#347)
+
+Le « jalon 6 » cité ici pour la signature de l'auteur d'un paquet ne désigne aucune issue : #26 est
+l'enveloppe des échanges entre coffres, #27 et #28 l'export et GenealogyApp. #347 porte la signature
+des versions de la coquille, qui installe et vérifie le paquet ; sa conception attend une décision
+du mainteneur. **Une origine compromise n'a aujourd'hui aucune défense** : elle sert le paquet
+qu'elle veut. Le reste de cette décision ne change pas.
+
 ## Contexte
 
 L'application Rails était **cuite dans l'image** : l'étage `disque-app` copiait `apps/reference/`,

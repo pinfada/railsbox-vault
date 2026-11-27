@@ -72,17 +72,26 @@ test("chaque chiffre dit à la personne est retrouvable, avec sa source, dans la
       `le chiffre « ${chiffre} » n'est pas dans la page de détail`,
     );
   }
-  // Les sources que le mainteneur exige : la mesure, l'environnement, les issues, le jalon.
+  // Les sources que le mainteneur exige : la mesure, l'environnement, les issues. Le « jalon 6 » ne
+  // portait pas la signature : la source est désormais #347.
   for (const source of [
     "docs/quality-attributes.md",
     "Windows 11",
     "28 threads",
     "#238",
-    "jalon 6",
+    "#347",
     "SECURITY.md",
   ]) {
     assert.ok(detail.includes(source), `la page de détail ne cite pas « ${source} »`);
   }
+});
+
+test("#347 · aucun texte montré ne promet une signature : ni « jalon 6 », ni « prévue plus tard »", () => {
+  for (const { cle, titre, texte } of LIMITES.limites) {
+    assert.doesNotMatch(`${titre} ${texte}`, /jalon|prévue plus tard/i, `${cle} : promesse`);
+  }
+  const paquet = LIMITES.limites.find(({ cle }) => cle === "paquet");
+  assert.match(paquet.texte, /Aucune signature n'est prévue à ce jour \(#347\)/);
 });
 
 test("le lien de détail désigne un fichier qui existe dans le dépôt", async () => {

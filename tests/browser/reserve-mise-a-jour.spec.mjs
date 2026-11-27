@@ -173,7 +173,11 @@ test("MÊME CONTENU, plancher relevé : même cache, rien n'est réinstallé (cr
   ).toBe(true);
   const region = await page.locator("#reserve-etat").getAttribute("role");
   expect(region).toBe("alert");
-  await expect(page.locator("#reserve-etat")).toContainText("retirée par son éditeur");
+  // #347 : l'annonce vient du Worker en attente, non authentifié — elle n'est ni attribuée à l'éditeur,
+  // ni une invitation à fermer les fenêtres.
+  await expect(page.locator("#reserve-etat")).toContainText("annonce que celle-ci est retirée");
+  await expect(page.locator("#reserve-etat")).toContainText("n'est pas vérifiée");
+  await expect(page.locator("#reserve-etat")).not.toContainText("Fermez");
   const apresRev = await lireLeReleve(page);
   expect(apresRev.rapport.reserve.revocation).toBe("plancher");
   expect(apresRev.rapport.canalPrivilegie, "la session n'est pas interrompue").toBe(

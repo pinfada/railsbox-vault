@@ -364,7 +364,10 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
   reserveAlteree: "VAULT_COQUILLE_RESERVE_ALTEREE",
   /** Le contrôleur, le Worker de confiance ou `libv86` ne sont pas de la version que la page porte. */
   reserveDivergente: "VAULT_COQUILLE_RESERVE_DIVERGENTE",
-  /** Révocation CONNUE (plancher ou retrait) : cette version a été retirée par son éditeur. */
+  /**
+   * Révocation CONNUE (plancher ou retrait) : cette version est ANNONCÉE retirée, par un Service Worker
+   * que l'hébergeur sert et que rien n'authentifie (#347). Le message ne l'attribue pas à l'éditeur.
+   */
   reservePerimee: "VAULT_COQUILLE_RESERVE_PERIMEE",
 });
 
@@ -490,7 +493,7 @@ const MESSAGES = Object.freeze({
   [CODES_REFUS_COQUILLE.reserveDivergente]:
     "La coquille a changé pendant l'ouverture. Rechargez la page.",
   [CODES_REFUS_COQUILLE.reservePerimee]:
-    "Cette version a été retirée par son éditeur. Elle se remplace ; fermez toutes les fenêtres du coffre, puis rouvrez-le.",
+    "Cette version de la coquille est annoncée comme retirée, et cette annonce n'est pas vérifiée : le coffre ne s'ouvre pas avec elle. Une autre version, non vérifiée elle aussi, s'appliquera à la prochaine ouverture du coffre, une fois toutes ses fenêtres fermées.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

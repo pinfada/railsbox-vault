@@ -12,6 +12,14 @@
 - Issues : #247 (lot D1, `lot:artefacts`, ne la ferme pas : D2 suit), #236
 - Décisions du superviseur, par délégation du mainteneur : commentaire du 04/10/2026 sur #247
 
+## Note datée du 28/11/2026 — aucune signature n'existe (#347)
+
+Le « jalon 6 » cité ici comme réponse à une origine hostile ne désigne aucune issue : #26 est
+l'enveloppe des échanges entre coffres, #27 et #28 l'export et GenealogyApp. #347 porte la signature
+des versions de la coquille ; sa conception attend une décision du mainteneur. **Une origine hostile
+n'a aujourd'hui aucune défense**, et l'absence de durée maximale hors connexion reste sans échéance.
+Le reste de cette décision ne change pas.
+
 ## Contexte
 
 L'ADR 0044 a arrêté que le dernier descripteur vérifié, rangé au magasin, fait foi quand l'origine

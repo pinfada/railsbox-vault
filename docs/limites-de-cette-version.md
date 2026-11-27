@@ -75,11 +75,14 @@ n'ôte rien à l'ordre de grandeur.
 
 ## 6. Une application non signée
 
-- **Ce qui est dit** : l'application n'est pas signée ; la signature est prévue plus tard (jalon 6).
-- **Fondement** : « Le paquet n'est pas signé par son auteur » (`SECURITY.md`, « Ce qui n'est PAS
-  garanti », paquet applicatif) ; jusqu'au jalon 6 (#26 à #28), la seule garantie est l'empreinte
-  servie par l'origine de la coquille, que l'on croit sur parole. L'inventaire publié n'est pas une
-  signature (`docs/release-policy.md`).
+- **Ce qui est dit** : l'application n'est pas signée ; aucune signature n'est prévue à ce jour
+  (#347).
+- **Fondement** : « Le paquet n'est pas signé par son auteur, et aucune issue ne porte cette
+  signature » (`SECURITY.md`, « Ce qui n'est PAS garanti », paquet applicatif). Ce texte disait la
+  signature « prévue plus tard (jalon 6) » : le jalon 6 (#26 à #28) porte les échanges entre
+  coffres, pas cette signature. #347 la porte ; sa conception attend une décision du mainteneur.
+  Aujourd'hui, la seule garantie est l'empreinte servie par l'origine de la coquille, que l'on croit
+  sur parole. L'inventaire publié n'est pas une signature (`docs/release-policy.md`).
 
 ## 7. Hors connexion, après un premier démarrage
 
@@ -87,6 +90,6 @@ n'ôte rien à l'ordre de grandeur.
   sans connexion, mais elle ne peut pas savoir si une nouvelle version existe.
 - **Fondement** : ADR 0046 et ADR 0048 ; scénario `tests/e2e/hors-ligne.spec.mjs` joué en CI sur
   l'arbre publié (#323). Hors connexion, un retrait de version est **invisible** (ADR 0048), et il
-  n'y a aucune durée maximale avant le jalon 6.
+  n'y a aucune durée maximale, sans échéance (#347).
 - **Non prouvé** : le coût en octets et la taille du magasin hors connexion ne sont pas mesurés
   (`docs/quality-attributes.md`, § « Mesures de sortie du lot D1 »).
