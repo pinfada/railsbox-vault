@@ -2,9 +2,14 @@ name: Publication
 
 # Chaîne de publication des DEUX origines de l'ADR 0002 (#45, ADR 0017).
 #
-# Elle ne DÉPLOIE rien. Elle construit, vérifie, éprouve les en-têtes servis, et dépose les deux
-# arborescences comme artefacts GitHub. Le déploiement réel suppose un hébergement choisi et des
-# secrets ; l'ADR 0017 dit pourquoi #45 s'arrête ici, et ce qu'il faudra pour aller plus loin.
+# Elle construit (image de référence comprise : `--avec-image`), vérifie, éprouve les en-têtes servis,
+# prouve le démarrage sur l'arbre publié SEUL (Chromium), mesure les limites de l'hébergeur, et dépose
+# les deux arborescences comme artefacts GitHub. Son dernier maillon, l'ENVOI (`deployer`), est écrit
+# mais INERTE : il ne part que sur `envoyer: true`, derrière l'environnement `production` (approbation
+# manuelle, créé par le mainteneur), et seulement si les secrets existent. Sans eux, ou sans la demande,
+# c'est la RÉPÉTITION À BLANC : elle affiche exactement ce qui serait envoyé et n'envoie rien. L'hébergeur
+# n'est pas choisi par ce dépôt : `docs/release-policy.md` § « Envoi chez l'hébergeur » liste ce que le
+# mainteneur doit créer.
 #
 # `workflow_dispatch` SEULEMENT, et c'est délibéré. Une chaîne de publication qui se déclenche sur
 # `push` publie sans que personne l'ait décidé. `docs/release-policy.md` fait de la publication un
@@ -52,6 +57,32 @@ on:
           à la reconstruction"
         required: false
         type: string
+      profil-hebergeur:
+        description:
+          "Limites de l'hébergeur à mesurer sur les arbres (tools/publier-limites-hebergeur.mjs)"
+        required: false
+        default: "cloudflare-pages"
+        type: choice
+        options:
+          - cloudflare-pages
+          - netlify
+      envoyer:
+        description:
+          "Envoyer chez l'hébergeur (job `deployer`, environnement `production`). Sans cela, ou sans
+          les secrets : répétition à blanc, rien n'est envoyé."
+        required: false
+        default: false
+        type: boolean
+      projet-pages-coquille:
+        description:
+          "Nom du projet Cloudflare Pages de la COQUILLE (utilisé seulement pour l'envoi)"
+        required: false
+        type: string
+      projet-pages-application:
+        description:
+          "Nom du projet Cloudflare Pages de l'APPLICATION (utilisé seulement pour l'envoi)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -66,11 +97,50 @@ jobs:
     with:
       ref: ${{ inputs.commit || github.sha }}
 
+  # L'image de référence : le descripteur ET les artefacts qu'il nomme (rootfs, paquet, noyau, initrd,
+  # BIOS). Même recette que `reprise.yml` (ubuntu-24.04 : voir le cliquet
+  # `tests/unit/workflows-image-sur-ubuntu-24-04.test.mjs`). La fabrication n'est pas reproductible au bit
+  # près : l'image publiée est CELLE de ce run, et l'inventaire en porte l'empreinte.
+  image:
+    name: Construire l'image de référence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+          fetch-depth: 0
+
+      - name: Installation de Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Épinglage de la chaîne de construction
+        run: node tools/build-reference-image/verify-pinning.mjs
+
+      - name: Construction de l'image de référence
+        run: npm run image:build
+
+      - name: Partage de l'image construite
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-de-reference
+          path: |
+            artifacts/reference-image/
+            artifacts/application.json
+          retention-days: 1
+
   publier:
     name: Construire, vérifier et éprouver les en-têtes
-    needs: audits
+    needs: [audits, image]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     env:
       VAULT_COMMIT: ${{ inputs.commit || github.sha }}
@@ -78,6 +148,7 @@ jobs:
       VAULT_ORIGINE_APPLICATION: ${{ inputs.origine-application }}
       VAULT_ROLLBACK_VERS: ${{ inputs.rollback-vers }}
       VAULT_EMPREINTE_ATTENDUE: ${{ inputs.empreinte-attendue }}
+      VAULT_PROFIL: ${{ inputs.profil-hebergeur || 'cloudflare-pages' }}
 
     steps:
       # `fetch-depth: 0` n'est pas un confort : `--commit <ref>` lit les octets par `git show`, et
@@ -105,10 +176,20 @@ jobs:
       - name: Récupération vérifiée des artefacts v86
         run: npm run vm:fetch
 
+      # `path: artifacts` : l'artefact porte `reference-image/` ET `application.json`, un SIBLING.
+      - name: Récupération de l'image construite
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-de-reference
+          path: artifacts
+
+      # `--avec-image` : le descripteur et tout ce qu'il nomme entrent dans l'arbre de la coquille,
+      # inventoriés et hachés comme le reste. Sans lui l'arbre publié ne démarre pas (#45).
       - name: Construction des deux arborescences
         run: |
           mkdir -p reports
           node tools/publier.mjs \
+            --avec-image \
             --commit "$VAULT_COMMIT" \
             --origine-coquille "$VAULT_ORIGINE_COQUILLE" \
             --origine-application "$VAULT_ORIGINE_APPLICATION" \
@@ -121,6 +202,30 @@ jobs:
         run: |
           node tools/publier.mjs --verifier artifacts/publication/coquille
           node tools/publier.mjs --verifier artifacts/publication/application
+
+      # LIMITES DE L'HÉBERGEUR, mesurées sur le disque. Un dépassement (code 7) est RAPPORTÉ ici, pas masqué :
+      # il ne rougit pas cette étape, parce que ce run sert aussi à lire ce qui bloque l'envoi — mais le job
+      # `deployer` le REFUSE (code 7). Tout autre code échoue.
+      - name: Limites de l'hébergeur (rapport)
+        run: |
+          : > reports/limites-hebergeur.txt
+          for arbre in coquille application; do
+            set +e
+            node tools/publier.mjs --verifier "artifacts/publication/$arbre" --profil "$VAULT_PROFIL" \
+              | tee -a reports/limites-hebergeur.txt
+            code=${PIPESTATUS[0]}
+            set -e
+            echo "$arbre : code de sortie $code" | tee -a reports/limites-hebergeur.txt
+            if [ "$code" != 0 ] && [ "$code" != 7 ]; then
+              exit "$code"
+            fi
+          done
+          {
+            echo '### Limites de l'"'"'hébergeur'
+            echo '```'
+            cat reports/limites-hebergeur.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Empreintes de racine, pour comparaison hors bande
         run: |
@@ -141,6 +246,17 @@ jobs:
         run: |
           npm run publier:check
           node tools/publier-sonde-meta-csp.mjs
+
+      # LA PREUVE qui manquait : l'application démarre sur l'arbre publié SEUL, sans servir le dossier local
+      # `artifacts/` (tests/e2e/publie-seul.spec.mjs). `VAULT_E2E_EXIGER` ferme le vert par vacuité.
+      - name: Démarrage sur l'arbre publié seul (Chromium)
+        env:
+          VAULT_E2E_EXIGER: "1"
+          # Le MÊME commit (`VAULT_COMMIT`, job) et l'arbre du job : l'image servie est comparée octet pour octet.
+          VAULT_ARBRE_PUBLIE: artifacts/publication/coquille
+        run:
+          npx playwright test --config playwright.e2e.config.mjs --project=chromium --workers=1
+          tests/e2e/publie-seul.spec.mjs
 
       # RETOUR ARRIÈRE. Deux reconstructions du même commit doivent rendre la même empreinte de
       # racine : c'est le DÉTERMINISME, sans lequel « republier la version précédente » ne serait
@@ -210,3 +326,134 @@ jobs:
             reports/
           if-no-files-found: warn
           retention-days: 90
+
+  # RÉPÉTITION À BLANC de l'envoi : aucun environnement, aucun secret — ils ne sont pas même référencés
+  # ici. Elle relit les arbres téléchargés (vérification d'inventaire), mesure les limites de l'hébergeur
+  # et affiche exactement ce que `deployer` enverrait : arbre, projet, commande wrangler épinglée. Un
+  # dépassement y est RAPPORTÉ (c'est son résultat), jamais envoyé.
+  repetition:
+    name: Répétition à blanc de l'envoi (rien n'est envoyé)
+    needs: publier
+    if: ${{ !inputs.envoyer }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VAULT_PROJET_COQUILLE: ${{ inputs.projet-pages-coquille || 'projet-coquille-a-definir' }}
+      VAULT_PROJET_APPLICATION:
+        ${{ inputs.projet-pages-application || 'projet-application-a-definir' }}
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installation de Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: Récupération de l'arborescence de la coquille
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: publication-coquille
+          path: artifacts/publication/coquille
+
+      - name: Récupération de l'arborescence de l'application
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: publication-application
+          path: artifacts/publication/application
+
+      # Ce qui a traversé le dépôt d'artefacts est ce qui a été construit : l'inventaire est recalculé.
+      - name: Vérification de l'inventaire des arbres téléchargés
+        run: |
+          node tools/publier.mjs --verifier artifacts/publication/coquille
+          node tools/publier.mjs --verifier artifacts/publication/application
+
+      - name: Répétition à blanc
+        run: |
+          mkdir -p reports
+          node tools/publier-envoi.mjs --repetition \
+            --cible "artifacts/publication/application=$VAULT_PROJET_APPLICATION" \
+            --cible "artifacts/publication/coquille=$VAULT_PROJET_COQUILLE" \
+            | tee reports/repetition.txt
+          {
+            echo '### Répétition à blanc de l'"'"'envoi'
+            echo '```'
+            cat reports/repetition.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Récapitulatif de la répétition
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: publication-repetition
+          path: reports/repetition.txt
+          retention-days: 90
+
+  # L'ENVOI. Inerte tant que `envoyer` n'est pas vrai ; derrière l'environnement `production` (approbation
+  # manuelle — à créer par le mainteneur, avec ses secrets). Sans les secrets, il s'arrête en répétition à
+  # blanc ET LE DIT ; avec eux, il REFUSE un dépassement de limite (code 7) avant d'appeler wrangler.
+  # Les secrets ne sont lus que par l'étape d'envoi, par `env:` — jamais dans un `run:` — et l'outil n'imprime
+  # que leur présence.
+  deployer:
+    name: Envoyer chez l'hébergeur
+    needs: publier
+    if: ${{ inputs.envoyer }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installation de Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+
+      - name: Récupération de l'arborescence de la coquille
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: publication-coquille
+          path: artifacts/publication/coquille
+
+      - name: Récupération de l'arborescence de l'application
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: publication-application
+          path: artifacts/publication/application
+
+      - name: Vérification de l'inventaire des arbres téléchargés
+        run: |
+          node tools/publier.mjs --verifier artifacts/publication/coquille
+          node tools/publier.mjs --verifier artifacts/publication/application
+
+      # La GARDE de l'environnement, AVANT l'étape qui reçoit les secrets : `environment: production` ne
+      # protège rien en soi (GitHub crée un environnement absent, sans règle). Elle exige (1) un relecteur
+      # requis dans l'environnement ET (2) une approbation `approved` de CE run pour `production` : une règle
+      # ajoutée après le démarrage du job ne vaut pas approbation. Cette étape n'a que le jeton du workflow
+      # (`contents: read` suffit pour les deux lectures, mesuré) ; une lecture qui échoue donne `{}` / `[]`,
+      # donc un refus.
+      - name: Garde de l'environnement production (relecteur requis, approbation de ce run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VAULT_DEPOT: ${{ github.repository }}
+          VAULT_RUN: ${{ github.run_id }}
+        run: |
+          gh api "repos/$VAULT_DEPOT/environments/production" > environnement.json || echo '{}' > environnement.json
+          gh api "repos/$VAULT_DEPOT/actions/runs/$VAULT_RUN/approvals" > approbations.json || echo '[]' > approbations.json
+          node tools/publier-garde-environnement.mjs environnement.json approbations.json
+
+      # UN seul appel pour les DEUX arbres : tous deux et leurs projets sont contrôlés AVANT le premier
+      # envoi, et un échec sur l'un donne zéro appel. L'application d'abord : la coquille la cadre, et une
+      # coquille servie avant son territoire applicatif pointerait vers rien. Le profil d'envoi est
+      # cloudflare-pages, seul envoi qui existe : `VAULT_PROFIL` ne le choisit pas.
+      - name: Envoi (ou répétition à blanc si les secrets manquent)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VAULT_PROJET_COQUILLE: ${{ inputs.projet-pages-coquille }}
+          VAULT_PROJET_APPLICATION: ${{ inputs.projet-pages-application }}
+        run: |
+          node tools/publier-envoi.mjs --envoyer \
+            --cible "artifacts/publication/application=$VAULT_PROJET_APPLICATION" \
+            --cible "artifacts/publication/coquille=$VAULT_PROJET_COQUILLE"

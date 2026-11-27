@@ -199,6 +199,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0047 — un rejet « transitoire » du stockage n'est pas une absence : état et refus indéterminés, réessayables](docs/decisions/0047-un-rejet-transitoire-du-stockage-n-est-pas-une-absence.md)
 - [ADR 0048 — le Service Worker de la coquille sert la réserve hors connexion : un seul, vérifié avant de servir, borné au bootstrap puis aux clients contrôlés (proposé ; en vigueur avec D1h-b)](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
 - [ADR 0049 — le modèle d'état de la révocation d'urgence](docs/decisions/0049-le-modele-d-etat-de-la-revocation.md)
+- [ADR 0050 — l'image dans l'arbre publié et l'envoi inerte](docs/decisions/0050-l-image-dans-l-arbre-publie-et-l-envoi-inerte.md)
 
 ## Licence
 
