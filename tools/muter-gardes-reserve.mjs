@@ -800,6 +800,34 @@ export const MUTATIONS = Object.freeze([
     apres: "      !/^[a-z0-9]+(-[a-z0-9]+)*-$/.test(prefixe)\n",
     epreuves: [T.generateur],
   },
+  // --- #347 : un état venu du Worker EN ATTENTE (non authentifié) n'invite pas à l'adopter -----------------
+  {
+    nom: "T1 · les états venus de l'attente invitent de nouveau à fermer les fenêtres",
+    garde: "S_APPLIQUERA — pas d'invitation",
+    fichier: FRAICHEUR,
+    avant:
+      '  "s\'appliquera à la prochaine ouverture du coffre, une fois toutes ses fenêtres fermées.";\n',
+    apres: '  "est prête. Fermez toutes les fenêtres du coffre, puis rouvrez-le.";\n',
+    epreuves: [T.fraicheur],
+  },
+  {
+    nom: "T2 · « mise à jour prête » attribuée de nouveau à l'éditeur, sans « non vérifiée »",
+    garde: "MISE_A_JOUR_PRETE — non vérifiée",
+    fichier: FRAICHEUR,
+    avant:
+      '      "Une nouvelle version de la coquille est disponible, mais elle n\'est pas vérifiée : rien ne " +\n',
+    apres: '      "L\'éditeur annonce une version plus récente, rien ne " +\n',
+    epreuves: [T.fraicheur],
+  },
+  {
+    nom: "T3 · le refus « périmée » invite de nouveau à adopter la version en attente",
+    garde: "messageDeRefus — RESERVE_PERIMEE",
+    fichier: "src/coquille/refus-de-coquille.mjs",
+    avant: "et cette annonce n'est pas vérifiée : le coffre ne s'ouvre pas avec elle.",
+    apres:
+      "par son éditeur. Elle se remplace ; fermez toutes les fenêtres du coffre, puis rouvrez-le.",
+    epreuves: [T.fraicheur],
+  },
 ]);
 
 function rapporter({ resultats }, json) {

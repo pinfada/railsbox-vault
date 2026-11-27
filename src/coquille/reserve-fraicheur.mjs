@@ -12,8 +12,14 @@
 // Les textes sont INDICATIFS (leur rédaction finale passe par la relecture du parcours) : ce qui est gelé
 // est le niveau de promesse. « Plus récente » n'est dit que pour l'état 3, et comme une ANNONCE de
 // l'origine — la séquence est publiée par l'origine, pas authentifiée.
+//
+// Les états 1 à 4 viennent du Worker EN ATTENTE : sa séquence, son plancher, son retrait, ou son silence.
+// Ce Worker est servi par l'hébergeur, et rien ne l'authentifie (#347). Leur texte n'invite donc jamais
+// à l'adopter, et ne l'attribue pas à l'éditeur : il dit que cette version n'est pas vérifiée, et quand
+// elle s'appliquera. Ce qui s'applique ne dépend pas de la personne ; le texte ne lui demande rien.
 
-const FERMEZ = "Fermez toutes les fenêtres du coffre, puis rouvrez-le.";
+const S_APPLIQUERA =
+  "s'appliquera à la prochaine ouverture du coffre, une fois toutes ses fenêtres fermées.";
 
 /** @typedef {{ id: string, rang: number, texte: string, effet: "refuse" | "autorise" | "attend" }} EtatDeFraicheur */
 
@@ -21,7 +27,10 @@ export const ETATS_DE_FRAICHEUR = Object.freeze({
   REVOCATION_CONNUE: Object.freeze({
     id: "revocation-connue",
     rang: 1,
-    texte: `Cette version a été retirée par son éditeur. ${FERMEZ}`,
+    texte:
+      "Une version en attente annonce que celle-ci est retirée. Cette annonce n'est pas vérifiée. " +
+      "Cette fenêtre reste ouverte, mais le coffre ne s'ouvrira plus avec cette version. La version " +
+      `en attente n'est pas vérifiée non plus ; elle ${S_APPLIQUERA}`,
     effet: "refuse",
   }),
   ATTENTE_MUETTE: Object.freeze({
@@ -29,13 +38,16 @@ export const ETATS_DE_FRAICHEUR = Object.freeze({
     rang: 2,
     texte:
       "Une autre version de la coquille est en attente, mais elle n'a pas pu être identifiée. " +
-      "Impossible de savoir si cette version a été retirée.",
+      "Impossible de savoir si cette version a été retirée. L'autre version n'est pas vérifiée ; " +
+      `elle ${S_APPLIQUERA}`,
     effet: "autorise",
   }),
   MISE_A_JOUR_PRETE: Object.freeze({
     id: "mise-a-jour-prete",
     rang: 3,
-    texte: `L'éditeur annonce une version plus récente, prête à s'ouvrir. ${FERMEZ}`,
+    texte:
+      "Une nouvelle version de la coquille est disponible, mais elle n'est pas vérifiée : rien ne " +
+      `prouve qu'elle vient de l'éditeur. Elle ${S_APPLIQUERA}`,
     effet: "autorise",
   }),
   VERSION_DIFFERENTE: Object.freeze({
@@ -43,7 +55,8 @@ export const ETATS_DE_FRAICHEUR = Object.freeze({
     rang: 4,
     texte:
       "Une version différente de celle-ci est en attente, et elle n'est pas plus récente. Ce n'est pas " +
-      "une mise à jour : à vérifier auprès de l'éditeur avant de rouvrir le coffre.",
+      `une mise à jour, et elle n'est pas vérifiée. Elle ${S_APPLIQUERA} À vérifier auprès de ` +
+      "l'éditeur avant de rouvrir le coffre.",
     effet: "autorise",
   }),
   VERIFICATION_ECHOUEE: Object.freeze({

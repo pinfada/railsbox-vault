@@ -47,8 +47,8 @@ test("1 · un Worker en attente IDENTIFIÉ au plancher supérieur à la séquenc
   assert.equal(etat, E.REVOCATION_CONNUE);
   assert.equal(etat.effet, "refuse");
   assert.equal(causeDeLaRevocation(attente({ plancher: COURANTE + 1 }), COURANTE), "plancher");
-  assert.match(etat.texte, /retirée par son éditeur/);
-  assert.match(etat.texte, /Fermez toutes les fenêtres du coffre, puis rouvrez-le/);
+  assert.match(etat.texte, /annonce que celle-ci est retirée/);
+  assert.match(etat.texte, /le coffre ne s'ouvrira plus avec cette version/);
 });
 
 test("1 · un script de RETRAIT en attente : révocation connue, cause `retrait`", () => {
@@ -85,11 +85,14 @@ test("2 · une attente MUETTE n'est PAS « prête » : non vérifiable, jamais �
   assert.doesNotMatch(etat.texte, /plus récente/);
 });
 
-test("3 · attente identifiée, séquence supérieure, plancher ≤ courante : mise à jour prête, annoncée par l'éditeur", () => {
+test("3 · attente identifiée, séquence supérieure, plancher ≤ courante : mise à jour prête, non vérifiée", () => {
   const etat = etatDeFraicheur({ ...base, attente: attente({ sequence: 6, plancher: COURANTE }) });
   assert.equal(etat, E.MISE_A_JOUR_PRETE);
   assert.equal(etat.effet, "autorise");
-  assert.match(etat.texte, /L'éditeur annonce une version plus récente/);
+  assert.match(
+    etat.texte,
+    /nouvelle version de la coquille est disponible, mais elle n'est pas vérifiée/,
+  );
 });
 
 test("4 · une version EN ATTENTE de séquence égale ou inférieure n'est JAMAIS « plus récente » (garde 25)", () => {
@@ -102,7 +105,7 @@ test("4 · une version EN ATTENTE de séquence égale ou inférieure n'est JAMAI
       /plus récente/,
       `séquence ${sequence}`,
     );
-    assert.match(etat.texte, /à vérifier auprès de l'éditeur/);
+    assert.match(etat.texte, /[Àà] vérifier auprès de l'éditeur/);
   }
 });
 
