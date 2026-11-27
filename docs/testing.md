@@ -87,6 +87,14 @@ coupures qu'aucune autre épreuve ne place), en un conteneur, en ≈ 1 s. Les on
 la suite de cette section sont les onze d'avant #236 ; la douzième est celle du paquet applicatif
 (T1).
 
+La campagne `paquet-applicatif` gagne **dix mutants** avec #342 (27/11/2026) : les gardes de la
+source, jouées avant le premier `docker build` (liens symboliques, Ruby demandé, secrets par
+contenu). **19/19 tués** sous Linux (Node 24, WSL). Sous Windows sans privilège de lien symbolique,
+l'épreuve saute les cas de liens, et la campagne y compte deux survivants (17/19) : les deux mutants
+des liens. Le job requis « Campagnes de mutation » tourne sous Linux et les tue.
+`tools/moteur-de-mutation.mjs` recopie désormais `apps/reference` dans l'atelier, car
+`fabriquer-paquet.mjs` lit l'identité de la référence au chargement.
+
 ### Le hors ligne du magasin d'artefacts (#247, lot D1g ; ADR 0044 § 6, ADR 0046)
 
 Deux campagnes tiennent le magasin, rejouées par `tools/rejouer-les-campagnes.mjs` et donc par le
