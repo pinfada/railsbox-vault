@@ -50,11 +50,11 @@ const FABRIQUE = "tools/paquet/fabriquer-paquet.mjs";
 const GARDES = "tools/paquet/gardes-de-la-source.mjs";
 const LIENS = "tools/paquet/liens-de-la-source.mjs";
 const RUBY = "tools/paquet/ruby-demande.mjs";
-const SECRETS = "tools/paquet/secrets-du-contenu.mjs";
+const BALAYAGE_DU_CONTENU = "tools/paquet/secrets-du-contenu.mjs";
 
 const EPREUVE_GARDES = "tests/unit/paquet-gardes-de-la-source.test.mjs";
 const EPREUVE_RUBY = "tests/unit/paquet-ruby-demande.test.mjs";
-const EPREUVE_SECRETS = "tests/unit/paquet-secrets-du-contenu.test.mjs";
+const EPREUVE_CONTENU = "tests/unit/paquet-secrets-du-contenu.test.mjs";
 
 /**
  * Les gardes de #236, et la façon exacte de les retirer.
@@ -219,36 +219,36 @@ export const MUTATIONS = Object.freeze([
   {
     nom: "une valeur à forme de jeton est refusée partout, quel que soit le nom",
     garde: "constatDeLaLigne — la clé PEM et les motifs de jetons",
-    fichier: SECRETS,
+    fichier: BALAYAGE_DU_CONTENU,
     avant:
       "  if (CLE_PRIVEE_PEM.test(ligne) || valeursCandidates(ligne, yaml).some(ressembleAUnJeton)) {\n",
     apres: "  if (false) {\n",
-    epreuves: [EPREUVE_SECRETS],
+    epreuves: [EPREUVE_CONTENU],
   },
   {
     nom: "une clé au nom de secret, valeur écrite en clair, est refusée sous config/ et dans les graines",
     garde: "constatDeLaLigne — les clés au nom de secret",
-    fichier: SECRETS,
+    fichier: BALAYAGE_DU_CONTENU,
     avant:
       "  const cle = clesSecretes(ligne, yaml).find((c) => !assumeePublique(assumesPublics, chemin, c));\n",
     apres: "  const cle = undefined;\n",
-    epreuves: [EPREUVE_SECRETS],
+    epreuves: [EPREUVE_CONTENU],
   },
   {
     nom: "une valeur lue dans l'environnement (ERB, ENV) n'est pas un secret écrit",
     garde: "valeurEcrite — l'exception des références à l'environnement",
-    fichier: SECRETS,
+    fichier: BALAYAGE_DU_CONTENU,
     avant: "  return !/<%|#\\{|\\bENV\\b/.test(valeur);\n",
     apres: "  return true;\n",
-    epreuves: [EPREUVE_SECRETS],
+    epreuves: [EPREUVE_CONTENU],
   },
   {
     nom: "la dérogation nomme son FICHIER : elle ne couvre pas la même clé ailleurs",
     garde: "assumeePublique — la comparaison exacte du fichier et de la clé",
-    fichier: SECRETS,
+    fichier: BALAYAGE_DU_CONTENU,
     avant: "    (entree) => entree?.fichier === fichier && entree?.cle === cle,\n",
     apres: "    (entree) => entree?.cle === cle,\n",
-    epreuves: [EPREUVE_SECRETS],
+    epreuves: [EPREUVE_CONTENU],
   },
 ]);
 
