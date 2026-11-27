@@ -73,8 +73,8 @@ reviennent pas à l'écran « Rouvrir votre coffre ».
   Go au plus fort du démarrage, au-delà de la cible de 1,2 Go. Fermez vos autres onglets.
 - **Données non sensibles seulement.** N'y mettez aucune donnée réelle ni sensible. Cette version
   sert à essayer, pas à garder des secrets.
-- **Une application non signée.** L'application n'est pas signée : rien ne prouve encore que le code
-  reçu est bien celui que l'auteur a publié. La signature est prévue plus tard (jalon 6).
+- **Une application non signée.** L'application n'est pas signée : rien ne prouve que le code reçu
+  est bien celui que l'auteur a publié. Aucune signature n'est prévue à ce jour (#347).
 - **Hors connexion, après un premier démarrage.** Le premier démarrage a besoin d'Internet. Ensuite,
   l'application redémarre sans connexion, mais elle ne peut pas savoir si une nouvelle version
   existe.
