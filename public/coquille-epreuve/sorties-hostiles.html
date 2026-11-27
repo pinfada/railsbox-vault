@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr" data-sorties="demarrage">
+  <head>
+    <meta charset="utf-8" />
+    <!--CSP-DU-GUEST-->
+    <meta name="origine-tiers" content="__ORIGINE_TIERS__" />
+    <title>Application hostile — sorties du cadre (#341)</title>
+  </head>
+  <body>
+    <!--
+      Une application HOSTILE (#341, ADR 0052) : elle tente chaque voie de sortie connue vers une
+      origine TIERCE instrumentée. Servie par le relais, elle doit tout voir refusé ; servie sans la
+      politique du cadre (le témoin), elle doit tout voir aboutir.
+    -->
+    <h1>Application hostile</h1>
+    <iframe name="puits" title="puits des formulaires" src="about:blank"></iframe>
+    <pre id="sorties-rapport">[]</pre>
+    <script type="module" src="sorties-hostiles.mjs"></script>
+  </body>
+</html>
