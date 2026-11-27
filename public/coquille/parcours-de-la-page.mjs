@@ -73,7 +73,8 @@ const ENTREE_VAUT = Object.freeze({
 
 /**
  * @param {{ document: Document, location: Location, history: History, navigateur: Navigator,
- *           revocation: object }} hote `revocation` : le câblage de la révocation (ses portes et ses gestes)
+ *           revocation: object, surLaProgression?: (progression: object) => void }} hote
+ *   `revocation` : le câblage de la révocation ; `surLaProgression` : appelé une fois, progression lue
  */
 export function creerParcoursDeLaPage({
   document: doc,
@@ -81,6 +82,7 @@ export function creerParcoursDeLaPage({
   history: hist,
   navigateur,
   revocation,
+  surLaProgression = () => {},
 }) {
   const noeud = (id) => doc.getElementById(id);
   const parametres = new URL(loc.href).searchParams;
@@ -675,6 +677,7 @@ export function creerParcoursDeLaPage({
     // Une étape demandée au-delà de la progression est RAMENÉE, et l'URL le dit.
     if (demandee !== null && demandee !== etat.pointeur) reecrireLURL(etat.pointeur);
     rendre({ deplacerLeFocus: false });
+    surLaProgression(progression);
   });
   return Object.freeze({
     rendre,

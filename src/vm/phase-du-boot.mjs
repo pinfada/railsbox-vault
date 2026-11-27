@@ -16,8 +16,15 @@
 // Ce module ne tient que deux VALEURS, dans le fil du Worker : le battement lit la phase et la porte à
 // la page. Il appartient à `src/vm/`, qui ne connaît pas la coquille — le veilleur de schéma y écrit.
 
-/** Les phases d'un démarrage. Une autre valeur n'est jamais posée. */
+/**
+ * Les phases d'un démarrage. Une autre valeur n'est jamais posée.
+ *
+ * `preparation` ouvre tout démarrage (déphasage, installation, lecture du magasin) ; `telechargement`
+ * n'est posée que si des octets viennent RÉELLEMENT du réseau, ou si le boot attend un téléchargement
+ * anticipé en cours (#348). Servi par le magasin, un démarrage passe de la préparation au démarrage.
+ */
 export const PHASES_DU_BOOT = Object.freeze({
+  preparation: "preparation",
   telechargement: "telechargement",
   demarrage: "demarrage",
   donnees: "donnees",

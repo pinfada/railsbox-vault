@@ -634,11 +634,14 @@ export const MESSAGES = Object.freeze({
   plusTardEnCoursDepuis: (secondes, phase) =>
     `Démarrage de votre version actuelle depuis ${secondes} seconde(s) ; comptez ` +
     `${DUREE_DE_PLUS_TARD}. ${phase}`,
+  // Dit seulement quand des octets viennent RÉELLEMENT du réseau (#348) : servie par le magasin
+  // d'artefacts (ADR 0044), l'image déjà vérifiée passe de la préparation au démarrage (#242 point 4).
   phaseTelechargement: "Étape en cours : téléchargement de l'application.",
-  // Un démarrage ORDINAIRE ne dit pas « téléchargement » : le magasin d'artefacts peut servir l'image
-  // déjà vérifiée (ADR 0044), et la phase du coffre n'en dit pas plus (#242 point 4).
   phasePreparation: "Étape en cours : préparation de l'application.",
-  phaseDemarrage: "Étape en cours : démarrage de l'application.",
+  // Pourquoi c'est long, en une phrase, pour qui n'est pas du métier (#348).
+  phaseDemarrage:
+    "Étape en cours : démarrage de l'application. Cela prend du temps, car un ordinateur complet " +
+    "démarre dans votre navigateur.",
   phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",
   // Une seule source : `textes-de-la-revocation.mjs` (D4, C2-5′).
   avertissementDeRevocation,

@@ -54,10 +54,12 @@ test("m3 : après la restauration, les étapes 1 à 6 disent d'où vient le coff
 });
 
 test("#242 (4) : un démarrage ordinaire dit l'étape en cours quand le coffre la connaît", () => {
+  // Depuis #348, la phase `telechargement` n'est posée que si des octets viennent du réseau : la page
+  // la dit telle quelle, et la préparation a sa propre phase.
   const telechargement = progressionDuDemarrage({
     ecouleMs: 40_000,
     signesDeVie: 3,
-    phase: "telechargement",
+    phase: "preparation",
   });
   assert.match(telechargement, /Étape en cours : préparation de l'application/);
   const demarrage = progressionDuDemarrage({

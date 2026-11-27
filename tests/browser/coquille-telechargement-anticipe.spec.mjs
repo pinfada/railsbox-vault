@@ -28,6 +28,7 @@ const PREFIXE = "/artifacts/telechargement-anticipe/";
 
 const ecran = (page, titre) => page.getByRole("heading", { level: 2, name: titre, exact: true });
 const bouton = (page, nom) => page.getByRole("button", { name: nom, exact: true });
+const releve = async (page) => JSON.parse(await page.locator("#coquille-rapport").textContent());
 
 const sha256 = (octets) => createHash("sha256").update(octets).digest("hex");
 const octetsDe = (taille, motif) => Buffer.alloc(taille, motif);
@@ -98,9 +99,12 @@ function descripteurDEpreuve() {
  * Sert le descripteur, le manifeste v86, le module, le wasm, la graine et les six artefacts, et COMPTE
  * les demandes de chacun. Rend le compte, que l'épreuve lit à chaque instant.
  */
-async function servirLOrigine(page) {
+async function servirLOrigine(page, origine = { refuse: false }) {
   const demandes = {};
-  const compter = (nom) => (demandes[nom] = (demandes[nom] ?? 0) + 1);
+  const compter = (nom) => {
+    if (origine.refuse) return (origine.refusees = (origine.refusees ?? 0) + 1);
+    demandes[nom] = (demandes[nom] ?? 0) + 1;
+  };
   const servir =
     (corps, type = "application/octet-stream") =>
     (route) =>
@@ -115,15 +119,21 @@ async function servirLOrigine(page) {
     servir(JSON.stringify(MANIFESTE_V86), "application/json"),
   );
   await contexte.route(`**${ADRESSE_LIBV86}`, servir(LIBV86, "text/javascript"));
+  // Une origine qui REFUSE (503) ses artefacts tant que `origine.refuse` : ces demandes-là sont
+  // comptées à part, dans `origine.refusees`.
+  const servirOuRefuser = (corps, type) => (route) =>
+    origine.refuse
+      ? route.fulfill({ status: 503, body: "indisponible" })
+      : servir(corps, type)(route);
   await contexte.route(`**${ADRESSE_WASM}`, (route) => {
     compter("wasm");
-    return servir(WASM, "application/wasm")(route);
+    return servirOuRefuser(WASM, "application/wasm")(route);
   });
   await contexte.route(`**${PREFIXE}graine.ext4`, servir(GRAINE));
   for (const [cle, { nom, octets }] of Object.entries(ARTEFACTS)) {
     await contexte.route(`**${PREFIXE}${nom}`, (route) => {
       compter(cle);
-      return servir(octets)(route);
+      return servirOuRefuser(octets)(route);
     });
   }
   return demandes;
@@ -142,6 +152,19 @@ async function empreintesRangees(page) {
       return noms.sort();
     } catch {
       return [];
+    }
+  });
+}
+
+/** Le descripteur scellé est-il rangé au magasin ? */
+async function descripteurRange(page) {
+  return page.evaluate(async () => {
+    try {
+      const racine = await navigator.storage.getDirectory();
+      const dossier = await racine.getDirectoryHandle("vault-artefacts");
+      return (await (await dossier.getFileHandle("descripteur.scelle")).getFile()).size > 0;
+    } catch {
+      return false;
     }
   });
 }
@@ -188,15 +211,22 @@ test("#348 : les artefacts sont téléchargés dès l'ouverture du parcours, et 
     .toPass({ timeout: 30_000 });
   const avantLePremierGeste = { ...demandes };
   await expect(ecran(page, "Créer votre coffre")).toBeVisible();
+  expect.soft((await releve(page)).telechargementAnticipe, "le bilan publié").toEqual({
+    issue: "fait",
+    artefacts: Object.fromEntries(TOUS.map((nom) => [nom, "admis"])),
+  });
 
   await jusquALEtape4(page);
   const avantLeClic = { ...demandes };
 
   // L'étape 4 va au bout de l'acquisition, puis le module d'épreuve refuse de construire la machine.
   await bouton(page, "Démarrer l'application").click();
-  await expect(page.locator("#cycle-etat")).not.toHaveText(/demarrage-en-cours|^$/, {
-    timeout: DELAI,
-  });
+  await expect
+    .poll(async () => (await releve(page)).application?.demarree, { timeout: DELAI })
+    .toBe(false);
+  // Témoin que l'étape 4 a bien ACQUIS : le descripteur n'est rangé qu'une fois la réserve complète,
+  // après l'acquisition et avant la machine (#247, D1g).
+  expect(await descripteurRange(page), "l'étape 4 a acquis la réserve entière").toBe(true);
   // Les trois relevés ENSEMBLE. Sans le téléchargement anticipé, les deux premiers sont vides et le
   // troisième porte une demande par artefact : tout part au clic de l'étape 4.
   expect({ avantLePremierGeste, avantLeClic, apresLeClic: { ...demandes } }).toEqual({
@@ -204,4 +234,68 @@ test("#348 : les artefacts sont téléchargés dès l'ouverture du parcours, et 
     avantLeClic: UNE_FOIS_CHACUN,
     apresLeClic: UNE_FOIS_CHACUN,
   });
+});
+
+test("#348 : une origine qui refuse pendant les étapes 1 à 3 ne casse rien, et l'étape 4 télécharge comme avant", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "requêtes HTTP et OPFS réels : un moteur suffit");
+  test.setTimeout(240_000);
+  const origine = { refuse: true };
+  const demandes = await servirLOrigine(page, origine);
+  await page.goto(new URL("/index.html", SHELL_ORIGIN).toString(), { waitUntil: "commit" });
+  await expect(ecran(page, "Créer votre coffre")).toBeVisible({ timeout: DELAI });
+  await expect
+    .poll(async () => (await releve(page)).telechargementAnticipe?.issue, { timeout: 30_000 })
+    .toBe("fait");
+  const bilan = (await releve(page)).telechargementAnticipe;
+  expect(Object.values(bilan.artefacts)).toEqual(Array(TOUS.length).fill("echec"));
+  expect(await empreintesRangees(page), "rien de refusé n'est rangé").toEqual([]);
+
+  // Le parcours reste utilisable : la visite mène à l'étape 4, sans un mot sur ce refus.
+  await jusquALEtape4(page);
+  await expect(page.locator("#parcours-refus")).toBeEmpty();
+
+  // L'origine sert de nouveau : l'étape 4 fait ce qu'elle faisait avant #348 — une demande par
+  // artefact, au clic.
+  origine.refuse = false;
+  expect(demandes, "aucun artefact servi avant le clic").toEqual({});
+  await bouton(page, "Démarrer l'application").click();
+  await expect
+    .poll(async () => (await releve(page)).application?.demarree, { timeout: DELAI })
+    .toBe(false);
+  expect(await descripteurRange(page), "l'étape 4 a acquis la réserve entière").toBe(true);
+  expect(demandes).toEqual(UNE_FOIS_CHACUN);
+});
+
+test("#348 : DEUX onglets ouverts ensemble ne téléchargent qu'une fois", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "requêtes HTTP et OPFS réels : un moteur suffit");
+  test.setTimeout(240_000);
+  const demandes = await servirLOrigine(page);
+  const second = await page.context().newPage();
+  const adresse = new URL("/index.html", SHELL_ORIGIN).toString();
+  await Promise.all([
+    page.goto(adresse, { waitUntil: "commit" }),
+    second.goto(adresse, { waitUntil: "commit" }),
+  ]);
+  const issue = async (onglet) => (await releve(onglet)).telechargementAnticipe?.issue;
+  for (const onglet of [page, second]) {
+    await expect
+      .poll(() => issue(onglet), { timeout: 30_000 })
+      .toMatch(/^(fait|occupe|deja-present)$/);
+  }
+  const issues = [await issue(page), await issue(second)];
+  expect(
+    issues.filter((valeur) => valeur === "fait"),
+    "un seul onglet télécharge",
+  ).toHaveLength(1);
+  await expect
+    .poll(() => empreintesRangees(page), { timeout: 30_000 })
+    .toEqual(EMPREINTES_ATTENDUES);
+  expect(demandes, "une demande par artefact, pour les deux onglets").toEqual(UNE_FOIS_CHACUN);
+  await second.close();
 });

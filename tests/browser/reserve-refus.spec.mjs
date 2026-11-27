@@ -52,6 +52,15 @@ async function installer(nomDuMoteur, options) {
   const page = await navigateur.page();
   const releve = await visiter(page, origine);
   expect(releve.rapport.reserve.refus).toBeNull();
+  // Le TÉLÉCHARGEMENT ANTICIPÉ de cette visite réussie (#348) lit le descripteur : ses requêtes
+  // appartiennent à l'installation, pas au refus que l'épreuve mesure ensuite. Il est attendu jusqu'à
+  // son bilan, puis le journal de l'origine repart de zéro.
+  await expect
+    .poll(async () => (await lireLeReleve(page)).rapport?.telechargementAnticipe?.issue ?? null, {
+      timeout: 30_000,
+    })
+    .toMatch(/^(?!en-cours$)/);
+  origine.vider();
   return page;
 }
 

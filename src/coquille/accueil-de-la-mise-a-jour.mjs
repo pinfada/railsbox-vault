@@ -43,6 +43,7 @@ export function cheminDuDemarrage(rapport) {
 
 /** Le texte de chaque PHASE du démarrage (`src/vm/phase-du-boot.mjs`). */
 const TEXTES_DES_PHASES = Object.freeze({
+  preparation: MESSAGES.phasePreparation,
   telechargement: MESSAGES.phaseTelechargement,
   demarrage: MESSAGES.phaseDemarrage,
   donnees: MESSAGES.phaseDonnees,
