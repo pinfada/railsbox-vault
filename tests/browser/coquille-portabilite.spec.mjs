@@ -273,7 +273,9 @@ test("après une RÉVOCATION d'urgence, la phrase est refusée et le code ouvre"
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
   await ouvrirParLeCode(page, feuille);
   await attendreLEtat(page, ETATS_DU_VOLUME.ouvert);
+  // Deux temps (#265) : « Révoquer… » ouvre la confirmation, « Oui » envoie.
   await page.click("#revoquer-en-urgence");
+  await page.click("#revocation-oui");
   await expect(page.locator("#portabilite-etat")).toContainText("portabilite:revoque:1-retires", {
     timeout: DELAI,
   });

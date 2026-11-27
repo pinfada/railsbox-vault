@@ -41,7 +41,6 @@
 // et chaque écran des étapes 5 à 9 offre d'y revenir. La VISITE (neuf étapes, une fois, vers
 // l'avant) n'est pas l'USAGE (ouvrir, travailler, verrouiller, chaque jour).
 
-import { STORAGE_ERROR_CODES } from "../vm/storage-errors.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { GROUPES } from "./saisie-du-code.mjs";
 import { ECRANS, ETAPES, MESSAGES } from "./textes-du-parcours.mjs";
@@ -110,8 +109,12 @@ export const BLOCS = Object.freeze([
   "espace-de-travail",
   "sauvegarde",
   "restauration",
-  "revocation",
+  // Les blocs de la VUE (#265) : écrits dans le conteneur d'affichage, dans l'ordre où la vue les écrit.
+  "impose",
+  "fin",
+  "vue-codes",
   "sans-revoquer",
+  "revocation",
   "continuer",
   "retour",
 ]);
@@ -289,33 +292,6 @@ export function etapeAdmise(demandee, progression) {
 }
 
 /**
- * L'état du coffre, lu de ce que la coquille a PUBLIÉ : l'état du relevé, la ligne des moyens et le
- * relevé de l'interface de déverrouillage. Rien n'est demandé au Worker pour le savoir.
- *
- * @param {{ etat?: string | null, texteDesMoyens?: string | null, moyensProposes?: string[],
- *           dernierRefus?: string | null }} releves
- * @returns {string} une valeur de `COFFRE`
- */
-export function coffreObserve({
-  etat = null,
-  texteDesMoyens = "",
-  moyensProposes = [],
-  dernierRefus = null,
-}) {
-  if (etat === "ouvert") return COFFRE.ouvert;
-  const texte = String(texteDesMoyens ?? "").trim();
-  if (texte === "") return COFFRE.inconnu;
-  // La ligne que `rafraichirLInventaire` écrit pour un refus d'inventaire, et elle seule.
-  if (REFUS_D_INVENTAIRE.includes(dernierRefus) && texte.startsWith("Ce coffre ne peut pas")) {
-    return COFFRE.refuse;
-  }
-  // L'inventaire INCONNU (#231) : reconnu au refus TYPÉ que le Worker rend, non aux mots.
-  if (dernierRefus === STORAGE_ERROR_CODES.indeterminate) return COFFRE.inaccessible;
-  if (moyensProposes.length > 0) return COFFRE.verrouille;
-  return COFFRE.absent;
-}
-
-/**
  * Les sous-états de l'étape 3 quand la feuille est affichée DANS CETTE PAGE : annoncée, affichée,
  * puis recopiée — le code est encore dans le document, et la personne peut le revoir tant qu'elle n'a
  * pas verrouillé (#239 : la confirmation EST une ouverture par le code, après verrouillage).
@@ -350,7 +326,7 @@ export function etapeDeLURL(texte) {
  *
  * @param {{ pointeur: number | null, coffre: string, moyens?: string[], nombreDeCodes?: number,
  *           feuilleEprouvee?: boolean, progression?: object, sousEtatDuCode?: string,
- *           revocationFaite?: boolean, sansRevoquer?: boolean, phrasePerdue?: boolean,
+ *           fin?: string | null, sansRevoquer?: boolean, phrasePerdue?: boolean,
  *           nouveauCodeDemande?: boolean, refus?: string | null, moteur?: string }} observation
  * @returns {string} une clé de `ECRANS`
  */
@@ -362,7 +338,7 @@ export function ecranCourant({
   feuilleEprouvee = false,
   progression = PROGRESSION_INITIALE,
   sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce,
-  revocationFaite = false,
+  fin = null,
   sansRevoquer = false,
   phrasePerdue = false,
   nouveauCodeDemande = false,
@@ -384,8 +360,8 @@ export function ecranCourant({
       feuilleEprouvee,
       progression,
       sousEtatDuCode,
-      // Retenue par la progression, la révocation survit au rechargement (#223).
-      revocationFaite: revocationFaite || progression.revocationFaite === true,
+      // La fin offerte par l'ÉTAT (S3) ; l'indice persisté (#223) n'en choisit jamais d'autre (D4).
+      fin,
       sansRevoquer,
       nouveauCodeDemande,
       moteur,
@@ -424,7 +400,7 @@ function ecranOuvert({
   feuilleEprouvee,
   progression,
   sousEtatDuCode,
-  revocationFaite,
+  fin,
   sansRevoquer,
   nouveauCodeDemande,
   moteur,
@@ -447,7 +423,7 @@ function ecranOuvert({
     8: "recuperer-preparer",
     // L'étape 9 est FACULTATIVE (décision du 19/09/2026) : une visite ne détruit pas le moyen
     // d'ouverture quotidien de la personne.
-    9: revocationFaite ? "termine" : sansRevoquer ? "termine-sans-revoquer" : "revoquer",
+    9: fin ?? (sansRevoquer ? "termine-sans-revoquer" : "revoquer"),
   };
   const choisi = parEtape[pointeur] ?? (progression.visiteTerminee ? "accueil" : "travailler");
   if (moteur === "firefox" && (choisi === "travailler" || choisi === "accueil")) {
@@ -466,7 +442,9 @@ export const ECRANS_AVEC_RETOUR = Object.freeze([
   "restaurer-ailleurs",
   "recuperer-preparer",
   "revoquer",
+  "etat-du-coffre",
   "termine",
+  "termine-sans-attestation",
   "termine-sans-revoquer",
 ]);
 
@@ -608,7 +586,8 @@ export const GESTES_LONGS = Object.freeze([
   "verrouiller-le-coffre",
   "sauvegarder-le-coffre",
   "restaurer-le-coffre",
-  "revoquer-en-urgence",
+  // « Révoquer… » n'y est plus (#265) : ses boutons sont écrits par la VUE, que la page ne ferme pas à la
+  // main — fermer c'est dériver `aria-disabled` de la table (C2-2), jamais poser `disabled`.
 ]);
 
 /**

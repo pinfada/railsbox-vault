@@ -705,6 +705,27 @@ Workers `blob:` restent interdits par la politique de service (ADR 0013).
   d'attente, parfois un PDF sur le disque. La coquille affiche ; elle n'imprime pas, et ne le promet
   pas.
 
+  **La révocation d'urgence est une AIDE à la personne, pas une garde (#265, ADR 0039 § 5, ADR
+  0049).** Elle est irréversible : elle se demande en deux temps (« Révoquer… » ouvre une
+  confirmation qui redit ce qui part et ce qui reste, au compte exact des feuilles ; « Oui, révoquer
+  les autres moyens » envoie), « Terminer sans révoquer » précède « Révoquer… » dans le DOM — donc à
+  l'écran et à la tabulation —, et « Révoquer… » n'est jamais le bouton principal. Ce que la page
+  AFFIRME du coffre est une projection de l'état du magasin (`src/coquille/`), écrite par un rendeur
+  unique dans un conteneur masqué par la feuille de style tant qu'aucune estampille n'a été posée :
+  une page dont le script ne s'exécute plus n'affirme rien. Le constat de la feuille et les moyens
+  du coffre ne sont donnés à la page que par deux portes (`lirePublic`, `lireLeConstat`), et le
+  canal n'écrit plus aucun miroir. **Le masquage est vérifié AVANT tout envoi** : si l'affichage ne
+  peut pas être masqué, ni la révocation, ni l'ajout d'un code, ni la restauration ne partent (zéro
+  message sur le canal, mesuré sur trois moteurs). Après un envoi dont l'issue est inconnue (réponse
+  malformée, refus, mort du Worker), la page dit « peut-être » — jamais « refusée » — et n'offre
+  plus de révocation avant la vérification. Après un rechargement, l'indice persisté n'ouvre que «
+  aucun geste de révocation n'a été fait dans cette séance » : il ne fait JAMAIS dire « révoqué ».
+  **Ce qui n'est PAS prouvé** : l'annonce par un lecteur d'écran réel (seuls le rôle, le nom
+  accessible et l'ordre de tabulation le sont) ; un navigateur gravement défaillant peut laisser un
+  nœud visible, ce qui n'autorise jamais un envoi ni une modification (L11″) ; la glue de `public/`
+  n'est mutée par aucune campagne (ADR 0049, C2-L2) ; l'ordre d'écriture de `parcours.json` entre
+  deux documents (L13′) — aucun de ses champs ne ferme ni n'ouvre un geste de récupération.
+
   **Le parcours guidé (#193, ADR 0040) exige que la feuille soit ÉPROUVÉE avant d'avancer**
   (amendement du 18/09/2026, #239) : après « J'ai recopié mon code », la personne VERROUILLE son
   coffre — la page se recharge, et le code part avec le document —, puis le rouvre avec le code lu

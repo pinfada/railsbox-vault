@@ -1,0 +1,193 @@
+{
+  "nom": "360-light",
+  "moment": "apres",
+  "ecrans": {
+    "etape-9": {
+      "blocsVisibles": ["sans-revoquer", "revocation"],
+      "boutons": [
+        {
+          "id": "parcours-sans-revoquer",
+          "texte": "Terminer sans révoquer",
+          "y": 901,
+          "principal": true,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1135,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": ["parcours-sans-revoquer", "revoquer-en-urgence"],
+      "ordreVisuel": ["parcours-sans-revoquer", "revoquer-en-urgence"],
+      "revocationsEnvoyees": 0,
+      "focus": "parcours-titre",
+      "confirmation": false,
+      "descriptionDuFocus": null
+    },
+    "etape-9-confirmation": {
+      "blocsVisibles": ["sans-revoquer", "revocation"],
+      "boutons": [
+        {
+          "id": "parcours-sans-revoquer",
+          "texte": "Terminer sans révoquer",
+          "y": 827,
+          "principal": true,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1061,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revocation-annuler",
+          "texte": "Annuler",
+          "y": 1573,
+          "principal": false,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revocation-oui",
+          "texte": "Oui, révoquer les autres moyens",
+          "y": 1634,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": [
+        "parcours-sans-revoquer",
+        "revoquer-en-urgence",
+        "revocation-annuler",
+        "revocation-oui"
+      ],
+      "ordreVisuel": [
+        "parcours-sans-revoquer",
+        "revoquer-en-urgence",
+        "revocation-annuler",
+        "revocation-oui"
+      ],
+      "revocationsEnvoyees": 0,
+      "focus": "revocation-annuler",
+      "confirmation": true,
+      "descriptionDuFocus": null
+    },
+    "etape-9-annulee": {
+      "blocsVisibles": ["sans-revoquer", "revocation"],
+      "boutons": [
+        {
+          "id": "parcours-sans-revoquer",
+          "texte": "Terminer sans révoquer",
+          "y": 827,
+          "principal": true,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1061,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": ["parcours-sans-revoquer", "revoquer-en-urgence"],
+      "ordreVisuel": ["parcours-sans-revoquer", "revoquer-en-urgence"],
+      "revocationsEnvoyees": 0,
+      "focus": "revoquer-en-urgence",
+      "confirmation": false,
+      "descriptionDuFocus": null
+    },
+    "accueil": {
+      "blocsVisibles": ["sauvegarde", "revocation"],
+      "boutons": [
+        {
+          "id": "sauvegarder-le-coffre",
+          "texte": "Sauvegarder mon coffre",
+          "y": 1079,
+          "principal": false,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1314,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": ["sauvegarder-le-coffre", "revoquer-en-urgence"],
+      "ordreVisuel": ["sauvegarder-le-coffre", "revoquer-en-urgence"],
+      "revocationsEnvoyees": 0,
+      "focus": "parcours-titre",
+      "confirmation": false,
+      "descriptionDuFocus": null
+    },
+    "accueil-confirmation": {
+      "blocsVisibles": ["sauvegarde", "revocation"],
+      "boutons": [
+        {
+          "id": "sauvegarder-le-coffre",
+          "texte": "Sauvegarder mon coffre",
+          "y": 1079,
+          "principal": false,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revoquer-en-urgence",
+          "texte": "Révoquer tous les autres moyens d'ouvrir ce coffre",
+          "y": 1314,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revocation-annuler",
+          "texte": "Annuler",
+          "y": 1825,
+          "principal": false,
+          "danger": false,
+          "ordreCss": "0"
+        },
+        {
+          "id": "revocation-oui",
+          "texte": "Oui, révoquer les autres moyens",
+          "y": 1886,
+          "principal": false,
+          "danger": true,
+          "ordreCss": "0"
+        }
+      ],
+      "ordreDeTabulation": [
+        "sauvegarder-le-coffre",
+        "revoquer-en-urgence",
+        "revocation-annuler",
+        "revocation-oui"
+      ],
+      "ordreVisuel": [
+        "sauvegarder-le-coffre",
+        "revoquer-en-urgence",
+        "revocation-annuler",
+        "revocation-oui"
+      ],
+      "revocationsEnvoyees": 0,
+      "focus": "revocation-annuler",
+      "confirmation": true,
+      "descriptionDuFocus": null
+    }
+  }
+}

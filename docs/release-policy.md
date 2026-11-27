@@ -393,10 +393,102 @@ elle mesure ce que le **public** reçoit, et un hébergeur qui dégrade `HEAD` l
 en-tête absent » là où l'en-tête est servi — un faux négatif sur un en-tête de sécurité. Le motif
 est écrit dans le module et fixé par une épreuve.
 
+### L'image dans l'arbre publié, les limites de l'hébergeur et l'envoi inerte (#45, ADR 0050)
+
+**L'image est publiée avec `--avec-image`.** Sans ce drapeau (c'est `npm run check`), l'arbre de la
+coquille ne porte que le descripteur, quand il existe : la coquille publiée n'aurait ni rootfs, ni
+paquet, ni noyau, ni initrd, ni BIOS à aller chercher sous `/artifacts/`, et ne démarrerait pas.
+Avec lui (c'est `publication.yml`), `tools/publier-image.mjs` copie le descripteur **et seulement ce
+qu'il nomme**, vérifie la taille de chacun, l'empreinte du noyau, de l'initrd et des deux BIOS, et
+l'empreinte **décompressée** du rootfs, du paquet, de la graine et du paquet précédent (refus de
+même taille et d'autre contenu : code 4). `tests/e2e/publie-seul.spec.mjs` démarre ensuite
+l'application sous Chromium, jusqu'à une page Rails rendue, sur un arbre **seul** (sans servir le
+dossier local `artifacts/`), construit du **même commit** que le job, et compare son image, octet
+pour octet, à celle de l'arbre que le job publie.
+
+**Les limites de l'hébergeur se mesurent avant tout envoi** :
+`node tools/publier.mjs --verifier <arbre> --profil <cloudflare-pages|netlify>`. Un dépassement rend
+le code **7**. Profils (valeurs du 26/11/2026, à revérifier le jour du choix) :
+
+| Profil             | Par fichier                                       | Fichiers | Règles `_headers`     |
+| ------------------ | ------------------------------------------------- | -------- | --------------------- |
+| `cloudflare-pages` | 25 Mio                                            | 20 000   | 100 (lignes ≤ 2000 c) |
+| `netlify`          | aucune limite publiée ; avertit au-delà de 10 Mio | —        | —                     |
+
+> **État au 26/11/2026 : l'image réelle dépasse 25 Mio, pour TROIS fichiers** : le rootfs `.gz`
+> (128,5 Mio), le paquet courant (49,1 Mio) et le paquet **précédent** (48,5 Mio, rétention 1). Sous
+> `cloudflare-pages`, la mesure rend 7 et nomme ces trois fichiers. Les découper change le format du
+> descripteur (ADR 0046) : c'est une décision du mainteneur, **non prise** (#334). Tant qu'elle ne
+> l'est pas, l'envoi vers Cloudflare Pages est refusé par construction.
+>
+> Le profil `netlify` ne vaut que pour `--verifier`, à titre **informatif** : aucun envoi Netlify
+> n'existe. L'outil d'envoi n'accepte aucun profil (`cloudflare-pages` seul).
+
+**L'envoi est écrit et inerte.** `publication.yml` (déclenchement `workflow_dispatch` seul) a deux
+jobs après `publier` :
+
+- `repetition` (si `envoyer` est faux, le défaut) : aucun secret, aucun environnement. Elle relit
+  l'inventaire des arbres, mesure les limites et affiche, pour chaque origine, le projet, la
+  commande exacte `npx --yes wrangler@<version épinglée> pages deploy …` et les dépassements. Elle
+  n'envoie rien (`RIEN N'A ÉTÉ ENVOYÉ.`). Un dépassement y est **rapporté**, pas masqué.
+- `deployer` (si `envoyer` est vrai) : `environment: production`, puis une **garde** exécutée avant
+  l'étape qui reçoit les secrets (`tools/publier-garde-environnement.mjs`, jeton du workflow,
+  `contents: read` suffit : mesuré le 26/11/2026). Elle exige (a) un **relecteur requis** dans la
+  configuration de l'environnement et (b) une approbation `approved` pour `production` **de ce run**
+  (`GET /actions/runs/{run_id}/approvals`) : une règle ajoutée après le démarrage du job satisfait
+  (a) sans que ce run ait attendu quiconque, seul (b) le voit. Elle échoue fermée. Puis **un seul
+  appel** d'envoi pour les deux arbres : noms de projet et limites des DEUX sont contrôlés avant le
+  premier envoi (un échec sur l'un donne zéro appel), puis l'application part avant la coquille.
+  Sans les secrets, l'étape d'envoi s'arrête en répétition à blanc et le dit.
+
+**`environment: production` ne protège rien par lui-même.** GitHub **crée** un environnement absent,
+sans aucune règle : le job partirait sans approbation. La protection humaine tient à la
+configuration ci-dessous, que la garde ne vérifie qu'en partie. **Limites de la garde** : elle ne
+voit que les relecteurs requis et l'approbation de ce run ; le jeton du workflow **ne lit pas les
+secrets**, elle ne peut donc pas vérifier que les secrets sont limités à l'environnement ni qu'aucun
+secret de dépôt du même nom n'existe ; et la **forme** de ses deux réponses n'a pas été vue sur un
+environnement protégé réel (la sonde n'a rendu que `[]` ; elle lit la forme documentée de l'API et
+échoue fermée).
+
+#### Ce que le mainteneur doit créer lui-même (rien n'est créé par ce dépôt)
+
+1. **Deux projets Cloudflare Pages**, en « Direct Upload » (pas de lien Git), de **branche de
+   production `main`** (`wrangler … --branch main`) : un pour la coquille, un pour l'application.
+   Leurs noms se saisissent à chaque lancement (`projet-pages-coquille`,
+   `projet-pages-application`).
+2. **Les deux origines**, distinctes : `<nom>.pages.dev` et `<nom-app>.pages.dev`, ou un domaine
+   propre. Elles se saisissent au lancement (`origine-coquille`, `origine-application`) et sont
+   inscrites dans les arbres (CSP, `frame-src`, `_headers`) : **changer d'origine plus tard est une
+   migration** (ADR 0009).
+3. **L'environnement GitHub `production`** (Settings → Environments), créé **avant** tout lancement
+   avec `envoyer`, avec **Required reviewers** : le mainteneur lui-même. Recommandé : restreindre
+   les branches de déploiement à `main`. **À vérifier avant toute activation** : (a) la page de
+   l'environnement affiche les relecteurs requis ; (b) un lancement de `Publication` avec `envoyer`
+   et **sans secrets** demande bien l'approbation, puis s'arrête en répétition à blanc.
+4. **Deux secrets, au niveau de l'environnement `production`** (pas du dépôt), et **aucun secret de
+   dépôt ni d'organisation du même nom** (Settings → Secrets : à vérifier, la garde ne le voit pas)
+   :
+   - `CLOUDFLARE_API_TOKEN` : un jeton d'API **à permission unique** « Account → Cloudflare Pages →
+     Edit », restreint à ce compte. Aucune autre permission (ni Workers, ni DNS, ni Zone) ;
+   - `CLOUDFLARE_ACCOUNT_ID` : l'identifiant de compte (un identifiant, pas un secret fort, mais
+     rangé avec le jeton).
+5. **HSTS et le relevé des en-têtes réels** restent des obligations d'exploitant à la mise en
+   service (ci-dessus, #124, #125).
+
+Lancer ensuite `Publication` avec `envoyer` coché. Rien d'autre à configurer. Le jeton n'est lu que
+par l'étape d'envoi, par `env:`, jamais dans un `run:` ; l'outil n'imprime que sa **présence**.
+
+**Limites écrites.** `wrangler` est épinglé par version, pas par empreinte (`npx` récupère le paquet
+npm de cette version). Le dépôt n'a pas éprouvé un envoi réel : la répétition à blanc ne prouve ni
+les droits du jeton, ni l'existence des projets. L'image publiée est celle du run qui la construit
+(fabrication non reproductible au bit près, `reprise.yml`) : l'épreuve de retour arrière reste faite
+**sans** `--avec-image`. `/artifacts/` suit la politique de cache `no-cache` de la coquille
+(ADR 0023) ; une politique propre aux grosses images est une décision ultérieure.
+
 ### Ce que la chaîne ne fait pas encore
 
-Aucun déploiement réel, aucune signature, aucun SBOM. Un Service Worker sert la réserve hors ligne
-depuis D1h-b
+Aucun déploiement réel (l'envoi est écrit et inerte, voir ci-dessus), aucune signature, aucun SBOM.
+Un Service Worker sert la réserve hors ligne depuis D1h-b
 ([ADR 0048](decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)) ;
 `publier.mjs` le génère (séquence monotone : par défaut le nombre de commits, `--sequence <n>` la
 fixe). La politique de cache, en revanche, n'est plus héritée :

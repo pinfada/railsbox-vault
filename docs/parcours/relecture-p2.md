@@ -12,6 +12,12 @@ comprenez en lisant, et ce qui vous arrête.
 aussi tout mot inconnu, toute phrase trop longue, et tout moment où vous ne sauriez pas quoi faire.
 Vos retours seront consignés dans la PR, sans votre nom.
 
+**La séance** : la relecture se fait en présence du mainteneur, qui observe le logiciel et non vous.
+Le matériel est dans `docs/parcours/seance-de-relecture/` : les
+[consignes pour la personne](seance-de-relecture/consignes.md), la
+[grille d'observation](seance-de-relecture/grille.md) et la
+[conduite de la séance, pour le mainteneur](seance-de-relecture/conduite.md).
+
 ## Ce que chaque écran affiche
 
 Dans cet ordre : « Étape N sur 9 », le titre, ce qui va se passer, « Ce que vous avez à faire : … »,
@@ -37,6 +43,44 @@ Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 > RailsBox Vault vérifie ce que cet appareil contient déjà.
 >
 > Ce que vous avez à faire : Rien : patientez quelques secondes.
+
+## Ce que l'écran d'entrée dit avant l'étape 1
+
+Au-dessus du titre de l'étape 1, la page dit une phrase, trois garanties, puis ce que cette version
+**ne promet pas**. Les limites ne sont pas repliées : elles se lisent sans cliquer. Elles ne
+reviennent pas à l'écran « Rouvrir votre coffre ».
+
+> Votre application, chez vous : elle s'ouvre comme un site, mais tourne entièrement sur cet
+> appareil, sans serveur.
+
+- **Elle tourne sur cet appareil.** Tout se passe dans ce navigateur : aucun serveur ne fait le
+  travail à votre place.
+- **Vos données restent ici, chiffrées.** Rien n'est lisible sans votre secret, et rien ne quitte
+  l'appareil sauf la sauvegarde que vous demandez.
+- **Elle marche hors ligne.** Une fois démarrée, elle n'a plus besoin d'Internet : vous pouvez
+  couper la connexion.
+
+### Ce que cette version ne promet pas
+
+- **Chrome ou Edge seulement.** Utilisez Chrome ou Edge récents, sur ordinateur. Dans Firefox,
+  l'application ne démarre pas. Safari n'est pas pris en charge.
+- **Un premier démarrage long.** Le premier démarrage dure environ deux minutes : de 82 à 126
+  secondes mesurées, sur des machines de test. Sur un portable modeste ou un téléphone, ce n'est pas
+  mesuré.
+- **Un gros téléchargement.** Le premier démarrage télécharge environ 200 Mo. Évitez une connexion
+  limitée en volume.
+- **Beaucoup de mémoire.** L'application réserve 512 Mo pour elle seule. Le navigateur a dépassé 1,5
+  Go au plus fort du démarrage, au-delà de la cible de 1,2 Go. Fermez vos autres onglets.
+- **Données non sensibles seulement.** N'y mettez aucune donnée réelle ni sensible. Cette version
+  sert à essayer, pas à garder des secrets.
+- **Une application non signée.** L'application n'est pas signée : rien ne prouve encore que le code
+  reçu est bien celui que l'auteur a publié. La signature est prévue plus tard (jalon 6).
+- **Hors connexion, après un premier démarrage.** Le premier démarrage a besoin d'Internet. Ensuite,
+  l'application redémarre sans connexion, mais elle ne peut pas savoir si une nouvelle version
+  existe.
+
+Lien affiché sous la liste :
+[Les chiffres et leurs sources](https://github.com/pinfada/railsbox-vault/blob/main/docs/limites-de-cette-version.md).
 
 ## Étape 1 sur 9 — Créer votre coffre
 
@@ -151,9 +195,9 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Quand vous êtes prêt à écrire, cliquez sur « Afficher mon code de
 > récupération ».
 
-Boutons et champs : « Afficher mon code de récupération », « Revenir : j'ai toujours ma feuille »
-(seulement quand la personne a dit ne plus l'avoir), « Révoquer tous les autres moyens d'ouvrir ce
-coffre ».
+Boutons et champs : le compte des codes de récupération que ce coffre porte déjà, « Afficher mon
+code de récupération », « Revenir : j'ai toujours ma feuille » (seulement quand la personne a dit ne
+plus l'avoir), « Révoquer tous les autres moyens d'ouvrir ce coffre ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -247,8 +291,8 @@ Messages qui peuvent s'afficher sur cet écran :
 >
 > Durée : Le verrouillage prend quelques secondes.
 
-Boutons et champs : « Je n'ai plus cette feuille — afficher un nouveau code », « Verrouiller mon
-coffre ».
+Boutons et champs : le compte des codes de récupération que ce coffre porte déjà, « Je n'ai plus
+cette feuille — afficher un nouveau code », « Verrouiller mon coffre ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -713,7 +757,7 @@ Messages qui peuvent s'afficher sur cet écran :
 > Terminer sans révoquer ». Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres
 > moyens d'ouvrir ce coffre », puis notez le nouveau numéro de feuille sur votre feuille.
 
-Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre », « Terminer sans révoquer
+Boutons et champs : « Terminer sans révoquer », « Révoquer tous les autres moyens d'ouvrir ce coffre
 », « Revenir à mon application ».
 
 Messages qui peuvent s'afficher sur cet écran :
@@ -731,11 +775,9 @@ Messages qui peuvent s'afficher sur cet écran :
   moyen — 1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V.
 - Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.
 
-### Écran : Parcours terminé, rien n'a été révoqué
+### Écran : Parcours terminé
 
-> Vous avez fait le tour de votre coffre, sans rien révoquer : chacun des moyens qui l'ouvraient
-> l'ouvre toujours. Si un jour l'un de ces moyens a pu être vu, la révocation reste disponible sur
-> l'écran de votre application.
+> Vous avez fait le tour de votre coffre.
 >
 > Ce que vous avez à faire : Pour vous servir de votre application, cliquez sur « Revenir à mon
 > application ». Pour recommencer le parcours depuis le début, effacez les données du site dans les
@@ -745,16 +787,25 @@ Boutons et champs : « Revenir à mon application ».
 
 ### Écran : Parcours terminé
 
-> Seul le moyen que vous avez utilisé pour ouvrir ce coffre l'ouvre désormais. Les sauvegardes déjà
-> faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de tomber entre
-> de mauvaises mains, puis faites une nouvelle sauvegarde.
+> Vous avez fait le tour de votre coffre.
 >
-> Ce que vous avez à faire : Notez sur votre feuille le nouveau numéro de feuille. Pour vous servir
-> de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours
-> depuis le début, effacez les données du site dans les réglages du navigateur : supprimer les
-> cookies ne suffit pas.
+> Ce que vous avez à faire : Pour vous servir de votre application, cliquez sur « Revenir à mon
+> application ». Pour recommencer le parcours depuis le début, effacez les données du site dans les
+> réglages du navigateur : supprimer les cookies ne suffit pas.
 
-Boutons et champs : « Revenir à mon application ».
+Boutons et champs : ce que l'état du coffre impose : lecture, modification, révocation en cours ou à
+vérifier, « Revenir à mon application ».
+
+### Écran : Parcours terminé
+
+> Vous avez fait le tour de votre coffre.
+>
+> Ce que vous avez à faire : Pour vous servir de votre application, cliquez sur « Revenir à mon
+> application ». Pour recommencer le parcours depuis le début, effacez les données du site dans les
+> réglages du navigateur : supprimer les cookies ne suffit pas.
+
+Boutons et champs : la fin du parcours atteinte par l'indice seul, qui ne dit que : aucun geste dans
+cette séance, « Revenir à mon application ».
 
 **Questions**
 
@@ -770,6 +821,217 @@ Boutons et champs : « Revenir à mon application ».
    vous avez ouvert avec le code) ; sauriez-vous revenir à votre application ?
 
    _Votre réponse :_
+
+## Ce que la page dit de la révocation d'urgence
+
+La révocation retire des moyens d'ouvrir le coffre : elle ne se défait pas. La page la demande en
+deux temps (un premier bouton ouvre la confirmation, un second envoie), et elle ne dit « révoqué »
+qu'après la réponse du coffre. Chacun des messages ci-dessous dit ce qu'il affirme ; signalez tout
+message qui vous paraît dire plus que ce que la page peut savoir.
+
+### Écran : Votre coffre
+
+> Ce que votre coffre est en train de faire, et ce que cette page en sait, est écrit ci-dessous.
+>
+> Ce que vous avez à faire : Lisez le message ci-dessous : il dit quoi faire.
+
+Boutons et champs : ce que l'état du coffre impose : lecture, modification, révocation en cours ou à
+vérifier, « Revenir à mon application ».
+
+### Message « chargement »
+
+_Ce message n'affirme rien du coffre._
+
+> **Lecture de votre coffre**
+
+RailsBox Vault lit ce que votre coffre contient : patientez quelques secondes.
+
+### Message « chargement-apres-revocation »
+
+_Ce message dit que la révocation a été faite (seulement après la réponse du coffre)._
+
+> **Révocation faite : lecture de votre coffre**
+
+La révocation a été faite. RailsBox Vault relit ce que votre coffre contient : patientez quelques
+secondes.
+
+### Message « modification-en-cours »
+
+_Ce message n'affirme rien du coffre._
+
+> **Modification de votre coffre en cours**
+
+Votre coffre est en train d'être modifié : ne fermez pas cet onglet.
+
+### Message « modification-en-cours-apres-revocation »
+
+_Ce message dit que la révocation a été faite (seulement après la réponse du coffre)._
+
+> **Modification de votre coffre en cours**
+
+La révocation a été faite. Votre coffre est en train d'être modifié : ne fermez pas cet onglet.
+
+### Message « relire »
+
+_Ce message n'affirme rien du coffre._
+
+> **Votre coffre doit être relu**
+
+Votre coffre n'a pas pu relire ce qu'il contient : cet écran ne peut plus dire quels moyens
+l'ouvrent, ni si votre feuille est toujours juste. Rouvrez votre coffre : rechargez la page, puis
+ouvrez-le avec le moyen que vous avez utilisé.
+
+### Message « relire-apres-revocation »
+
+_Ce message dit que la révocation a été faite (seulement après la réponse du coffre)._
+
+> **Votre coffre doit être relu**
+
+La révocation a été faite. Mais votre coffre n'a pas pu relire ce qu'il contient : cet écran ne peut
+plus dire quels moyens l'ouvrent encore, ni si votre feuille est toujours juste. Rouvrez votre
+coffre : rechargez la page, puis ouvrez-le avec le moyen que vous avez utilisé.
+
+### Message « revoquer-en-cours »
+
+_Ce message dit qu'une révocation a peut-être eu lieu._
+
+> **Révocation en cours**
+
+La demande est partie et ne peut plus être annulée : elle a peut-être déjà eu lieu. Attendez la
+réponse du coffre.
+
+### Message « revocation-en-cours »
+
+_Ce message dit qu'une révocation a peut-être eu lieu._
+
+> Une révocation est en cours : elle a peut-être déjà eu lieu, et elle ne peut plus être annulée.
+
+### Message « revocation-incertaine »
+
+_Ce message dit qu'une révocation a peut-être eu lieu._
+
+> **Révocation à vérifier**
+
+La révocation est partie, mais le coffre ne l'a pas confirmée : elle a peut-être eu lieu. Rouvrez
+votre coffre : si l'un des moyens que vous vouliez retirer l'ouvre encore, refaites la révocation.
+Tant que vous ne l'avez pas vérifié, aucune nouvelle révocation n'est offerte.
+
+### Message « termine »
+
+_Ce message dit que la révocation a été faite (seulement après la réponse du coffre)._
+
+> **Parcours terminé**
+
+La révocation a été faite : seul le moyen que vous avez utilisé pour ouvrir ce coffre l'ouvre
+désormais. Les sauvegardes déjà faites restent ouvrables par les anciens moyens : détruisez-les si
+elles risquent de tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde. Notez sur
+votre feuille le nouveau numéro de feuille.
+
+### Message « termine-sans-attestation »
+
+_Ce message n'affirme rien du coffre._
+
+> **Parcours terminé**
+
+Aucun geste de révocation n'a été fait dans cette séance. Cette page ne sait pas ce qui a pu être
+fait avant : elle ne l'affirme ni ne le nie. Les moyens qui ouvrent ce coffre sont ceux que vous
+voyez en le rouvrant.
+
+### Message « termine-sans-revoquer »
+
+_Ce message dit qu'aucun geste de révocation n'a été fait dans cette séance._
+
+> **Parcours terminé**
+
+Aucun geste de révocation n'a été fait dans cette séance. Vous avez fait le tour de votre coffre
+sans révoquer. Si un jour l'un de ses moyens d'ouverture a pu être vu, la révocation reste
+disponible sur l'écran de votre application.
+
+### Message « annulee »
+
+_Ce message dit qu'aucun geste de révocation n'a été fait dans cette séance._
+
+> Confirmation annulée. Aucun geste de révocation n'a été fait dans cette séance.
+
+### Message « envoi-annule-affichage »
+
+_Ce message dit qu'aucun geste de révocation n'a été fait dans cette séance._
+
+> La demande n'a pas été envoyée : l'affichage de votre coffre n'a pas pu être protégé d'abord.
+> Aucun geste de révocation n'a été fait dans cette séance.
+
+### Message « lancement-annule-affichage »
+
+_Ce message dit que la demande n'a pas été lancée._
+
+> La demande n'a pas été lancée : l'affichage de votre coffre n'a pas pu être protégé d'abord. Rien
+> n'a été modifié par cette demande.
+
+### Message « indice-non-ecrit »
+
+_Ce message dit que la révocation a été faite (seulement après la réponse du coffre)._
+
+> La révocation a été faite, mais cette page n'a pas pu l'inscrire dans sa progression : cela ne
+> change rien à votre coffre.
+
+### Message « demande-refusee-en-cours »
+
+_Ce message dit qu'une révocation a peut-être eu lieu._
+
+> Une révocation est déjà en cours : elle a peut-être déjà eu lieu. Attendez la réponse du coffre.
+
+### Message « demande-refusee-a-verifier »
+
+_Ce message dit qu'une révocation a peut-être eu lieu._
+
+> Une révocation précédente n'a pas été confirmée : elle a peut-être eu lieu. Rouvrez votre coffre
+> pour le vérifier avant d'en demander une autre.
+
+### Message « demande-refusee-deja-faite »
+
+_Ce message dit que la révocation a été faite (seulement après la réponse du coffre)._
+
+> La révocation a déjà été faite dans cette séance : elle ne se refait pas.
+
+### Message « demande-refusee-donnees-inconnues »
+
+_Ce message n'affirme rien du coffre._
+
+> Cette page ne sait pas encore ce que contient votre coffre : patientez un instant, ou rouvrez-le.
+
+### Message « geste-refuse »
+
+_Ce message n'affirme rien du coffre._
+
+> Ce geste n'est pas possible à cet instant.
+
+### Message « affichage-non-a-jour »
+
+_Ce message n'affirme rien du coffre._
+
+> L'affichage de votre coffre n'a pas pu être actualisé : ce qui s'affiche ici peut ne pas être
+> exact. Rechargez la page.
+
+### La confirmation, selon le moyen avec lequel le coffre a été ouvert
+
+- Ouvert par la phrase : Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu.
+  Seul le moyen avec lequel vous venez d'ouvrir ce coffre — votre phrase — continuera de l'ouvrir.
+  Vos codes de récupération ne fonctionneront plus : votre feuille de récupération ne servira plus à
+  rien, créez-en une nouvelle ensuite. Vos sauvegardes déjà faites ne changent pas : elles restent
+  ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez pas cliqué sur « Oui,
+  révoquer les autres moyens » ; « Annuler » ne change rien.
+- Ouvert par la passkey : Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu.
+  Seul le moyen avec lequel vous venez d'ouvrir ce coffre — votre passkey — continuera de l'ouvrir.
+  Votre phrase et vos codes de récupération ne fonctionneront plus : votre feuille de récupération
+  ne servira plus à rien, créez-en une nouvelle ensuite. Vos sauvegardes déjà faites ne changent pas
+  : elles restent ouvrables par les anciens moyens. Rien n'est retiré tant que vous n'avez pas
+  cliqué sur « Oui, révoquer les autres moyens » ; « Annuler » ne change rien.
+- Ouvert par le code : Révoquer est irréversible : ce qui est retiré ne pourra pas être rendu. Seul
+  le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de
+  l'ouvrir. Votre phrase ne fonctionnera plus sur ce coffre : seul le code de votre feuille
+  l'ouvrira. Vos sauvegardes déjà faites ne changent pas : elles restent ouvrables par les anciens
+  moyens. Rien n'est retiré tant que vous n'avez pas cliqué sur « Oui, révoquer les autres moyens »
+  ; « Annuler » ne change rien.
 
 ## Messages quand quelque chose ne va pas
 

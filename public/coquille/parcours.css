@@ -39,6 +39,15 @@
 [hidden] {
   display: none !important;
 }
+/* L'AFFICHAGE du coffre (#265, ADR 0049) : MASQUÉ PAR DÉFAUT, par cette règle et non par le script. Sans
+   l'estampille `data-vue`, posée en dernier par le rendeur, le conteneur n'est jamais visible, même
+   `hidden` retiré ; l'espace réservé, statique, ne cède la place qu'à lui. */
+#affichage:not([data-vue]) {
+  display: none !important;
+}
+#affichage[data-vue] + #affichage-attente {
+  display: none;
+}
 html {
   background: var(--fond-page);
 }
@@ -241,13 +250,15 @@ button,
 button:not(:disabled):hover {
   background: var(--survol);
 }
-button[data-principal] {
+button[data-principal],
+button[data-principal-de-la-vue] {
   background: var(--texte);
   color: var(--inverse);
 }
 /* Survolé, le principal RESTE principal (#266 Q1) : inversé, il prenait l'allure d'un secondaire sous
    le pointeur, et la recette l'a lu comme un bouton qui n'avait pas encore son style. */
-button[data-principal]:not(:disabled):hover {
+button[data-principal]:not(:disabled):hover,
+button[data-principal-de-la-vue]:not([aria-disabled="true"]):hover {
   background: var(--texte);
   color: var(--inverse);
   text-decoration: underline;
@@ -256,20 +267,18 @@ button[data-danger] {
   color: var(--danger);
   border-color: var(--danger);
 }
-button:disabled {
+button:disabled,
+/* Un geste de la VUE fermé par la table (#265) : jamais `disabled` (le clic doit arriver, pour que la
+   table dise pourquoi), donc `aria-disabled` — et le même aspect qu'un bouton fermé. */
+#affichage button[aria-disabled="true"] {
   background: var(--support);
   color: var(--secondaire);
   border-color: var(--separateur);
   cursor: default;
 }
-/* La révocation passe en DERNIER dans sa section, après la sauvegarde et « Terminer sans révoquer ». */
-#portabilite {
-  display: flex;
-  flex-direction: column;
-}
-#portabilite > [data-bloc="revocation"] {
-  order: 1;
-}
+/* L'ordre du DOM est l'ordre visuel ET l'ordre de tabulation (#265, ADR 0043) : « Terminer sans
+   révoquer » précède « Révoquer… » dans l'ÉCRITURE de la vue, sans aucun `order` CSS pour les
+   retourner — c'est ce que le test d'ordre mesure. */
 [data-bloc] p:has(> button + button) {
   display: flex;
   flex-direction: column;
@@ -476,6 +485,35 @@ html[data-vue="parcours"] [data-application="attente"] #cadre-applicatif iframe 
 #promesse-garanties strong {
   display: block;
   color: var(--texte);
+}
+/* Les LIMITES de cette version (#195) : lisibles dès l'entrée, plus discrètes que la promesse. */
+#limites {
+  margin-top: 18px;
+}
+#limites h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+#limites-liste {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+#limites-liste li {
+  border-left: 3px solid var(--bord);
+  padding-left: 12px;
+  font-size: 14px;
+  color: var(--secondaire);
+}
+#limites-liste strong {
+  display: block;
+  color: var(--texte);
+}
+#limites p {
+  margin: 10px 0 0;
+  font-size: 14px;
 }
 /* La barre et son menu n'existent qu'autour de l'application démarrée. */
 .barre-etat,

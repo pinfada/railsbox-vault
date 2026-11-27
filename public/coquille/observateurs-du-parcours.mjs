@@ -47,7 +47,16 @@ const SONDE_DE_LA_PHASE_MS = 1_000;
  *           pas: (evenement: string, valeur?: unknown) => void,
  *           allerA: (etape: number | null) => void, rendre: () => void }} page
  */
-export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, allerA, rendre }) {
+export function brancherLesObservateurs({
+  noeud,
+  etat,
+  dire,
+  lireJson,
+  pas,
+  allerA,
+  rendre,
+  revocation,
+}) {
   function refuser(code) {
     // Le CODE seul, jamais la valeur refusée : la console aide qui cherche, elle ne garde rien (#266 m11).
     console.warn(`[RailsBox Vault] refus : ${code ?? "sans code"}`);
@@ -67,13 +76,18 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     etat.changementsDepuisLaReussite = 0;
   }
 
-  function surOuverture(avant) {
-    if (avant === COFFRE.ouvert || etat.coffre !== COFFRE.ouvert) return;
+  /**
+   * L'ouverture est DITE une fois par document, quand l'état a lu le constat de la feuille : avant, la
+   * page ne sait pas ce que l'ouverture prouve (lecture en cours), et elle n'avance pas.
+   */
+  function surOuverture() {
+    const constat = revocation.lireLeConstat();
+    if (etat.ouvertureDite || etat.coffre !== COFFRE.ouvert || constat === null) return;
+    etat.ouvertureDite = true;
     const depuis = etat.ecranDuGeste ?? etat.ecran;
     if (depuis === "choisir") pas("coffre-cree");
-    // Ce que l'ouverture PROUVE de la feuille, c'est le Worker qui l'a constaté et publié dans le même
-    // relevé que l'état ouvert ; `rendre` l'a déjà retenu en indice (#239).
-    const eprouvee = lireJson("coquille-rapport").feuilleEprouvee === true;
+    // Ce que l'ouverture PROUVE de la feuille, c'est le Worker qui l'a constaté, et l'état l'a lu.
+    const eprouvee = constat.feuilleEprouvee === true;
     allerA(etapeApres(depuis, "ouverture", etat.pointeur));
     dire("parcours-attente", "");
     reussir(
@@ -140,14 +154,13 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
       return reussir(MESSAGES.restauree);
     }
     if (ligne.evenement === "revoque") {
-      etat.revocationFaite = true;
-      pas("revocation-faite");
-      const revocation = lireJson("coquille-rapport").portabilite?.revocation ?? {};
-      const retires = revocation.nombreRetires ?? 0;
+      // L'indice est écrit par `noter`, à l'acquit : pas ici (C2-4). Cette ligne n'est que DITE.
+      const acquit = lireJson("coquille-rapport").portabilite?.revocation ?? {};
+      const retires = acquit.nombreRetires ?? 0;
       return reussir(
         retires === 0
           ? MESSAGES.revoqueSansRien
-          : MESSAGES.revoque(retires, revocation.versionEnveloppe ?? "?"),
+          : MESSAGES.revoque(retires, acquit.versionEnveloppe ?? "?"),
       );
     }
   }
@@ -280,13 +293,19 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     const cible = noeud(id);
     if (cible === null) return;
     new MutationObserver(() => {
-      const avant = etat.coffre;
       reagir();
       rendre();
-      surOuverture(avant);
+      surOuverture();
       rendre();
     }).observe(cible, { childList: true, characterData: true, subtree: true });
   }
+
+  // Chaque changement de l'état de la révocation peut changer l'écran : le magasin prévient, hors transition.
+  revocation.abonner(() => {
+    rendre();
+    surOuverture();
+    rendre();
+  });
 
   observer("deverrouillage-moyens", () => {});
   observer("deverrouillage-releve", () => {});

@@ -148,7 +148,8 @@ export const SOURCES_COQUILLE = Object.freeze([
       "arbre d'un gibioctet ferait passer `npm run check` de deux minutes à des dizaines pour " +
       "quiconque a construit l'image. Déposer les artefacts sur l'origine de confiance est une " +
       "obligation d'EXPLOITANT, mesurable seulement sur une origine réelle (#124–#126) ; la " +
-      "conséquence est écrite dans l'ADR 0030 § Limites.",
+      "conséquence est écrite dans l'ADR 0030 § Limites. `--avec-image` (`tools/publier-image.mjs`, " +
+      "ADR 0050) les publie pour `publication.yml` : le défaut, celui de `npm run check`, ne change pas.",
   }),
   Object.freeze({
     depuis: "vendor/v86/artefacts",

@@ -12,6 +12,7 @@
 // l'épreuve, comme le module du cycle de vie la publie. Aucune machine virtuelle ne tourne ici ; la preuve
 // réelle de l'étape 4 prête (aide repliée, cadre remonté, focus) reste l'E2E clavier.
 
+import { LIMITES } from "../../src/coquille/limites-de-cette-version.mjs";
 import {
   FORME_DU_CODE,
   LONG,
@@ -85,6 +86,9 @@ for (const theme of ["light", "dark"]) {
 
     await verrouillerEtRecharger(page);
     await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
+    // À la réouverture, la promesse reste, les limites ne reviennent pas (#195, `limitesAffichees`).
+    await expect(page.locator("#promesse")).toBeVisible();
+    await expect(page.locator("#limites")).toBeHidden();
     await verifierAux(page, testInfo, "etape-5-rouvrir", DEUX_LARGEURS);
     // « J'ai oublié ma phrase » est un bouton actif : son contour doit se voir (constat 11).
     const perdu = await page.locator("#parcours-phrase-perdue").evaluate((noeud) => ({
@@ -127,6 +131,10 @@ for (const theme of ["light", "dark"]) {
     await verifierAux(page, testInfo, "etape-9-revoquer", DEUX_LARGEURS);
 
     await bouton(page, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
+    // Deux temps (#265) : la confirmation se lit et se vérifie avant « Oui ».
+    await expect(page.getByRole("group", { name: "Confirmer la révocation" })).toBeVisible();
+    await verifierAux(page, testInfo, "etape-9-confirmation", DEUX_LARGEURS);
+    await bouton(page, "Oui, révoquer les autres moyens").click();
     await expect(titre(page, "Parcours terminé")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "termine", DEUX_LARGEURS);
 
@@ -176,10 +184,29 @@ test("forced-colors : bordures et focus visibles à la création, au choix et à
   expect(cadre.style).toBe("solid");
   expect(parseFloat(cadre.largeur)).toBeGreaterThanOrEqual(1);
   await verifier(page, testInfo, "creation");
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Tab");
-  const commencer = bouton(page, "Commencer");
-  await expect(commencer).toBeFocused();
+  // La SÉQUENCE EXACTE des arrêts au clavier, de l'entrée jusqu'au geste (#195, revue de la PR #332) :
+  // le lien d'évitement, le lien des limites, « Commencer ». Un arrêt imprévu avant « Commencer », un
+  // arrêt de moins, ou un lien que le clavier n'atteint pas, fait échouer l'épreuve à l'arrêt fautif. À
+  // chaque arrêt, le focus est visible en couleurs forcées : un contour d'au moins trois pixels.
+  const arrets = [
+    page.getByRole("link", { name: "Aller au parcours", exact: true }),
+    page.getByRole("link", { name: LIMITES.detail.libelle, exact: true }),
+    bouton(page, "Commencer"),
+  ];
+  for (const [rang, arret] of arrets.entries()) {
+    await page.keyboard.press("Tab");
+    await expect(arret, `arrêt ${rang + 1} sur ${arrets.length}`).toBeFocused();
+    const contourDeLArret = await arret.evaluate((noeud) => ({
+      style: getComputedStyle(noeud).outlineStyle,
+      largeur: getComputedStyle(noeud).outlineWidth,
+    }));
+    expect(contourDeLArret.style, `arrêt ${rang + 1} : contour`).not.toBe("none");
+    expect(
+      parseFloat(contourDeLArret.largeur),
+      `arrêt ${rang + 1} : épaisseur`,
+    ).toBeGreaterThanOrEqual(3);
+  }
+  const commencer = arrets.at(-1);
   const contour = await commencer.evaluate((noeud) => ({
     style: getComputedStyle(noeud).outlineStyle,
     largeur: getComputedStyle(noeud).outlineWidth,

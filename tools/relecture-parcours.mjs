@@ -25,6 +25,7 @@ import prettier from "prettier";
 import { annonceDAttente } from "../src/coquille/attente-annoncee.mjs";
 import { CONSEIL_DE_REOUVERTURE } from "../src/coquille/interface-de-deverrouillage.mjs";
 import { dureeDeLaPhrase } from "../src/coquille/durees-annoncees.mjs";
+import { LIMITES } from "../src/coquille/limites-de-cette-version.mjs";
 import { evaluerPhrase } from "../src/coquille/politique-de-phrase.mjs";
 import {
   CLASSEMENT_DES_CONDUITES,
@@ -34,12 +35,18 @@ import {
   REFUS_SANS_CODE,
 } from "../src/coquille/conduites-du-parcours.mjs";
 import {
+  TEXTES_PAR_CLE,
+  confirmationDeRevocation,
+} from "../src/coquille/textes-de-la-revocation.mjs";
+import { CLES_DE_TEXTE } from "../src/coquille/cles-de-la-revocation.mjs";
+import {
   ECRANS,
   ETAPES,
   LIBELLES_DE_LA_PAGE,
   LIBELLES_DES_BLOCS,
   LIMITE_DE_FIREFOX,
   MESSAGES,
+  PROMESSE,
   STATUTS,
   texteDAttenteDeLaPhrase,
 } from "../src/coquille/textes-du-parcours.mjs";
@@ -232,7 +239,13 @@ comprenez en lisant, et ce qui vous arrête.
 
 **Comment répondre** : sous chaque question, écrivez librement (quelques mots suffisent). Signalez
 aussi tout mot inconnu, toute phrase trop longue, et tout moment où vous ne sauriez pas quoi faire.
-Vos retours seront consignés dans la PR, sans votre nom.`;
+Vos retours seront consignés dans la PR, sans votre nom.
+
+**La séance** : la relecture se fait en présence du mainteneur, qui observe le logiciel et non
+vous. Le matériel est dans \`docs/parcours/seance-de-relecture/\` : les
+[consignes pour la personne](seance-de-relecture/consignes.md), la
+[grille d'observation](seance-de-relecture/grille.md) et la
+[conduite de la séance, pour le mainteneur](seance-de-relecture/conduite.md).`;
 
 /** Les documents servis d'où les libellés sans script sont relus. */
 const DOCUMENT_DE_LA_COQUILLE = new URL("../public/index.html", import.meta.url);
@@ -401,6 +414,63 @@ function sectionDeStructure(libelles) {
   ].join("\n\n");
 }
 
+/**
+ * L'écran d'ENTRÉE : la promesse, puis ce que cette version ne promet pas (#195, étape 4 du 26/11/2026).
+ * Les deux sont lus des constantes que la page écrit (`PROMESSE`, `LIMITES`).
+ */
+function sectionDeLEntree() {
+  return [
+    "## Ce que l'écran d'entrée dit avant l'étape 1",
+    "Au-dessus du titre de l'étape 1, la page dit une phrase, trois garanties, puis ce que cette " +
+      "version **ne promet pas**. Les limites ne sont pas repliées : elles se lisent sans cliquer. " +
+      "Elles ne reviennent pas à l'écran « Rouvrir votre coffre ».",
+    citation([PROMESSE.phrase]),
+    PROMESSE.garanties.map(({ titre, preuve }) => `- **${titre}.** ${preuve}`).join("\n"),
+    `### ${LIMITES.titre}`,
+    LIMITES.limites.map(({ titre, texte }) => `- **${titre}.** ${texte}`).join("\n"),
+    `Lien affiché sous la liste : [${LIMITES.detail.libelle}](${LIMITES.detail.lien}).`,
+  ].join("\n\n");
+}
+
+/**
+ * Ce que la VUE écrit de la révocation (#265, ADR 0049) : un texte par clé du catalogue, tel que la page
+ * l'écrit selon l'état du coffre, puis la confirmation pour chacun des trois moyens d'ouverture. C'est la
+ * section que la relectrice lit pour juger si la page dit vrai : chaque texte annonce ce qu'il AFFIRME.
+ */
+function sectionDeLaRevocation(libelles) {
+  const AFFIRME = {
+    aucune: "n'affirme rien du coffre",
+    revoque: "dit que la révocation a été faite (seulement après la réponse du coffre)",
+    "peut-etre": "dit qu'une révocation a peut-être eu lieu",
+    seance: "dit qu'aucun geste de révocation n'a été fait dans cette séance",
+    "non-lancee": "dit que la demande n'a pas été lancée",
+  };
+  const textes = Object.keys(CLES_DE_TEXTE).map((cle) => {
+    const { titre, corps } = TEXTES_PAR_CLE[cle];
+    const entete = titre === null ? "" : `**${titre}**\n\n`;
+    return `### Message « ${cle} »\n\n_Ce message ${AFFIRME[CLES_DE_TEXTE[cle].affirme]}._\n\n${citation([`${entete}${corps}`.trim()])}`;
+  });
+  const moyens = [
+    ["phrase", ["phrase", "recuperation"]],
+    ["webauthn-prf", ["webauthn-prf", "phrase", "recuperation"]],
+    ["recuperation", ["recuperation", "phrase"]],
+  ].map(
+    ([moyen, presents]) =>
+      `- Ouvert par ${moyen === "phrase" ? "la phrase" : moyen === "recuperation" ? "le code" : "la passkey"} : ${confirmationDeRevocation(moyen, presents)}`,
+  );
+  return [
+    "## Ce que la page dit de la révocation d'urgence",
+    "La révocation retire des moyens d'ouvrir le coffre : elle ne se défait pas. La page la demande en " +
+      "deux temps (un premier bouton ouvre la confirmation, un second envoie), et elle ne dit « révoqué » " +
+      "qu'après la réponse du coffre. Chacun des messages ci-dessous dit ce qu'il affirme ; signalez " +
+      "tout message qui vous paraît dire plus que ce que la page peut savoir.",
+    sectionDEcran("etat-du-coffre", libelles),
+    ...textes,
+    "### La confirmation, selon le moyen avec lequel le coffre a été ouvert",
+    moyens.join("\n"),
+  ].join("\n\n");
+}
+
 function sectionDesConduites() {
   const parClasse = Object.values(CLASSES_DE_CONDUITE).map((classe) => {
     const conduites = [
@@ -435,7 +505,9 @@ export async function genererLaRelecture() {
   const brut = [
     INTRODUCTION,
     sectionDeStructure(libelles),
+    sectionDeLEntree(),
     ...ETAPES.map((etape) => sectionDEtape(etape, libelles)),
+    sectionDeLaRevocation(libelles),
     sectionDesConduites(),
   ].join("\n\n");
   const options = (await prettier.resolveConfig(CHEMIN_DE_LA_RELECTURE)) ?? {};
