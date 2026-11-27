@@ -486,6 +486,35 @@ html[data-vue="parcours"] [data-application="attente"] #cadre-applicatif iframe 
   display: block;
   color: var(--texte);
 }
+/* Les LIMITES de cette version (#195) : lisibles dès l'entrée, plus discrètes que la promesse. */
+#limites {
+  margin-top: 18px;
+}
+#limites h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+#limites-liste {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+#limites-liste li {
+  border-left: 3px solid var(--bord);
+  padding-left: 12px;
+  font-size: 14px;
+  color: var(--secondaire);
+}
+#limites-liste strong {
+  display: block;
+  color: var(--texte);
+}
+#limites p {
+  margin: 10px 0 0;
+  font-size: 14px;
+}
 /* La barre et son menu n'existent qu'autour de l'application démarrée. */
 .barre-etat,
 #menu-du-coffre {
