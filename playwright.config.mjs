@@ -173,6 +173,9 @@ const SERVICE_APPLICATIF = [
   "**/coquille-service-applicatif.spec.mjs",
   // Deux coffres, un seul Service Worker (revue de sécurité de la PR #203, constats 1 et 2).
   "**/coquille-deux-coffres.spec.mjs",
+  // Le cadre ne peut rien envoyer hors de son origine (#341, ADR 0052) : une politique de sécurité
+  // ne s'applique pas de la même façon d'un moteur à l'autre.
+  "**/coquille-sorties-du-cadre.spec.mjs",
 ];
 
 /**

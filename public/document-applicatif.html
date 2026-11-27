@@ -2,6 +2,16 @@
 <html lang="fr" data-document-applicatif="demarrage">
   <head>
     <meta charset="utf-8" />
+    <!--
+      La politique du COURTIER (#341, ADR 0052), égale à `POLITIQUE_DU_COURTIER`
+      (`src/coquille/relais-http.mjs`). Elle vient AVANT toute ressource : un `<meta>` ne gouverne que
+      ce qui le suit. L'application servie est de même origine et atteint ce document par `parent` ;
+      et la navigation du cadre imbriqué est jugée par le `frame-src` d'ici.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; worker-src 'self'; frame-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Document applicatif — RailsBox Vault</title>
     <link rel="icon" href="/favicon.ico" type="image/vnd.microsoft.icon" />
