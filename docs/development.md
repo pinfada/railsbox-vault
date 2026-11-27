@@ -526,7 +526,13 @@ l'application, puis — pour la référence seule — de `vault-invariant.json` 
 **Ce que l'application doit respecter** pour être empaquetable :
 
 - **Ruby 3.3.12** et le `Gemfile.lock` résolu pour la plateforme `ruby` : le bundle est compilé en
-  i386 par le Ruby de l'image, et `BUNDLE_FORCE_RUBY_PLATFORM` est posé ;
+  i386 par le Ruby de l'image, et `BUNDLE_FORCE_RUBY_PLATFORM` est posé. Si le Gemfile porte une
+  directive `ruby`, elle doit accepter ce Ruby, lu dans `tools/build-reference-image/sources.json`
+  (#342, `tools/paquet/ruby-demande.mjs`, sémantique de `Gem::Requirement` reprise de RailsBox) :
+  `ruby "~> 3.3.10"`, `ruby "~> 3.3"` ou `ruby ">= 3.1", "< 3.5"` passent, `ruby "3.3.10"` est
+  refusé. `ruby file: ".ruby-version"` est une égalité stricte, et ce fichier doit entrer dans le
+  paquet, car Bundler le relit au démarrage. Un `.ruby-version` seul, sans directive, n'engage pas
+  Bundler et ne refuse rien ;
 - **SQLite**, sous `/app/var/db` (`VAULT_DATABASE_PATH`), et ActiveStorage sous `/app/var/storage`
   (`VAULT_STORAGE_ROOT`). PostgreSQL reste hors périmètre (ADR 0004) ;
 - **toute écriture durable sous `/app/var`, et nulle part ailleurs.** Ce qui est écrit dans `/app`
@@ -542,10 +548,30 @@ l'application, puis — pour la référence seule — de `vault-invariant.json` 
   (`secret`, `key`). Le `secret_key_base` se dérive d'une chaîne publique. La fabrication refuse
   avant le premier `docker build`, et le Dockerfile refuse à nouveau les secrets de Rails (clé
   maîtresse, identifiants chiffrés, clés et identifiants d'environnement) ;
+- **aucun secret dans le CONTENU des fichiers** non plus (#342,
+  `tools/paquet/secrets-du-contenu.mjs`, signaux repris de `tools/detect/env-secrets.mjs` de
+  RailsBox). Une valeur à forme de jeton connu (`ghp_…`, `sk_live_…`, `AKIA…`, clé privée PEM…) est
+  refusée dans tout fichier texte. Une clé dont le nom annonce un secret (`password`, `secret`,
+  `token`, `api_key`…) et dont la valeur est écrite en clair est refusée sous `config/` et dans les
+  graines (`db/seeds.rb`, `db/seeds/`). Une valeur lue ailleurs (`<%= ENV["…"] %>`, `#{…}`) ou vide
+  passe. Une valeur de démonstration se déclare publique dans `vault-app.json`, une entrée par
+  fichier et par clé, sans joker. Une valeur à forme de jeton n'est jamais couverte :
+
+  ```json
+  { "secretsAssumesPublics": [{ "fichier": "db/seeds.rb", "cle": "password" }] }
+  ```
+
+- **aucun lien symbolique** (#342, `tools/paquet/liens-de-la-source.mjs`) : la copie suivrait le
+  lien et embarquerait sa cible sous un nom anodin. Un fichier qui fait partie de l'application est
+  copié, pas lié ;
 - **au moins une migration** : le schéma du paquet (dernière migration, lue de `db/schema.rb` ou du
   plus grand préfixe de `db/migrate/`) est ce qui décidera d'une mise à jour ;
 - **une taille de données fixe** : le disque de données est dimensionné à la fabrication (512 Mio
   par défaut) et ne grandit pas ensuite (ADR 0035).
+
+Les liens, le Ruby demandé et les secrets par contenu sont examinés ensemble, avant le premier
+`docker build`. Un refus les rapporte tous d'un coup, chacun avec son code entre crochets, ce qui
+bloque, pourquoi, et quoi changer. La valeur suspecte n'est jamais recopiée dans le rapport.
 
 La fabrication dépose les deux images, nommées par leur empreinte, et `paquet.json` dans
 `artifacts/reference-image/`.

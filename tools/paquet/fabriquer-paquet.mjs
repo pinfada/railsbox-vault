@@ -17,7 +17,9 @@
 //  - un secret Rails dans la source (`config/master.key`, `config/credentials.yml.enc`, …) : le
 //    `secret_key_base` d'un paquet se dérive d'une chaîne publique, comme celui de la référence ;
 //  - une identité absente ou mal formée : sans `id` et `version`, rien ne nomme le paquet ;
-//  - une application sans migration : sa graine serait une base dont rien ne dit ce qu'elle porte.
+//  - une application sans migration : sa graine serait une base dont rien ne dit ce qu'elle porte ;
+//  - un lien symbolique, un secret écrit dans le CONTENU d'un fichier, ou une directive `ruby` du
+//    Gemfile que le Ruby du guest ne satisfait pas (#342, `gardes-de-la-source.mjs`).
 //
 // Elle dépose dans `artifacts/reference-image/` : les deux images, nommées par leur empreinte, et
 // `paquet.json`, le contrat que le manifeste d'image relit ensuite.
@@ -50,6 +52,8 @@ import {
 } from "./identite-de-l-application.mjs";
 import { cheminExclu, fichiersRetenus } from "./exclusions-de-la-source.mjs";
 import { schemaDeLApplication } from "./schema-de-l-application.mjs";
+import { gardesDeLaSource } from "./gardes-de-la-source.mjs";
+import { erreurDeRefus } from "./rapport-de-refus.mjs";
 import {
   confronterALaRetention,
   courantDevientPrecedent,
@@ -200,7 +204,7 @@ function declarationsDeLaSource(source) {
   return { vaultApp: lire("vault-app.json"), invariant: lire("vault-invariant.json") };
 }
 
-/** CONTRÔLE la source AVANT le premier `docker build` : secrets, identité, schéma. */
+/** CONTRÔLE la source AVANT le premier `docker build` : secrets, liens, Ruby, identité, schéma. */
 export function examinerLaSource(source, options) {
   if (!existsSync(join(source, "Gemfile"))) {
     throw new Error(
@@ -217,6 +221,14 @@ export function examinerLaSource(source, options) {
     );
   }
   const { vaultApp, invariant } = declarationsDeLaSource(source);
+  // Les gardes de #342 : liens, Ruby demandé, secrets par contenu — toutes rapportées d'un coup.
+  const anomalies = gardesDeLaSource({
+    source,
+    fichiers,
+    vaultApp,
+    rubyDuGuest: SOURCES.ruby.version,
+  });
+  if (anomalies.length > 0) throw erreurDeRefus(source, anomalies);
   const identite = identiteDeLApplication({ options, vaultApp, invariant });
   const cheminSchema = join(source, "db", "schema.rb");
   const migrations = existsSync(join(source, "db", "migrate"))
