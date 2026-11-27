@@ -85,6 +85,14 @@ test("chaque chiffre dit à la personne est retrouvable, avec sa source, dans la
   }
 });
 
+test("#347 · aucun texte montré ne promet une signature : ni « jalon 6 », ni « prévue plus tard »", () => {
+  for (const { cle, titre, texte } of LIMITES.limites) {
+    assert.doesNotMatch(`${titre} ${texte}`, /jalon|prévue plus tard/i, `${cle} : promesse`);
+  }
+  const paquet = LIMITES.limites.find(({ cle }) => cle === "paquet");
+  assert.match(paquet.texte, /Aucune signature n'est prévue à ce jour \(#347\)/);
+});
+
 test("le lien de détail désigne un fichier qui existe dans le dépôt", async () => {
   const motif =
     /^https:\/\/github\.com\/pinfada\/railsbox-vault\/blob\/main\/(docs\/[a-z0-9-]+\.md)$/;
