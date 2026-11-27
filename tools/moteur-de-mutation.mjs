@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 
 const RACINE = fileURLToPath(new URL("../", import.meta.url));
 
-/** Ce que la copie emporte : le code, les épreuves, les vecteurs, les outils qu'elles importent et les ADR dont une épreuve lit la table (#310). */
+/** Ce que la copie emporte : le code, les épreuves, les vecteurs, les outils qu'elles importent et les ADR dont une épreuve lit la table (#310), les workflows que les cliquets lisent (#45). */
 const RECOPIES = [
   "src",
   "tests",
@@ -39,6 +39,7 @@ const RECOPIES = [
   "public",
   "package.json",
   "docs/decisions",
+  ".github/workflows",
   "SECURITY.md",
   "vendor/v86/MANIFEST.json",
 ];
@@ -161,6 +162,8 @@ function eprouver(atelier, mutation) {
  * Le verdict est « non applicable », comme un texte-ancre absent, et jamais « tuée ».
  */
 function seLit(chemin) {
+  // Seul du JavaScript se vérifie par `node --check` ; un workflow YAML muté est jugé par ses épreuves.
+  if (!/\.(?:mjs|js|cjs)$/u.test(chemin)) return true;
   try {
     execFileSync(process.execPath, ["--check", chemin], { stdio: "pipe" });
     return true;
