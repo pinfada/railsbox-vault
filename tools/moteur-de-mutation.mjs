@@ -42,6 +42,9 @@ const RECOPIES = [
   ".github/workflows",
   "SECURITY.md",
   "vendor/v86/MANIFEST.json",
+  // L'application de référence (≈ 200 Kio) : `fabriquer-paquet.mjs` lit son identité au chargement,
+  // et l'épreuve des gardes de la source la prend pour témoin (#342).
+  "apps/reference",
 ];
 
 /** Recopie le dépôt utile dans un répertoire temporaire, et rend son chemin. */

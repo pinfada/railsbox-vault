@@ -196,3 +196,27 @@ de l'application. Un instantané pris sous un AUTRE paquet est écarté par le m
   épinglée ; voir l'ADR 0042 § 4.
 - **Constat 8, fermé** : sauter les blocs nuls exige `backend.naissance === true`, posé par
   `openOpfsVolume` ; une mutation le tient (campagne `dephasage`).
+
+## Note du 27/11/2026 — trois gardes de la source avant le premier `docker build` (#342)
+
+La fabrication examinait le NOM des fichiers et rien d'autre. Trois manques sont fermés, dans
+`tools/paquet/gardes-de-la-source.mjs`, sur la liste unique des fichiers retenus :
+
+- **Les liens symboliques n'entrent pas.** `copyFileSync` suivait le lien : un `config/notes.txt`
+  qui pointe vers `config/master.key`, vers un journal exclu ou vers `~/.ssh/` faisait entrer la
+  cible. Tout lien est refusé, quelle que soit sa cible : le recopier comme lien supposerait de
+  vérifier que sa cible entre aussi et reste dans la source. Les liens sont examinés en premier, et
+  aucun lien n'est lu par les deux autres gardes.
+- **Le Ruby demandé est vérifié.** La directive `ruby` du Gemfile est confrontée au seul Ruby du
+  guest, lu dans `sources.json`. La lecture de la directive et la sémantique de `Gem::Requirement`
+  sont reprises de RailsBox (`tools/detect/ruby-requirement.mjs`, même propriétaire, MIT). Ajout du
+  coffre : `ruby file:` qui désigne un fichier absent du paquet est refusé, car Bundler le relit
+  dans le guest. Le choix entre plusieurs Ruby reste hors périmètre.
+- **Les secrets sont cherchés dans le contenu.** Les signaux de RailsBox
+  (`tools/detect/env-secrets.mjs`) s'appliquent aux lignes des fichiers texte. La forme de jeton
+  s'applique partout. Le nom de clé s'applique sous `config/` et dans les graines. La dérogation
+  `secretsAssumesPublics` de `vault-app.json` nomme un fichier et une clé, et ne couvre jamais un
+  jeton. Le balayage de l'historique Git reste hors périmètre : `.git/` n'entre pas.
+
+Le refus rapporte toutes les anomalies d'un coup (`tools/paquet/rapport-de-refus.mjs`). La référence
+passe sans changement : aucune anomalie, et la même liste de fichiers retenus.
