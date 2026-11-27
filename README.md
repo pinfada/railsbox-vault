@@ -40,9 +40,10 @@ Le détail est dans l'[architecture](docs/architecture.md) et le [modèle de men
   ailleurs, récupérer par le code, révoquer (ADR 0040) ;
 - dans les scénarios mesurés, la note de l'application de référence et sa pièce jointe sont durables
   dès que Rails les acquitte (#209) ;
-- la réouverture après un verrouillage reprend un instantané chiffré : 0,92 s sur un essai unique
-  sous Chromium. Le p95 de 0,84 s vient d'un autre banc : le harnais Node, dix essais sur
-  l'environnement de référence ;
+- la reprise par instantané chiffré, mesurée sur un banc et non par le geste « Verrouiller » de la
+  coquille : la page du banc est capturée puis fermée, et un nouveau Worker reprend l'état. Le boot
+  complet de reprise prend 0,92 s sur un essai unique sous Chromium, et le p95 est de 0,84 s au
+  harnais Node, dix essais sur l'environnement de référence ;
 - le démarrage hors connexion, une fois l'application installée (ADR 0046, ADR 0048).
 
 Les mesures et leurs protocoles sont dans les [attributs de qualité](docs/quality-attributes.md).
@@ -66,12 +67,15 @@ Même sur des données non sensibles :
 | Navigateur          | État                                                          |
 | ------------------- | ------------------------------------------------------------- |
 | Chromium            | le parcours aboutit, mesuré en intégration continue           |
-| Chrome, Edge        | fondés sur Chromium, non mesurés à part                       |
+| Chrome              | deux parcours réussis en local, hors intégration continue     |
+| Edge                | fondé sur Chromium, aucune preuve distincte                   |
 | Firefox             | l'application ne démarre pas à l'étape 4 (voir « Prérequis ») |
 | Safari              | jamais mesuré sur un vrai Safari (#40)                        |
 | Navigateurs mobiles | expérimental                                                  |
 
-La matrice complète est dans la [compatibilité](docs/compatibility.md).
+Les deux parcours sous Chrome installé datent du 17 septembre 2026 ; leur recette et leur portée
+sont dans la [viabilité](docs/viabilite.md). La matrice complète est dans la
+[compatibilité](docs/compatibility.md).
 
 ### Limites de sécurité à connaître
 
@@ -109,7 +113,8 @@ et l'[issue #31](https://github.com/pinfada/railsbox-vault/issues/31) suit l'ava
 
 - Node 22.13 ou plus récent, jusqu'à Node 24 (champ `engines`) ;
 - Docker, pour fabriquer l'image de l'application ;
-- un navigateur récent fondé sur Chromium, comme Chrome ou Edge ; seul Chromium est mesuré.
+- un navigateur récent fondé sur Chromium. Chromium est mesuré en intégration continue, Chrome en
+  local ; Edge n'a pas de preuve distincte.
 
 Sous Firefox, l'étape 4 du parcours guidé n'aboutit pas dans cette version : la machine virtuelle y
 tourne environ six fois plus lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ;
