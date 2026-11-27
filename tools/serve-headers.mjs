@@ -72,6 +72,10 @@ export function shellContentSecurityPolicy(appOrigin, { workerSrcBlob = false } 
  * En production le HTML applicatif est produit par le guest et relayé par le proxy : lui imposer
  * ici une CSP reviendrait à mesurer notre propre politique au lieu de la frontière d'origine. Le
  * durcissement par CSP injectée reste une piste, il est discuté dans l'ADR 0002.
+ *
+ * Depuis #341 (ADR 0052), la CSP injectée existe, et elle ne passe PAS par ce serveur : le Service
+ * Worker du cadre la pose sur tout ce qu'il relaie (`POLITIQUE_DU_CADRE`), et le courtier porte la
+ * sienne par `<meta>` (`POLITIQUE_DU_COURTIER`). Ce que ce rôle sert reste sans en-tête CSP.
  */
 export function isApplicationTerritory(pathname) {
   return pathname.startsWith(APPLICATION_TERRITORY_PREFIX);

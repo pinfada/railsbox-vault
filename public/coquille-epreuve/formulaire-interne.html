@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <!--CSP-DU-GUEST-->
+    <title>Application — formulaire vers sa propre origine (#341)</title>
+  </head>
+  <body>
+    <!--
+      Le CONTRE-TÉMOIN du formulaire (#341, ADR 0052) : un formulaire ORDINAIRE, sans cible, soumis à
+      l'origine de l'application. Il navigue le cadre lui-même : `form-action 'self'` l'admet, et
+      `frame-src 'none'` ne le juge pas. La coquille simulée relève « POST /interne/formulaire ».
+      Rendue une seconde fois après la soumission, la page ne resoumet pas.
+    -->
+    <form method="POST" action="/interne/formulaire"><input name="clair" value="clair" /></form>
+    <script>
+      if (location.pathname === "/") document.forms[0].submit();
+    </script>
+  </body>
+</html>

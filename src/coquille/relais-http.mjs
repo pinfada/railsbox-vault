@@ -193,6 +193,100 @@ export const ENTETES_DE_L_HEBERGEUR_APPLICATIF = Object.freeze({
 });
 
 /**
+ * LA POLITIQUE DU CADRE (#341, ADR 0052) : ce que l'application servie a le droit d'atteindre.
+ * Son ORIGINE, et rien d'autre — ni liste blanche, ni exception.
+ *
+ * Elle est reprise de `pinfada/railsbox` (`APP_DOCUMENT_CSP`, `public/shared/proxy-logic.js`), avec
+ * UN écart : RailsBox laisse `img-src *` pour des fonds de carte, et l'écrit comme un canal résiduel
+ * assumé dans son `SECURITY.md`. Ici, aucun : une image est une requête, et une requête porte ce que
+ * son URL encode.
+ *
+ *  - `default-src 'self'` ferme d'un coup ce qui n'est pas nommé : cadres, workers, médias,
+ *    manifeste, `EventSource` et `WebSocket` (par `connect-src`) ;
+ *  - `connect-src 'self'` est redondant avec lui, et nommé quand même : c'est la directive que
+ *    `fetch`, XHR, `sendBeacon`, `EventSource` et `WebSocket` consultent, celle qu'on relira ;
+ *  - `form-action` et `base-uri` n'ont AUCUN repli sur `default-src` : sans eux, un formulaire
+ *    partirait vers n'importe où ;
+ *  - `'unsafe-inline'` reste sur les scripts et les styles, comme dans RailsBox : une application
+ *    Rails ordinaire en émet (importmap, Turbo), et il n'ouvre aucune SORTIE — il ne dit que ce qui
+ *    s'exécute, pas ce qui est atteint ;
+ *  - `data:` et `blob:` sont des URL LOCALES : une image ou une police qui en vient ne quitte rien ;
+ *  - `frame-src 'none'` : l'application ne crée AUCUN cadre, même de son origine. Une application
+ *    qui désinscrit le Service Worker du cadre pouvait encadrer un fichier de l'hébergeur, servi
+ *    sans cette politique, puis emprunter son `fetch` (ouvert sous Chromium et WebKit, mesuré le
+ *    27/11/2026). Le prix : une application Rails qui encadre ses propres pages ne fonctionne pas
+ *    dans un coffre (ADR 0052).
+ *
+ * Ce qu'elle ne pose PAS, et pourquoi : `frame-ancestors`. Le cadre est encadré par la coquille,
+ * d'une autre origine ; `frame-ancestors 'self'` interdirait le cadre lui-même.
+ *
+ * Elle est posée sur TOUTE réponse que le Service Worker du cadre fabrique — pas seulement le HTML :
+ * un document SVG ou XHTML s'exécute aussi, et le type est ce que le guest DIT de sa réponse.
+ */
+export const POLITIQUE_DU_CADRE = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "form-action 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-src 'none'",
+].join("; ");
+
+/**
+ * La politique du COURTIER (`public/document-applicatif.html`), posée par `<meta>` (#341, ADR 0052).
+ *
+ * Le courtier est de MÊME ORIGINE que l'application (ADR 0038) : elle atteint son royaume par
+ * `parent` — son `fetch`, son document. Sans politique, il était la porte dérobée de la précédente.
+ * Il en faut une pour une seconde raison : la navigation du cadre imbriqué est jugée par le
+ * `frame-src` de son PARENT, le courtier, et par lui seul.
+ *
+ * Elle est plus étroite que celle du cadre, parce que le courtier est le code de ce dépôt : ni
+ * script en ligne, ni formulaire. Le style en ligne, lui, est admis : WebKit lève une violation
+ * `style-src-elem` sur ce document sans qu'il en écrive aucun (mesuré par `tests/apparence/`, CI du
+ * 27/11/2026), et un style n'atteint rien que `img-src` et `font-src` ne jugent. Elle passe par `<meta>` et non par un en-tête parce que le courtier
+ * est servi par l'HÉBERGEUR, avant tout Service Worker, et que l'hébergeur ne pose pas toujours
+ * d'en-tête (ADR 0010) ; aucune de ses directives n'est de celles qu'un `<meta>` ignore.
+ */
+export const POLITIQUE_DU_COURTIER = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self'",
+  "connect-src 'self'",
+  "worker-src 'self'",
+  "frame-src 'self'",
+  "form-action 'none'",
+  "base-uri 'none'",
+  "object-src 'none'",
+].join("; ");
+
+/**
+ * Les en-têtes que le Service Worker du cadre IMPOSE à tout ce qu'il sert : ceux de l'hébergeur, et
+ * la politique du cadre.
+ */
+export const ENTETES_IMPOSES_AU_CADRE = Object.freeze({
+  ...ENTETES_DE_L_HEBERGEUR_APPLICATIF,
+  "Content-Security-Policy": POLITIQUE_DU_CADRE,
+});
+
+/**
+ * POSE les en-têtes imposés au cadre, APRÈS ceux du guest : ils gagnent donc sur eux. Une politique
+ * que Rails poserait n'est de toute façon pas rendue (`ENTETES_DE_REPONSE_RENDUES`), et un `<meta>`
+ * qu'il écrirait dans sa page ne peut que RESTREINDRE : plusieurs politiques s'appliquent toutes.
+ *
+ * @param {Headers} entetes
+ * @returns {Headers}
+ */
+export function imposerLesEntetesDuCadre(entetes) {
+  for (const [nom, valeur] of Object.entries(ENTETES_IMPOSES_AU_CADRE)) entetes.set(nom, valeur);
+  return entetes;
+}
+
+/**
  * Un texte porte-t-il un caractère de CONTRÔLE ?
  *
  * La question est posée code par code plutôt que par une expression régulière, et ce n'est pas une

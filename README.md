@@ -312,7 +312,8 @@ Chaque décision structurante est écrite, datée et numérotée.
 - [ADR 0048 — le Service Worker de la coquille sert la réserve hors connexion : un seul, vérifié avant de servir, borné au bootstrap puis aux clients contrôlés (en vigueur depuis D1h-b, #323)](docs/decisions/0048-le-service-worker-de-la-coquille-sert-la-reserve-hors-connexion.md)
 - [ADR 0049 — le modèle d'état de la révocation d'urgence](docs/decisions/0049-le-modele-d-etat-de-la-revocation.md)
 - [ADR 0050 — l'image dans l'arbre publié et l'envoi inerte](docs/decisions/0050-l-image-dans-l-arbre-publie-et-l-envoi-inerte.md)
-- [ADR 0051 — la scène : une direction sombre, pétrole et laiton, et le thème clair retiré (proposé)](docs/decisions/0051-la-scene-sombre-petrole-et-laiton.md)
+- [ADR 0051 — la scène : une direction sombre, pétrole et laiton, et le thème clair retiré](docs/decisions/0051-la-scene-sombre-petrole-et-laiton.md)
+- [ADR 0052 — le cadre ne peut rien envoyer hors de son origine : une CSP injectée par le Service Worker du cadre, une autre portée par le courtier, sans liste blanche](docs/decisions/0052-le-cadre-ne-peut-rien-envoyer-hors-de-son-origine.md)
 
 </details>
 

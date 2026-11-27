@@ -114,7 +114,7 @@ async function fichiersDe(relatif) {
 const SERVIS_HORS_PUBLICATION = ["public", "public/coquille-epreuve", "public/cadre"];
 
 /**
- * Les TROIS seuls fichiers exemptés, et le motif est le même pour les trois : ils MESURENT ce qu'un
+ * Les QUATRE seuls fichiers exemptés, et le motif est le même pour les quatre : ils MESURENT ce qu'un
  * Service Worker applicatif obtient (spike #35, `tests/browser/coquille-frontiere.spec.mjs`). Les
  * balayer ferait rougir l'épreuve sur la mesure qui justifie le refus.
  *
@@ -126,6 +126,9 @@ const BANCS_HOSTILES = [
   "public/coquille-epreuve/hostile-sw.mjs",
   "public/coquille-epreuve/hostile.mjs",
   "public/coquille-epreuve/hostile-topologie.mjs",
+  // #341 (ADR 0052) : l'application hostile DÉSINSCRIT le Service Worker du cadre, pour mesurer ce
+  // que cette désinscription lui rend.
+  "public/coquille-epreuve/sorties-hostiles.mjs",
 ];
 
 /**

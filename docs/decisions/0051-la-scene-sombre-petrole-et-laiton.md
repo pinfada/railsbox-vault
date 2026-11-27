@@ -1,6 +1,6 @@
 # ADR 0051 — La scène : une direction sombre, pétrole et laiton, et le thème clair retiré
 
-- Statut : proposé
+- Statut : accepté (mainteneur, 27/11/2026)
 - Date : 2026-11-26
 - Remplace : la direction utilitaire de `docs/direction-visuelle.md` (#194) pour les couleurs, les
   formes et la typographie. Complète l'[ADR 0043](0043-l-application-d-abord.md), dont les cinq
