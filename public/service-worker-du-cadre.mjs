@@ -37,9 +37,9 @@ import {
 } from "./cadre/contrat-du-cadre.mjs";
 import {
   CHEMIN_DU_COURTIER,
-  ENTETES_DE_L_HEBERGEUR_APPLICATIF,
   ENTETES_DE_REPONSE_RENDUES,
   estUnCheminDeLaCoquilleDeCadre,
+  imposerLesEntetesDuCadre,
 } from "./src/coquille/relais-http.mjs";
 import {
   ISSUES_DU_ROUTAGE,
@@ -212,12 +212,12 @@ function demanderAuCourtier(courtier, demande) {
  * Les en-têtes de POLITIQUE de l'hébergeur, rejoués sur tout ce que ce Service Worker fabrique :
  * sans eux, une réponse synthétisée ne porte ni `nosniff`, ni CORP, ni `Cache-Control` (revue de
  * sécurité de la PR #203, constat 7). Ils sont posés APRÈS ceux du guest, et gagnent donc sur eux.
+ *
+ * La POLITIQUE DU CADRE est posée avec eux (#341, ADR 0052) : tout ce que ce Service Worker sert —
+ * page relayée, sous-ressource, refus, attente — ne peut rien atteindre hors de cette origine.
  */
 function avecLesEntetesDeLHebergeur(entetes) {
-  for (const [nom, valeur] of Object.entries(ENTETES_DE_L_HEBERGEUR_APPLICATIF)) {
-    entetes.set(nom, valeur);
-  }
-  return entetes;
+  return imposerLesEntetesDuCadre(entetes);
 }
 
 /** Ce que la réponse relayée devient pour le navigateur. */

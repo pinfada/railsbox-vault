@@ -6,7 +6,7 @@
 // la preuve elle-même : une voie que le moteur fermerait sans le dire resterait fermée, et une voie
 // qu'il laisserait passer en le disant resterait ouverte.
 
-import { VOIES_DE_SORTIE, urlDeFuite } from "./sorties-du-cadre.mjs";
+import { VOIE_INTERNE, VOIES_DE_SORTIE, urlDeFuite } from "./sorties-du-cadre.mjs";
 
 /** Le délai laissé aux tentatives asynchrones avant de se dire « tentées ». */
 const DELAI_DES_TENTATIVES_MS = 1500;
@@ -112,7 +112,8 @@ const TENTATIVES = {
   },
 };
 
-const DESTRUCTRICES = new Set(["navigation-du-cadre"]);
+/** Les voies tentées APRÈS le relevé : elles détruisent ce document, ou le relais lui-même. */
+const DESTRUCTRICES = new Set(["navigation-du-cadre", "desinscription"]);
 
 for (const { nom } of VOIES_DE_SORTIE) {
   if (DESTRUCTRICES.has(nom)) continue;
@@ -126,11 +127,50 @@ for (const { nom } of VOIES_DE_SORTIE) {
   }
   rapport.tentees.push(nom);
 }
+
+// Le CONTRE-TÉMOIN : ce que la politique doit LAISSER passer. Une politique qui fermerait aussi
+// l'origine de l'application la casserait, et l'épreuve rouge passerait quand même. Ces trois
+// requêtes visent l'origine applicative ; la coquille simulée relève celles que le relais lui porte.
+fetch(`${VOIE_INTERNE}fetch`, { method: "POST", body: "clair" }).catch(() => {});
+const imageInterne = document.createElement("img");
+imageInterne.src = `${VOIE_INTERNE}image`;
+document.body.append(imageInterne);
+const formulaireInterne = document.createElement("form");
+formulaireInterne.method = "POST";
+formulaireInterne.action = `${VOIE_INTERNE}formulaire`;
+formulaireInterne.target = "puits-interne";
+document.body.append(formulaireInterne);
+formulaireInterne.submit();
 publier();
+
+/**
+ * La DÉSINSCRIPTION : l'application est de même origine que le Service Worker du cadre, et peut le
+ * désinscrire. Les navigations suivantes partent alors à l'hébergeur, qui sert ses propres documents
+ * — un fichier, une page 404 — sans la politique du cadre ; un tel document, de même origine, prête
+ * son royaume.
+ */
+async function desinscrireEtEmprunter() {
+  const enregistrements = (await navigator.serviceWorker?.getRegistrations?.()) ?? [];
+  await Promise.all(enregistrements.map((enregistrement) => enregistrement.unregister()));
+  const cadre = document.createElement("iframe");
+  cadre.addEventListener("load", () => {
+    try {
+      cadre.contentWindow.fetch(fuite("desinscription"), { mode: "no-cors" }).catch(() => {});
+    } catch (erreur) {
+      rapport.erreurs.desinscription = String(erreur?.name ?? erreur);
+    }
+  });
+  cadre.src = "/coquille-epreuve/temoin.txt";
+  document.body.append(cadre);
+}
 
 setTimeout(() => {
   document.documentElement.dataset.sorties = "tentees";
   publier();
+  rapport.tentees.push("desinscription");
+  desinscrireEtEmprunter().catch((erreur) => {
+    rapport.erreurs.desinscription = String(erreur?.name ?? erreur);
+  });
   // La navigation du cadre DÉTRUIT ce document si elle aboutit : elle vient en dernier, après que le
   // relevé a été posé.
   setTimeout(() => {

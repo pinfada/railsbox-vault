@@ -63,10 +63,16 @@ async function rendre(chemin) {
   };
 }
 
+const relayes = [];
+
 function servirLeRelais(port) {
   port.addEventListener("message", async (event) => {
     const decode = decoderMessage(event.data);
     if (!decode.ok || decode.type !== TYPES_APPLICATIFS.requeteHttp) return;
+    // Le relevé des chemins RELAYÉS : le contre-témoin de l'épreuve y cherche ce que l'application
+    // a adressé à sa propre origine. Méthode et chemin, jamais un corps.
+    relayes.push(`${decode.message.methode} ${decode.message.chemin}`);
+    document.querySelector("#relayes").textContent = JSON.stringify(relayes);
     const reponse = await rendre(decode.message.chemin);
     port.postMessage(
       enveloppeDeMessage(TYPES_APPLICATIFS.requeteHttpReponse, {

@@ -53,6 +53,7 @@ const EPREUVE_ADMISSION = "tests/unit/coquille-admission.test.mjs";
 const EPREUVE_CONTRAT = "tests/unit/coquille-contrat.test.mjs";
 const EPREUVE_DEVERROUILLAGE = "tests/unit/coquille-deverrouillage.test.mjs";
 const EPREUVE_RELAIS = "tests/unit/coquille-relais-http.test.mjs";
+const EPREUVE_POLITIQUE_DU_CADRE = "tests/unit/coquille-politique-du-cadre.test.mjs";
 const EPREUVE_ROUTAGE = "tests/unit/coquille-routage-du-cadre.test.mjs";
 const EPREUVE_RELAIS_DU_WORKER = "tests/unit/coquille-relais-du-worker.test.mjs";
 
@@ -604,6 +605,93 @@ export const MUTATIONS = Object.freeze([
     avant: '    if (methode === "GET" || methode === "HEAD") return { ok: false };\n',
     apres: "",
     epreuves: [EPREUVE_RELAIS],
+  },
+  // --- La POLITIQUE DU CADRE (#341, ADR 0052) ------------------------------------------------------
+  //
+  // Retirer ou affaiblir la politique doit rougir. L'épreuve NOMMÉE juge le SENS de la politique
+  // (replis de CSP niveau 3 compris) ; le BRANCHEMENT dans le Service Worker, qu'aucune épreuve Node
+  // n'exécute, est tenu par `tests/browser/coquille-sorties-du-cadre.spec.mjs` sur trois moteurs.
+  {
+    nom: "le cadre ne se connecte à aucune origine tierce",
+    garde: "POLITIQUE_DU_CADRE — `connect-src 'self'`",
+    fichier: RELAIS,
+    avant: "  \"connect-src 'self'\",\n  \"form-action 'self'\",\n",
+    apres: '  "connect-src *",\n  "form-action \'self\'",\n',
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "le cadre ne charge aucune image tierce",
+    garde: "POLITIQUE_DU_CADRE — `img-src` sans hôte",
+    fichier: RELAIS,
+    avant: "  \"img-src 'self' data: blob:\",\n",
+    apres: '  "img-src * data: blob:",\n',
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "le cadre ne charge aucun script tiers",
+    garde: "POLITIQUE_DU_CADRE — `script-src` sans hôte",
+    fichier: RELAIS,
+    avant: "  \"script-src 'self' 'unsafe-inline'\",\n",
+    apres: "  \"script-src * 'unsafe-inline'\",\n",
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "ce que le cadre ne nomme pas se replie sur son origine",
+    garde: "POLITIQUE_DU_CADRE — `default-src 'self'` (cadres, workers, médias)",
+    fichier: RELAIS,
+    avant: "  \"default-src 'self'\",\n  \"script-src 'self' 'unsafe-inline'\",\n",
+    apres: "  \"default-src *\",\n  \"script-src 'self' 'unsafe-inline'\",\n",
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "un formulaire du cadre ne part vers aucune origine tierce",
+    garde: "POLITIQUE_DU_CADRE — `form-action 'self'`, qui n'a aucun repli",
+    fichier: RELAIS,
+    avant: "  \"connect-src 'self'\",\n  \"form-action 'self'\",\n",
+    apres: "  \"connect-src 'self'\",\n",
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "le Service Worker impose la politique du cadre",
+    garde: "ENTETES_IMPOSES_AU_CADRE — la ligne qui porte la politique",
+    fichier: RELAIS,
+    avant: '  "Content-Security-Policy": POLITIQUE_DU_CADRE,\n',
+    apres: "",
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "une CSP de Rails ne remplace pas celle du cadre",
+    garde: "imposerLesEntetesDuCadre — la pose INCONDITIONNELLE (le défaut corrigé de RailsBox)",
+    fichier: RELAIS,
+    avant:
+      "  for (const [nom, valeur] of Object.entries(ENTETES_IMPOSES_AU_CADRE)) entetes.set(nom, valeur);\n",
+    apres:
+      "  for (const [nom, valeur] of Object.entries(ENTETES_IMPOSES_AU_CADRE))\n    if (!entetes.has(nom)) entetes.set(nom, valeur);\n",
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "le courtier ne se connecte à aucune origine tierce",
+    garde: "POLITIQUE_DU_COURTIER — `default-src 'none'`",
+    fichier: RELAIS,
+    avant: "  \"default-src 'none'\",\n",
+    apres: '  "default-src *",\n',
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "le cadre imbriqué ne navigue vers aucune origine tierce",
+    garde: "POLITIQUE_DU_COURTIER — `frame-src 'self'`",
+    fichier: RELAIS,
+    avant: "  \"frame-src 'self'\",\n",
+    apres: "  \"frame-src 'self' https:\",\n",
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
+    nom: "le courtier PORTE sa politique",
+    garde: "document-applicatif.html — le `<meta http-equiv>` de la politique du courtier",
+    fichier: "public/document-applicatif.html",
+    avant: '      http-equiv="Content-Security-Policy"\n',
+    apres: '      http-equiv="X-Politique-Retiree"\n',
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
   },
   // --- Le ROUTAGE du Service Worker (revue de sécurité de la PR #203, constats 1 et 2) ------------
   {

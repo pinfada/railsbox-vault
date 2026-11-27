@@ -7,6 +7,14 @@
   document encadré n'est pas encore servi par le guest ; le proxy qui relaierait ce que Rails rend
   n'est pas dans cette tranche. »
 
+## Note datée du 27/11/2026 — le cadre porte une politique (#341, ADR 0052)
+
+Le relais servait les documents de l'application SANS CSP. Le Service Worker du cadre pose désormais
+`POLITIQUE_DU_CADRE` sur tout ce qu'il sert, et le courtier porte `POLITIQUE_DU_COURTIER` par
+`<meta>` : l'application ne peut rien envoyer hors de son origine. Ce que les tables de cette
+décision disent des en-têtes rendus ne change pas — la CSP de Rails n'est toujours pas rendue. Voir
+l'[ADR 0052](0052-le-cadre-ne-peut-rien-envoyer-hors-de-son-origine.md).
+
 ## Note datée du 17/09/2026 — le descripteur servi est en v2 (#236, ADR 0041)
 
 `artifacts/application.json` a changé de forme : le champ `disque` (un nom, une taille) a disparu au

@@ -30,12 +30,17 @@ import { expect, test } from "../support/test.mjs";
 import {
   FERMEE_PAR,
   PREFIXE_DE_FUITE,
+  VOIE_INTERNE,
   VOIES_DE_SORTIE,
+  VOIES_INTERNES,
 } from "../../public/coquille-epreuve/sorties-du-cadre.mjs";
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 
 /** Le temps laissé, après « tentées », à une sortie tardive — la navigation du cadre comprise. */
 const GRACE_APRES_TENTATIVES_MS = 4000;
+
+/** Les voies que la page tente après avoir posé son relevé : elles le détruiraient. */
+const TENTEES_APRES_LE_RELEVE = ["navigation-du-cadre", "desinscription"];
 
 const FERMEES_PAR_LA_CSP = VOIES_DE_SORTIE.filter((voie) => voie.fermeePar === FERMEE_PAR.csp).map(
   ({ nom }) => nom,
@@ -43,6 +48,10 @@ const FERMEES_PAR_LA_CSP = VOIES_DE_SORTIE.filter((voie) => voie.fermeePar === F
 const FERMEES_PAR_LA_SANDBOX = VOIES_DE_SORTIE.filter(
   (voie) => voie.fermeePar === FERMEE_PAR.sandbox,
 ).map(({ nom }) => nom);
+/** Les RÉSIDUELS connus (ADR 0052) : tentés, publiés, non exigés. */
+const RESIDUELLES = VOIES_DE_SORTIE.filter((voie) => voie.fermeePar === FERMEE_PAR.aucune).map(
+  ({ nom }) => nom,
+);
 
 /** Ce que l'origine tierce rend, par voie : assez pour que le moteur aille au bout. */
 const TYPES_RENDUS = {
@@ -109,7 +118,7 @@ test("TÉMOIN POSITIF : sans la politique du cadre, chaque voie atteint l'origin
 }, info) => {
   await ouvrir(page, "temoin");
   await expect
-    .poll(() => FERMEES_PAR_LA_CSP.filter((nom) => !tiers.recues.has(nom)), {
+    .poll(() => [...FERMEES_PAR_LA_CSP, ...RESIDUELLES].filter((nom) => !tiers.recues.has(nom)), {
       message: "voies qui n'ont PAS atteint l'origine tierce sans la politique",
       timeout: 30000,
     })
@@ -130,22 +139,43 @@ test("ÉPREUVE ROUGE : servie par le relais, l'application n'atteint AUCUNE orig
   await expect(application.locator("html")).toHaveAttribute("data-sorties", "tentees", {
     timeout: 60000,
   });
-  // L'épreuve attend une ABSENCE : il lui faut une fenêtre, et celle-ci couvre la navigation du
-  // cadre, tentée une seconde après « tentées ».
+  // Le relevé est lu AVANT la navigation du cadre, tentée une seconde après « tentées » : Chromium
+  // remplace un cadre dont la navigation est refusée par sa page d'erreur, sans qu'aucune requête
+  // parte. Ce qui compte est l'origine tierce, pas le document qui reste.
+  const rapport = JSON.parse(await application.locator("#sorties-rapport").textContent());
+  // L'épreuve attend une ABSENCE : il lui faut une fenêtre, et celle-ci couvre cette navigation.
   await page.waitForTimeout(GRACE_APRES_TENTATIVES_MS);
-  const rapport = await application
-    .locator("#sorties-rapport")
-    .textContent({ timeout: 5000 })
-    .catch(() => null);
   await info.attach(`relais-${info.project.name}.json`, {
     body: JSON.stringify({ recues: [...tiers.recues].sort(), rapport }, null, 2),
     contentType: "application/json",
   });
 
-  expect([...tiers.recues].sort(), "voies qui ont atteint l'origine tierce").toEqual([]);
-  // Le document hostile est toujours là : sa navigation vers le tiers n'a pas abouti.
-  expect(rapport, "le cadre a quitté l'application : il a navigué hors de son origine").not.toBe(
-    null,
+  // Chaque voie a bien été TENTÉE : un relevé vide ne vaut que si rien n'a été épargné.
+  expect(rapport.tentees.sort()).toEqual(
+    VOIES_DE_SORTIE.map(({ nom }) => nom)
+      .filter((nom) => !TENTEES_APRES_LE_RELEVE.includes(nom))
+      .sort(),
   );
-  expect(JSON.parse(rapport).tentees.sort()).toEqual(VOIES_DE_SORTIE.map(({ nom }) => nom).sort());
+  expect(
+    [...tiers.recues].filter((nom) => !RESIDUELLES.includes(nom)).sort(),
+    "voies qui ont atteint l'origine tierce",
+  ).toEqual([]);
+  // Le RÉSIDUEL est publié, jamais tu : mesuré le 27/11/2026, la désinscription ouvre une sortie
+  // sous Chromium et WebKit, pas sous Firefox (ADR 0052, limites).
+  for (const nom of RESIDUELLES) {
+    info.annotations.push({
+      type: "residuel",
+      description: `${nom} : ${tiers.recues.has(nom) ? "OUVERTE" : "fermée"} (${info.project.name})`,
+    });
+  }
+
+  // Le CONTRE-TÉMOIN : ce que l'application adresse à SA PROPRE origine est relayé, sous la même
+  // politique. Une politique qui fermerait tout fermerait aussi l'application.
+  const relayes = JSON.parse(await page.locator("#relayes").textContent());
+  for (const voie of VOIES_INTERNES) {
+    expect(
+      relayes.some((ligne) => ligne.endsWith(`${VOIE_INTERNE}${voie}`)),
+      `${VOIE_INTERNE}${voie} n'a pas été relayé : ${JSON.stringify(relayes)}`,
+    ).toBe(true);
+  }
 });

@@ -1499,6 +1499,20 @@ politiques de contenu, et le contenu du territoire applicatif vient du guest (AD
 Aucune de ces trois décisions n'est posée sur l'origine applicative : `tools/publier-temoin.mjs`
 relève leur **absence** sur cette origine, comme il relève leur présence sur la coquille.
 
+## Le cadre applicatif ne peut rien envoyer hors de son origine (#341, ADR 0052)
+
+| Menace                                                   | Mesure                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application (tierce ou compromise) → exfiltration réseau | Le Service Worker du cadre pose `POLITIQUE_DU_CADRE` sur **tout** ce qu'il sert (`default-src`, `connect-src`, `form-action`, `base-uri` sur `'self'` ; images et polices `data:`/`blob:` en plus). Aucune liste blanche, aucun canal assumé — à la différence de RailsBox, qui laisse `img-src *`. |
+| CSP permissive posée par Rails                           | Non rendue au cadre (`ENTETES_DE_REPONSE_RENDUES`), et remplacée si elle l'était ; un `<meta>` de Rails ne peut que restreindre.                                                                                                                                                                    |
+| Le courtier de même origine comme porte dérobée          | Le courtier porte `POLITIQUE_DU_COURTIER` par `<meta>` : `parent.fetch`, une image insérée dans son document et la navigation du cadre imbriqué (jugée par **son** `frame-src`) sont fermés.                                                                                                        |
+| Fenêtre surgissante, navigation du sommet                | Fermées par la sandbox de la coquille, pas par la politique.                                                                                                                                                                                                                                        |
+| **Résiduel, non couvert et non prouvé**                  | Pré-résolution DNS (`dns-prefetch`, `preconnect`), WebRTC (aucun moteur n'applique `webrtc`). Voir l'ADR 0052 pour le résiduel lié à la désinscription du Service Worker.                                                                                                                           |
+
+Preuve : `tests/browser/coquille-sorties-du-cadre.spec.mjs` (trois moteurs, témoin positif et
+contre-témoin) et `tests/unit/coquille-politique-du-cadre.test.mjs` (campagne de mutation
+`coquille`).
+
 ## La politique de cache est décidée par nature d'artefact (#103)
 
 L'[ADR 0023](docs/decisions/0023-politique-de-cache-par-nature-d-artefact.md) remplace le

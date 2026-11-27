@@ -12,9 +12,12 @@
 //  - `sandbox` : la sandbox de la coquille la ferme déjà (`allow-popups` et `allow-top-navigation`
 //    ne sont pas accordés, ADR 0038). Elle est TENTÉE quand même, et l'épreuve exige qu'elle reste
 //    fermée dans les deux montages : une sandbox élargie demain rouvrirait la voie, et la politique
-//    du cadre n'y peut rien.
+//    du cadre n'y peut rien ;
+//  - `aucune` : un RÉSIDUEL CONNU, que ni la politique ni la sandbox ne ferment (ADR 0052, limites).
+//    Il est tenté et son issue est publiée par l'épreuve, sans être exigée : une exigence rouge en
+//    permanence ne dirait plus rien, une absence de tentative cacherait le trou.
 
-export const FERMEE_PAR = Object.freeze({ csp: "csp", sandbox: "sandbox" });
+export const FERMEE_PAR = Object.freeze({ csp: "csp", sandbox: "sandbox", aucune: "aucune" });
 
 export const VOIES_DE_SORTIE = Object.freeze([
   { nom: "fetch", fermeePar: FERMEE_PAR.csp },
@@ -32,9 +35,18 @@ export const VOIES_DE_SORTIE = Object.freeze([
   { nom: "parent-fetch", fermeePar: FERMEE_PAR.csp },
   { nom: "parent-image", fermeePar: FERMEE_PAR.csp },
   { nom: "navigation-du-cadre", fermeePar: FERMEE_PAR.csp },
+  // Le Service Worker du cadre désinscrit, puis un document de l'hébergeur emprunté (ADR 0052).
+  { nom: "desinscription", fermeePar: FERMEE_PAR.aucune },
   { nom: "fenetre", fermeePar: FERMEE_PAR.sandbox },
   { nom: "navigation-du-sommet", fermeePar: FERMEE_PAR.sandbox },
 ]);
+
+/**
+ * Le préfixe des requêtes que l'application adresse à SA PROPRE origine, et que la politique doit
+ * laisser passer : `fetch`, image, formulaire.
+ */
+export const VOIE_INTERNE = "/interne/";
+export const VOIES_INTERNES = Object.freeze(["fetch", "image", "formulaire"]);
 
 /** Le préfixe que l'origine tierce relève. */
 export const PREFIXE_DE_FUITE = "/fuite/";
