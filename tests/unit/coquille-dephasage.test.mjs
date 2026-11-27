@@ -67,7 +67,8 @@ test("aucun volume : la voie d'installation de T1, inchangée", () => {
   const decision = deciderLeDephasage({ manifeste: null, descripteur: descripteur() });
   assert.equal(decision.issue, I.installer);
   // La version SERVIE est dite dès l'installation : l'accueil l'affiche (recette QA de #249, Q3).
-  assert.deepEqual(decision.servie, { version: "1.1.0", schema: N });
+  // L'IDENTITÉ servie aussi : le relevé montrait `servie.id: null` à l'installation (#351).
+  assert.deepEqual(decision.servie, { id: "ref", version: "1.1.0", schema: N });
   assert.deepEqual(paquetADemarrer(decision), {
     paquet: PAQUETS_SERVIS.courant,
     application: { version: "1.1.0", schema: N },

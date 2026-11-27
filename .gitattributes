@@ -7,3 +7,7 @@
 *.png binary
 *.wasm binary
 *.zip binary
+
+# L'application `rails new` de l'épreuve #351 est VERSIONNÉE EN CRLF, telle qu'un clone Windows
+# (`core.autocrlf=true`) la donne : ses octets sont gardés tels quels, jamais normalisés.
+tests/fixtures/application-rails-new/** -text
