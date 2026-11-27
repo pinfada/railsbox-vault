@@ -23,6 +23,29 @@
   Q2, Q3, Q5 tranchées par l'orchestrateur sous délégation du mainteneur (18/11/2026, au soir) ; Q4
   deux PR, Q6 D1h-b après la fusion de #298
 
+## Note datée du 28/11/2026 — aucune signature n'existe, et le bandeau ne pousse plus à adopter (#347)
+
+**Le renvoi.** Le « jalon 6 » cité ici comme réponse à une origine qui sert un Service Worker
+hostile ne désigne aucune issue : #26 est l'enveloppe des échanges entre coffres, #27 et #28
+l'export et GenealogyApp, et #45 (fermée) ne citait la signature que comme travail futur. #347 la
+porte ; sa conception attend une décision du mainteneur. **Ce risque n'a aujourd'hui aucune
+défense.**
+
+**Les textes.** Les états 1 à 4 du § 8, et le refus `RESERVE_PERIMEE`, viennent du Worker EN
+ATTENTE, que rien n'authentifie. Leurs textes n'invitent plus à l'adopter (« Fermez toutes les
+fenêtres du coffre, puis rouvrez-le ») et ne l'attribuent plus à l'éditeur. Ils disent que la
+version n'est pas vérifiée, et qu'elle s'appliquera à la prochaine ouverture du coffre, une fois
+toutes ses fenêtres fermées. Les textes exacts sont dans `src/coquille/reserve-fraicheur.mjs` et
+`src/coquille/refus-de-coquille.mjs` ; ceux de la table du § 8 sont historiques. Le niveau de
+promesse du § 8 ne change pas.
+
+**Constat, non tranché.** Un Worker en attente qui annonce un plancher supérieur (ou un retrait)
+fait afficher « révocation connue » à la page légitime et refuser le déverrouillage, et l'état reste
+connu pour la vie de la page. Une origine hostile l'obtient à volonté. Épreuve :
+`tests/unit/reserve-portail.test.mjs`, « CONSTAT #347 ». La logique du § 9 ne change pas ici : ne
+pas tenir ce plancher pour une révocation établie la toucherait, et c'est une décision du
+mainteneur.
+
 ## Contexte
 
 La PR #298 (ADR 0046) a rendu le démarrage hors connexion décidable : un descripteur scellé, un

@@ -16,6 +16,14 @@
   durabilité par le commit (#209), le cache par empreinte (ADR 0023), la chaîne de publication
   (#45).
 
+## Note datée du 28/11/2026 — aucune signature n'existe (#347)
+
+Le « jalon 6 (#26–#28) » cité ici pour la signature de l'auteur du paquet ne désigne aucune issue :
+#26 est l'enveloppe des échanges entre coffres, #27 et #28 l'export et GenealogyApp. #347 porte la
+signature des versions de la coquille ; sa conception attend une décision du mainteneur. **Une
+origine qui ment de façon cohérente n'a aujourd'hui aucune défense**, et le gel de version accepté
+ci-dessous l'est sans échéance. Le reste de cette décision ne change pas.
+
 ## Contexte
 
 T1 a séparé le code des données : le paquet est la partition 2 d'un `hda` composé, les données

@@ -4,6 +4,13 @@
 - Date : 2026-08-23
 - Issue : #35 · Invariant : `SEC-ORIGIN-001` · Jalon 0
 
+## Note datée du 28/11/2026 — la publication compromise de la coquille n'a aucune défense (#347)
+
+Cette décision renvoie à #45 pour la compromission de la publication de la coquille. #45 (fermée) a
+livré la chaîne de publication, pas une signature : rien n'authentifie la coquille servie. Ce renvoi
+désigne désormais #347, dont la conception attend une décision du mainteneur. **Ce risque n'a
+aujourd'hui aucune défense.** Le reste de cette décision ne change pas.
+
 ## Contexte
 
 `SECURITY.md` traite le JavaScript rendu par l'application Rails comme une entrée hostile. La

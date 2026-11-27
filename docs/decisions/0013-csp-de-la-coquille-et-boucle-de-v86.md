@@ -4,6 +4,13 @@
 - Date : 2026-08-26 · amendé le 2026-08-26 (§ « Mise en œuvre par #74 »)
 - Issue : #52, amendé par #74 · Invariants : `SEC-ORIGIN-001` · Jalon 5
 
+## Note datée du 28/11/2026 — la publication compromise de la coquille n'a aucune défense (#347)
+
+Cette décision renvoie à #45 pour une publication compromise de la coquille. #45 (fermée) a livré la
+chaîne de publication, pas une signature : rien n'authentifie la coquille servie. Ce renvoi désigne
+désormais #347, dont la conception attend une décision du mainteneur. **Ce risque n'a aujourd'hui
+aucune défense.** Le reste de cette décision ne change pas.
+
 ## Contexte
 
 L'[ADR 0002](0002-topologie-origine-de-confiance.md) sert à la coquille de confiance une CSP

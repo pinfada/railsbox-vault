@@ -119,8 +119,9 @@ job requis « Campagnes de mutation » :
   hors connexion, les redirections classées « réponse de l'origine », les empreintes du boot
   obligatoires, le remplacement du fichier rangé sans reste, et les bornes dans le temps ;
 - **`reserve`** (`tools/muter-gardes-reserve.mjs`, #299, ADR 0048 annexe A) : la RÉSERVE du Service
-  Worker de la coquille. Les 34 gardes de l'annexe, retirées **sur le source du produit** — le
-  script `tools/reserve/sw-coquille.js` exécuté dans un `vm`, le portail
+  Worker de la coquille. Les 34 gardes de l'annexe, et trois mutants de texte (T1 à T3, #347 : un
+  état venu du Worker en attente n'invite pas à l'adopter), retirées **sur le source du produit** —
+  le script `tools/reserve/sw-coquille.js` exécuté dans un `vm`, le portail
   `src/coquille/reserve-*.mjs` avec un `navigator.serviceWorker` factice, le générateur
   `tools/publier-reserve.mjs` —, chacune tuée par une épreuve NOMMÉE ; **zéro survivant, aucun
   mutant déclaré équivalent**. La garde « client `window` » est inatteignable depuis un Worker dédié

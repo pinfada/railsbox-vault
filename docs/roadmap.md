@@ -267,6 +267,12 @@ l'application est parfois perdu) ; lot D, T3 de #236, après un défi d'architec
 lot E — #243 ; lot C — #245 ; lot B — #246 ; lot J, après le jalon 6 — #248. #241 (résolue par cette
 PR) et #172 (absorbée par l'ADR 0033) sont closes.
 
+**#347 (critique) : la coquille n'est authentifiée par rien.** Une coquille piégée publiée par
+l'hébergeur, son compte ou la CI reçoit la phrase au prochain déverrouillage, et **ce risque n'a
+aujourd'hui aucune défense**. `SECURITY.md` renvoyait sa réponse à « la signature des paquets
+(jalon 6) » : aucune issue ne la portait, et le jalon 6 ne la contient pas. #347 la porte ; sa
+conception attend une décision du mainteneur. Elle bloque le gate « données sensibles ».
+
 **Ce qui ferme l'épique #195 reste inchangé et vous revient** : une personne non technique, que vous
 désignez, suit les neuf écrans et leurs trois échecs sans aide (`docs/parcours/relecture-p2.md`) ;
 ses retours vont dans une issue ; ce qui passe ferme #195 et ouvre la proposition du palier « usage
@@ -286,7 +292,8 @@ mesure, moteur par moteur.
 
 Deux utilisateurs peuvent échanger des paquets confidentiels, authentifiés et résistants au rejeu
 sans confier leurs données au relais. RailsBox Vault fournit les primitives ; chaque application
-conserve ses règles de fusion métier.
+conserve ses règles de fusion métier. La signature des versions de la coquille et du paquet
+applicatif n'en fait pas partie (#347).
 
 ## Règle de passage
 
