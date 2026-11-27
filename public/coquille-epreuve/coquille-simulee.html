@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="fr" data-coquille-simulee="demarrage">
+  <head>
+    <meta charset="utf-8" />
+    <title>Coquille simulée — sorties du cadre (#341)</title>
+  </head>
+  <body>
+    <!--
+      Une COQUILLE SIMULÉE (#341, ADR 0052), servie par l'origine de confiance sous la CSP de la
+      coquille. Elle tient le rôle de la coquille ET du guest : elle octroie un port restreint au VRAI
+      courtier, et répond elle-même aux requêtes relayées par une application hostile. Ce qui est
+      éprouvé — le courtier, le Service Worker du cadre, la politique qu'ils posent — est le code du
+      produit ; ce qui est simulé est ce qui exigerait une machine virtuelle.
+    -->
+    <div id="emplacement"></div>
+    <script type="module" src="coquille-simulee.mjs"></script>
+  </body>
+</html>
