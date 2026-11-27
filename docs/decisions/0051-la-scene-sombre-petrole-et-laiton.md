@@ -27,7 +27,12 @@ Constats de l'essai du même jour, sur `main` (`2fb373b`) :
    laiton, large de 520 px au plus.
 2. **Le laiton désigne le geste principal.** Le bouton principal de l'écran (`PRINCIPAL_DE_L_ECRAN`,
    ADR 0043) est en laiton, texte sombre. Le secondaire reste un contour. Le laiton sert aussi au
-   focus, au filet de la plaque et aux crans.
+   focus, au filet de la plaque et aux crans. Le laiton du bouton est UNI : un dégradé, essayé
+   d'abord, coûtait des à-coups d'affichage sous WebKit Linux à chaque apparition du bouton. À
+   l'épreuve de calibrage du rendeur, la médiane des pires cas passait de 16 à 31 ms, avec des
+   pointes de 138 à 336 ms au-delà du seuil de 200 ms. L'ombre portée et le `color-mix()` du bouton
+   de danger ont été mesurés sans effet (bissection de la feuille, 27/11/2026, 25 essais par
+   variante).
 3. **La plaque est du papier.** À partir de 1024 px, la plaque des gestes est une feuille claire
    posée sur la scène : la palette est redéfinie pour tout ce qu'elle porte, et chaque composant la
    suit. Un champ de saisie est clair partout, à l'encre sombre. La feuille de récupération est une

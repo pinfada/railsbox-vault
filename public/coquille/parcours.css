@@ -335,7 +335,9 @@ button[data-principal],
 button[data-principal-de-la-vue] {
   min-height: 60px;
   border-color: var(--laiton);
-  background: var(--laiton) linear-gradient(180deg, var(--laiton-clair) 0%, var(--laiton) 100%);
+  /* Un laiton UNI : le dégradé essayé d'abord coûtait des à-coups d'affichage sous WebKit à chaque
+     apparition du bouton (ADR 0051, décision 2). */
+  background: var(--laiton);
   color: var(--inverse);
   font-size: 17px;
   font-weight: 700;
