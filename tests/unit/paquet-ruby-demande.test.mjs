@@ -68,6 +68,12 @@ test("la sémantique est celle de Gem::Requirement", () => {
   assert.equal(satisfaitLaContrainteRuby("3.3.12", ["!= 3.3.12"]), false);
 });
 
+test("la contrainte pessimiste a une borne haute : `~>` ne laisse pas passer la série suivante", () => {
+  // Ajout du coffre aux cas de RailsBox : sans lui, retirer la borne de `~>` ne rougissait rien.
+  assert.equal(satisfaitLaContrainteRuby("3.4.1", ["~> 3.3.10"]), false);
+  assert.equal(satisfaitLaContrainteRuby("4.0.0", ["~> 3.3"]), false);
+});
+
 test("rien de vérifiable : le verdict s'abstient plutôt que de refuser à tort", () => {
   assert.equal(satisfaitLaContrainteRuby(null, ["3.3.10"]), null);
   assert.equal(satisfaitLaContrainteRuby("3.3.12", []), null);

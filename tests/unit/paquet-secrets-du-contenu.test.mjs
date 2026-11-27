@@ -74,6 +74,7 @@ test("une référence à l'environnement n'est PAS un secret : la valeur n'est p
     "  username: <%= ENV.fetch('DB_USER') %>\n" +
     "  secret_key_base:\n" +
     "  token: ~\n" +
+    "  master_key: # posée hors du paquet\n" +
     '  api_key: ""\n';
   assert.deepEqual(codes("config/database.yml", contenu), []);
 });

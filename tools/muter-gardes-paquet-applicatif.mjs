@@ -18,6 +18,12 @@
 //  - l'EMPREINTE DE CHAQUE MORCEAU du disque système, confrontée avant le premier battement ;
 //  - l'EMPREINTE DE LA GRAINE, confrontée pendant le versement, avant la barrière et la datation.
 //
+// #342 ajoute les gardes de la SOURCE, jouées avant le premier `docker build` : un lien symbolique
+// n'entre pas (la copie le suivrait), un secret écrit dans le contenu d'un fichier non plus, et la
+// directive `ruby` du Gemfile doit accepter le seul Ruby du guest. Les mutants des liens ne rougissent
+// que là où un lien se pose : sous Windows sans privilège, l'épreuve les SAUTE, et la campagne y
+// compte ces deux mutants survivants. La CI (Linux) les tue.
+//
 // ## Ce que la campagne ne peut PAS mesurer
 //
 // Que le guest monte réellement `/dev/sda2` et `/dev/sdb`, que Rails y lise sa base, que le noyau
@@ -38,6 +44,17 @@ const EPREUVE_COMPOSE = "tests/unit/vm-disque-compose.test.mjs";
 const EPREUVE_ACQUISITION = "tests/unit/vm-acquisition-disque-systeme.test.mjs";
 const EPREUVE_VERSEMENT = "tests/unit/vm-versement-graine.test.mjs";
 const EPREUVE_CONTRAT = "tests/unit/paquet-contrat.test.mjs";
+
+// Les gardes de la SOURCE (#342) : liens symboliques, Ruby demandé, secrets par contenu.
+const FABRIQUE = "tools/paquet/fabriquer-paquet.mjs";
+const GARDES = "tools/paquet/gardes-de-la-source.mjs";
+const LIENS = "tools/paquet/liens-de-la-source.mjs";
+const RUBY = "tools/paquet/ruby-demande.mjs";
+const SECRETS = "tools/paquet/secrets-du-contenu.mjs";
+
+const EPREUVE_GARDES = "tests/unit/paquet-gardes-de-la-source.test.mjs";
+const EPREUVE_RUBY = "tests/unit/paquet-ruby-demande.test.mjs";
+const EPREUVE_SECRETS = "tests/unit/paquet-secrets-du-contenu.test.mjs";
 
 /**
  * Les gardes de #236, et la façon exacte de les retirer.
@@ -147,6 +164,91 @@ export const MUTATIONS = Object.freeze([
       "  }\n",
     apres: "",
     epreuves: [EPREUVE_CONTRAT],
+  },
+  // --- #342 : les gardes de la source, avant le premier `docker build` ---
+  {
+    nom: "une source qui porte une anomalie de liens, de Ruby ou de secrets n'est pas construite",
+    garde: "examinerLaSource — le refus quand les gardes de la source rendent une anomalie",
+    fichier: FABRIQUE,
+    avant: "  if (anomalies.length > 0) throw erreurDeRefus(source, anomalies);\n",
+    apres: "",
+    epreuves: [EPREUVE_GARDES],
+  },
+  {
+    nom: "un lien symbolique est reconnu comme tel, sans être suivi",
+    garde: "estUnLien — le `lstat` du chemin retenu",
+    fichier: LIENS,
+    avant: "    return lstatSync(join(source, relatif)).isSymbolicLink();\n",
+    apres: "    return false;\n",
+    epreuves: [EPREUVE_GARDES],
+  },
+  {
+    nom: "un lien n'est jamais LU : ni par le Ruby demandé, ni par le balayage des secrets",
+    garde: "gardesDeLaSource — les liens retirés des fichiers lisibles",
+    fichier: GARDES,
+    avant: "  const lisibles = fichiers.filter((relatif) => !sontDesLiens.has(relatif));\n",
+    apres: "  const lisibles = fichiers;\n",
+    epreuves: [EPREUVE_GARDES],
+  },
+  {
+    nom: "une directive `ruby` que le Ruby du guest ne satisfait pas est refusée",
+    garde: "confronterLeRubyDemande — le verdict de Gem::Requirement",
+    fichier: RUBY,
+    avant:
+      "  if (satisfaitLaContrainteRuby(rubyDuGuest, contrainte.contraintes) !== false) return [];\n",
+    apres: "  return [];\n",
+    epreuves: [EPREUVE_GARDES],
+  },
+  {
+    nom: "`~>` a une borne haute : la série suivante ne satisfait pas la contrainte",
+    garde: "satisfaitUne — la borne pessimiste",
+    fichier: RUBY,
+    avant:
+      "        comparaison >= 0 && comparerSegments(version, bornePessimiste(contrainte.segments)) < 0\n",
+    apres: "        comparaison >= 0\n",
+    epreuves: [EPREUVE_RUBY],
+  },
+  {
+    nom: "`ruby file:` qui désigne un fichier absent du paquet est refusé",
+    garde: "confronterLeRubyDemande — la présence du fichier désigné parmi les retenus",
+    fichier: RUBY,
+    avant: "    if (!fichiers.includes(designe)) {\n",
+    apres: "    if (false) {\n",
+    epreuves: [EPREUVE_GARDES],
+  },
+  {
+    nom: "une valeur à forme de jeton est refusée partout, quel que soit le nom",
+    garde: "constatDeLaLigne — la clé PEM et les motifs de jetons",
+    fichier: SECRETS,
+    avant:
+      "  if (CLE_PRIVEE_PEM.test(ligne) || valeursCandidates(ligne, yaml).some(ressembleAUnJeton)) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_SECRETS],
+  },
+  {
+    nom: "une clé au nom de secret, valeur écrite en clair, est refusée sous config/ et dans les graines",
+    garde: "constatDeLaLigne — les clés au nom de secret",
+    fichier: SECRETS,
+    avant:
+      "  const cle = clesSecretes(ligne, yaml).find((c) => !assumeePublique(assumesPublics, chemin, c));\n",
+    apres: "  const cle = undefined;\n",
+    epreuves: [EPREUVE_SECRETS],
+  },
+  {
+    nom: "une valeur lue dans l'environnement (ERB, ENV) n'est pas un secret écrit",
+    garde: "valeurEcrite — l'exception des références à l'environnement",
+    fichier: SECRETS,
+    avant: "  return !/<%|#\\{|\\bENV\\b/.test(valeur);\n",
+    apres: "  return true;\n",
+    epreuves: [EPREUVE_SECRETS],
+  },
+  {
+    nom: "la dérogation nomme son FICHIER : elle ne couvre pas la même clé ailleurs",
+    garde: "assumeePublique — la comparaison exacte du fichier et de la clé",
+    fichier: SECRETS,
+    avant: "    (entree) => entree?.fichier === fichier && entree?.cle === cle,\n",
+    apres: "    (entree) => entree?.cle === cle,\n",
+    epreuves: [EPREUVE_SECRETS],
   },
 ]);
 

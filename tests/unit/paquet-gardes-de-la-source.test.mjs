@@ -82,10 +82,10 @@ function refusePour(code) {
  * Pose un lien symbolique, ou SAUTE le test sous Windows sans le privilège requis (voir l'en-tête).
  * Rend `false` si le test a été sauté.
  */
-function lier(t, cible, lien) {
+function lier(t, cible, lien, type = "file") {
   mkdirSync(dirname(lien), { recursive: true });
   try {
-    symlinkSync(cible, lien, "file");
+    symlinkSync(cible, lien, type);
     return true;
   } catch (erreur) {
     if (process.platform === "win32" && erreur.code === "EPERM") {
@@ -104,7 +104,7 @@ test("témoin : une application propre passe les trois gardes", () => {
   assert.ok(examen.fichiers.includes("config/database.yml"));
 });
 
-test("témoin : l'application de RÉFÉRENCE passe aussi, avec les mêmes fichiers retenus", () => {
+test("témoin : l'application de RÉFÉRENCE passe aussi, sans aucune anomalie", () => {
   const examen = examinerLaSource(join(RACINE_DEPOT, "apps", "reference"), {});
   assert.equal(examen.id, "railsbox-vault-reference");
   assert.ok(examen.fichiers.includes("Gemfile"));
@@ -226,6 +226,13 @@ test("un lien vers l'EXTÉRIEUR de la source est refusé", (t) => {
       return true;
     },
   );
+});
+
+test("un lien vers un DOSSIER est refusé par un rapport, sans être lu", (t) => {
+  // Le parcours du disque le prend pour un fichier ; le lire lèverait EISDIR au lieu d'un rapport.
+  const source = application();
+  if (!lier(t, join(source, "app"), join(source, "config", "alias-de-app"), "dir")) return;
+  assert.throws(() => examinerLaSource(source, IDENTITE), refusePour("lien-symbolique"));
 });
 
 test("un lien est refusé aussi quand la source est un dépôt git (liste de `git ls-files`)", (t) => {
