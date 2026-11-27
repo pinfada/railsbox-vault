@@ -239,14 +239,16 @@ export const POLITIQUE_DU_CADRE = [
  * `frame-src` de son PARENT, le courtier, et par lui seul.
  *
  * Elle est plus étroite que celle du cadre, parce que le courtier est le code de ce dépôt : ni
- * script en ligne, ni formulaire. Elle passe par `<meta>` et non par un en-tête parce que le courtier
+ * script en ligne, ni formulaire. Le style en ligne, lui, est admis : WebKit lève une violation
+ * `style-src-elem` sur ce document sans qu'il en écrive aucun (mesuré par `tests/apparence/`, CI du
+ * 27/11/2026), et un style n'atteint rien que `img-src` et `font-src` ne jugent. Elle passe par `<meta>` et non par un en-tête parce que le courtier
  * est servi par l'HÉBERGEUR, avant tout Service Worker, et que l'hébergeur ne pose pas toujours
  * d'en-tête (ADR 0010) ; aucune de ses directives n'est de celles qu'un `<meta>` ignore.
  */
 export const POLITIQUE_DU_COURTIER = [
   "default-src 'none'",
   "script-src 'self'",
-  "style-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self'",
   "connect-src 'self'",
   "worker-src 'self'",

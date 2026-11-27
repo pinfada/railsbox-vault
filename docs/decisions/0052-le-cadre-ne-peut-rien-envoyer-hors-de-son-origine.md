@@ -57,7 +57,7 @@ liste blanche, ni exception, pour l'instant.
    celui du PARENT — qui juge la navigation du cadre imbriqué. `POLITIQUE_DU_COURTIER` :
 
    ```text
-   default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self';
+   default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self';
    worker-src 'self'; frame-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'
    ```
 
