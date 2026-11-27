@@ -27,16 +27,21 @@ const SANDBOX_DE_LA_COQUILLE = "allow-scripts allow-same-origin allow-forms";
 const CSP_PERMISSIVE_DU_GUEST =
   "default-src * ws: wss: data: blob: 'unsafe-inline' 'unsafe-eval'; form-action *; frame-src *";
 
-/** Les fichiers de la page hostile que le « guest » rend, par chemin relayé. */
-const RENDUS = Object.freeze({
-  "/": { fichier: "sorties-hostiles.html", type: "text/html; charset=utf-8" },
-  "/sorties-hostiles.mjs": { fichier: "sorties-hostiles.mjs", type: "text/javascript" },
-  "/sorties-du-cadre.mjs": { fichier: "sorties-du-cadre.mjs", type: "text/javascript" },
-});
-
 const parametres = new URL(location.href).searchParams;
 const mode = parametres.get("mode");
 const origineTierce = parametres.get("tiers");
+// `page=formulaire` : la racine est une application qui soumet un formulaire ORDINAIRE (sans cible)
+// à sa propre origine, le contre-témoin de `frame-src 'none'` (#341, ADR 0052).
+const racine =
+  parametres.get("page") === "formulaire" ? "formulaire-interne.html" : "sorties-hostiles.html";
+
+/** Les fichiers de la page hostile que le « guest » rend, par chemin relayé. */
+const RENDUS = Object.freeze({
+  "/": { fichier: racine, type: "text/html; charset=utf-8" },
+  "/interne/formulaire": { fichier: "formulaire-interne.html", type: "text/html; charset=utf-8" },
+  "/sorties-hostiles.mjs": { fichier: "sorties-hostiles.mjs", type: "text/javascript" },
+  "/sorties-du-cadre.mjs": { fichier: "sorties-du-cadre.mjs", type: "text/javascript" },
+});
 
 function base64Depuis(texte) {
   let binaire = "";

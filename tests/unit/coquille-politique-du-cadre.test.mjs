@@ -108,13 +108,15 @@ test("l'évaluateur MORD : chaque façon d'ouvrir une voie est vue", () => {
   ]);
   assert.ok(
     ouvertures(base.replace("default-src 'self'", "default-src *")).some(
-      ([voie]) => voie === "frame-src",
+      ([voie]) => voie === "media-src",
     ),
   );
   assert.ok(
     ouvertures(base.replace("script-src 'self'", "script-src 'self' 'strict-dynamic'")).length > 0,
   );
-  assert.deepEqual(ouvertures(`${base}; frame-src blob:`), [["frame-src", "blob:"]]);
+  assert.deepEqual(ouvertures(base.replace("frame-src 'none'", "frame-src blob:")), [
+    ["frame-src", "blob:"],
+  ]);
 });
 
 test("la politique du CADRE ne laisse AUCUNE voie hors de l'origine (#341)", () => {
@@ -124,6 +126,9 @@ test("la politique du CADRE ne laisse AUCUNE voie hors de l'origine (#341)", () 
   assert.deepEqual(directives.get("form-action"), ["'self'"]);
   assert.deepEqual(directives.get("base-uri"), ["'self'"]);
   assert.deepEqual(directives.get("connect-src"), ["'self'"]);
+  // AUCUN cadre, même de l'origine : un document de l'hébergeur, servi sans cette politique une fois
+  // le Service Worker désinscrit, serait une porte dérobée (ADR 0052). `'self'` ne suffit pas.
+  assert.deepEqual(directives.get("frame-src"), ["'none'"]);
 });
 
 test("la politique du cadre ne pose pas `frame-ancestors` : elle interdirait le cadre lui-même", () => {

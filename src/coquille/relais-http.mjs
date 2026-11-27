@@ -210,7 +210,12 @@ export const ENTETES_DE_L_HEBERGEUR_APPLICATIF = Object.freeze({
  *  - `'unsafe-inline'` reste sur les scripts et les styles, comme dans RailsBox : une application
  *    Rails ordinaire en émet (importmap, Turbo), et il n'ouvre aucune SORTIE — il ne dit que ce qui
  *    s'exécute, pas ce qui est atteint ;
- *  - `data:` et `blob:` sont des URL LOCALES : une image ou une police qui en vient ne quitte rien.
+ *  - `data:` et `blob:` sont des URL LOCALES : une image ou une police qui en vient ne quitte rien ;
+ *  - `frame-src 'none'` : l'application ne crée AUCUN cadre, même de son origine. Une application
+ *    qui désinscrit le Service Worker du cadre pouvait encadrer un fichier de l'hébergeur, servi
+ *    sans cette politique, puis emprunter son `fetch` (ouvert sous Chromium et WebKit, mesuré le
+ *    27/11/2026). Le prix : une application Rails qui encadre ses propres pages ne fonctionne pas
+ *    dans un coffre (ADR 0052).
  *
  * Ce qu'elle ne pose PAS, et pourquoi : `frame-ancestors`. Le cadre est encadré par la coquille,
  * d'une autre origine ; `frame-ancestors 'self'` interdirait le cadre lui-même.
@@ -228,6 +233,7 @@ export const POLITIQUE_DU_CADRE = [
   "form-action 'self'",
   "base-uri 'self'",
   "object-src 'none'",
+  "frame-src 'none'",
 ].join("; ");
 
 /**

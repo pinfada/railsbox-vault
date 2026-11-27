@@ -46,7 +46,9 @@ export const VOIES_DE_SORTIE = Object.freeze([
  * laisser passer : `fetch`, image, formulaire.
  */
 export const VOIE_INTERNE = "/interne/";
-export const VOIES_INTERNES = Object.freeze(["fetch", "image", "formulaire"]);
+// Le FORMULAIRE interne a sa propre page (`formulaire-interne.html`) : sous `frame-src 'none'`, il ne
+// peut plus viser un cadre-puits, et un formulaire ordinaire navigue le cadre lui-même.
+export const VOIES_INTERNES = Object.freeze(["fetch", "image"]);
 
 /** Le préfixe que l'origine tierce relève. */
 export const PREFIXE_DE_FUITE = "/fuite/";

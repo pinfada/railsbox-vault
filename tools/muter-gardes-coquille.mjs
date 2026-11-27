@@ -652,6 +652,14 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
   },
   {
+    nom: "le cadre ne crée aucun cadre, même de son origine",
+    garde: "POLITIQUE_DU_CADRE — `frame-src 'none'` (la désinscription du Service Worker)",
+    fichier: RELAIS,
+    avant: "  \"object-src 'none'\",\n  \"frame-src 'none'\",\n",
+    apres: "  \"object-src 'none'\",\n",
+    epreuves: [EPREUVE_POLITIQUE_DU_CADRE],
+  },
+  {
     nom: "le Service Worker impose la politique du cadre",
     garde: "ENTETES_IMPOSES_AU_CADRE — la ligne qui porte la politique",
     fichier: RELAIS,

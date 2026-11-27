@@ -129,18 +129,13 @@ for (const { nom } of VOIES_DE_SORTIE) {
 }
 
 // Le CONTRE-TÉMOIN : ce que la politique doit LAISSER passer. Une politique qui fermerait aussi
-// l'origine de l'application la casserait, et l'épreuve rouge passerait quand même. Ces trois
+// l'origine de l'application la casserait, et l'épreuve rouge passerait quand même. Ces deux
 // requêtes visent l'origine applicative ; la coquille simulée relève celles que le relais lui porte.
+// Le formulaire interne a sa propre page, `formulaire-interne.html`.
 fetch(`${VOIE_INTERNE}fetch`, { method: "POST", body: "clair" }).catch(() => {});
 const imageInterne = document.createElement("img");
 imageInterne.src = `${VOIE_INTERNE}image`;
 document.body.append(imageInterne);
-const formulaireInterne = document.createElement("form");
-formulaireInterne.method = "POST";
-formulaireInterne.action = `${VOIE_INTERNE}formulaire`;
-formulaireInterne.target = "puits-interne";
-document.body.append(formulaireInterne);
-formulaireInterne.submit();
 publier();
 
 /**

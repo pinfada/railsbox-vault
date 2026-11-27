@@ -106,9 +106,10 @@ test.beforeEach(() => {
   tiers.recues.clear();
 });
 
-function ouvrir(page, mode) {
+function ouvrir(page, mode, racine = null) {
   const url = new URL("/coquille-epreuve/coquille-simulee.html", SHELL_ORIGIN);
   url.searchParams.set("mode", mode);
+  if (racine !== null) url.searchParams.set("page", racine);
   url.searchParams.set("tiers", tiers.origine);
   return page.goto(url.href);
 }
@@ -151,7 +152,9 @@ test("ÉPREUVE ROUGE : servie par le relais, l'application n'atteint AUCUNE orig
   });
 
   // Chaque voie a bien été TENTÉE : un relevé vide ne vaut que si rien n'a été épargné.
-  expect(rapport.tentees.sort()).toEqual(
+  // Les voies TARDIVES peuvent figurer au relevé ou non : quand plus rien ne détruit la page, elle le
+  // republie après les avoir tentées. Leur fermeture est jugée par ce que l'origine tierce reçoit.
+  expect(rapport.tentees.filter((nom) => !TENTEES_APRES_LE_RELEVE.includes(nom)).sort()).toEqual(
     VOIES_DE_SORTIE.map(({ nom }) => nom)
       .filter((nom) => !TENTEES_APRES_LE_RELEVE.includes(nom))
       .sort(),
@@ -178,4 +181,18 @@ test("ÉPREUVE ROUGE : servie par le relais, l'application n'atteint AUCUNE orig
       `${VOIE_INTERNE}${voie} n'a pas été relayé : ${JSON.stringify(relayes)}`,
     ).toBe(true);
   }
+});
+
+test("CONTRE-TÉMOIN : un formulaire ordinaire vers l'application est relayé sous la politique", async ({
+  page,
+}) => {
+  // Sous `frame-src 'none'`, un formulaire ne peut plus viser un cadre-puits ; un formulaire SANS
+  // cible navigue le cadre lui-même, que la politique admet par `form-action 'self'` (ADR 0052).
+  await ouvrir(page, "relais", "formulaire");
+  await expect
+    .poll(async () => JSON.parse((await page.locator("#relayes").textContent()) || "[]"), {
+      message: "le formulaire interne n'a pas été relayé",
+      timeout: 30000,
+    })
+    .toContain(`POST ${VOIE_INTERNE}formulaire`);
 });
