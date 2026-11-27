@@ -36,7 +36,7 @@ export const VOIES_DE_SORTIE = Object.freeze([
   { nom: "parent-image", fermeePar: FERMEE_PAR.csp },
   { nom: "navigation-du-cadre", fermeePar: FERMEE_PAR.csp },
   // Le Service Worker du cadre désinscrit, puis un document de l'hébergeur emprunté (ADR 0052).
-  { nom: "desinscription", fermeePar: FERMEE_PAR.aucune },
+  { nom: "desinscription", fermeePar: FERMEE_PAR.csp },
   { nom: "fenetre", fermeePar: FERMEE_PAR.sandbox },
   { nom: "navigation-du-sommet", fermeePar: FERMEE_PAR.sandbox },
 ]);
