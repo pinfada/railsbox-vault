@@ -94,6 +94,12 @@ demande sa propre tranche, avec ses épreuves :
 - Les mesures de contraste de `docs/direction-visuelle.md` sont à refaire sur la nouvelle palette.
   Les quatre premières le sont à chaque exécution de `npm run test:apparence`.
 - Le cadran du démarrage (décision 11) tourne pendant le démarrage de la machine virtuelle. Son coût
-  sur le temps de démarrage n'est pas mesuré : il doit l'être avant la fusion.
+  a été mesuré le 27 novembre 2026, sur `00c475c`, avant que les cadrans de fond soient immobilisés
+  : huit démarrages à froid par côté, alternés, sous Chromium sans carte graphique. Le p50 passe de
+  168,0 s à 168,5 s, pour un bruit de 7 à 8 s : l'écart n'est pas mesurable. Le processus graphique
+  consomme 2,9 s de calcul en plus sur 360. Ni Firefox, ni WebKit, ni un poste plus lent ne sont
+  mesurés, et un écart de 1 à 2 s ne peut être ni affirmé ni exclu.
+- La scène ne vaut qu'à l'écran. À l'impression, quelle que soit la largeur de la page, il ne reste
+  que la feuille claire, droite, en noir sur blanc.
 - Les captures de référence des deux thèmes deviennent identiques ; les épreuves restent jouées dans
   les deux, parce que le moteur continue d'annoncer la préférence du système.

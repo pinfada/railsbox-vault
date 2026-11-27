@@ -24,8 +24,15 @@ test("m7 : avant tout démarrage, la plaque des gestes de l'étape 4 reste à la
   await expect(titre(page, "Travailler dans l'application")).toBeVisible();
   // Depuis l'ADR 0051, la scène occupe la fenêtre ; ce qui ne doit pas s'élargir à vide est la
   // plaque des gestes, mesurée sur la section qui porte « Démarrer l'application ».
-  const plaque = await page.locator("#cycle").boundingBox();
-  expect(plaque.width, "la moitié droite d'une plaque de 1024 px serait vide").toBeLessThanOrEqual(
+  // Deux mesures : la plaque elle-même, que peint `main::before`, et la section qu'elle porte. La
+  // première seule voit un décor qui s'élargirait sans que son contenu bouge.
+  const largeurDeLaPlaque = await page
+    .locator("main")
+    .evaluate((main) => Number.parseFloat(getComputedStyle(main, "::before").width));
+  expect(Number.isFinite(largeurDeLaPlaque), "la plaque est peinte").toBe(true);
+  expect(largeurDeLaPlaque, "la plaque ne s'élargit pas à vide").toBeLessThanOrEqual(520);
+  const gestes = await page.locator("#cycle").boundingBox();
+  expect(gestes.width, "la moitié droite d'une plaque de 1024 px serait vide").toBeLessThanOrEqual(
     520,
   );
 });

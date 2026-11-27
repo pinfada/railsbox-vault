@@ -886,8 +886,9 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
    n'est plus une carte au milieu du vide : elle occupe la fenêtre. À gauche, ce que l'écran dit, en
    grand. À droite, sur une plaque, ce que l'on fait. Rien n'est déplacé dans le document : l'ordre
    de lecture et celui du clavier restent ceux du fichier. La dernière rangée est élastique, pour
-   que la hauteur du volet de gauche n'écarte jamais les gestes de la plaque. */
-@media (min-width: 1024px) {
+   que la hauteur du volet de gauche n'écarte jamais les gestes de la plaque.
+   La scène ne vaut qu'à l'ÉCRAN : à l'impression, une page large resterait sombre et en colonnes. */
+@media screen and (min-width: 1024px) {
   html:not([data-travail-pret="true"]) body {
     padding: 0;
   }
@@ -1194,7 +1195,7 @@ html:not([data-travail-pret="true"])
    très grand, la phrase et son bouton. Il se reconnaît au bloc « J'ai oublié ma phrase », que seul
    cet écran montre. Derrière, une silhouette floue d'application : un DÉCOR fixe, dessiné par la
    feuille de style, qui ne lit ni ne montre rien du coffre. */
-@media (min-width: 1024px) {
+@media screen and (min-width: 1024px) {
   html:not([data-travail-pret="true"])
     main:has(#promesse:not([hidden])):has([data-bloc="perdu"]:not([hidden])) {
     grid-template-columns: minmax(0, 560px);
@@ -1331,7 +1332,7 @@ html:not([data-travail-pret="true"])
 /* LA PLAQUE EST DU PAPIER (ADR 0051, décision 3). Sur la scène sombre, ce que l'on fait est posé sur
    une feuille claire : la palette est redéfinie pour tout ce que la plaque porte, et chaque
    composant la suit sans autre règle. */
-@media (min-width: 1024px) and (forced-colors: none) {
+@media screen and (min-width: 1024px) and (forced-colors: none) {
   html:not([data-travail-pret="true"]) main:not(:has([data-bloc="perdu"]:not([hidden])))::before {
     border-color: var(--papier);
     border-top-color: var(--laiton);
@@ -1574,6 +1575,12 @@ html[data-travail-pret="true"] [data-application="attente"] > * {
   [data-bloc="feuille"] {
     break-inside: avoid;
     padding: 24px;
+    /* La feuille imprimée est blanche, droite et sans ombre : le papier crème et le biais sont de
+       l'écran. */
+    background: white;
+    color: black;
+    transform: none;
+    box-shadow: none;
   }
   [data-bloc="feuille"] button {
     display: none;
