@@ -38,9 +38,11 @@ Le détail est dans l'[architecture](docs/architecture.md) et le [modèle de men
 - le parcours complet en neuf étapes : créer un coffre, choisir comment l'ouvrir, confirmer son code
   de récupération, travailler dans l'application, verrouiller et rouvrir, sauvegarder, restaurer
   ailleurs, récupérer par le code, révoquer (ADR 0040) ;
-- une écriture acquittée par Rails est durable dès l'acquittement, pour SQLite et les pièces jointes
-  ActiveStorage de l'application de référence (#209) ;
-- la réouverture après un verrouillage reprend un instantané chiffré : p95 de 0,84 s ;
+- dans les scénarios mesurés, la note de l'application de référence et sa pièce jointe sont durables
+  dès que Rails les acquitte (#209) ;
+- la réouverture après un verrouillage reprend un instantané chiffré : 0,92 s sur un essai unique
+  sous Chromium. Le p95 de 0,84 s vient d'un autre banc : le harnais Node, dix essais sur
+  l'environnement de référence ;
 - le démarrage hors connexion, une fois l'application installée (ADR 0046, ADR 0048).
 
 Les mesures et leurs protocoles sont dans les [attributs de qualité](docs/quality-attributes.md).
@@ -51,9 +53,11 @@ Même sur des données non sensibles :
 
 - aucune version n'est publiée, et la chaîne de publication n'a jamais été exercée sur un hébergeur
   réel (#124, #125) ;
-- aucune personne extérieure au projet n'a encore suivi le parcours sans aide (#195) ;
-- le premier démarrage, à froid, prend environ deux minutes (p95 de 125,9 s), et son pic de mémoire
-  dépasse la cible (#238) ;
+- la séance où une personne extérieure au projet suit le parcours sans aide n'a pas encore eu lieu :
+  cette preuve manque (#195) ;
+- le premier démarrage, à froid, prend environ deux minutes : 82,0 s et 116,6 s sur deux essais sous
+  Chromium, et un p95 de 125,9 s au harnais Node, sur l'environnement de référence. Son pic de
+  mémoire dépasse la cible (#238) ;
 - les écritures d'une application tierce hors de SQLite et d'ActiveStorage ne sont pas couvertes
   (#210).
 
@@ -61,7 +65,8 @@ Même sur des données non sensibles :
 
 | Navigateur          | État                                                          |
 | ------------------- | ------------------------------------------------------------- |
-| Chrome, Edge        | le parcours aboutit                                           |
+| Chromium            | le parcours aboutit, mesuré en intégration continue           |
+| Chrome, Edge        | fondés sur Chromium, non mesurés à part                       |
 | Firefox             | l'application ne démarre pas à l'étape 4 (voir « Prérequis ») |
 | Safari              | jamais mesuré sur un vrai Safari (#40)                        |
 | Navigateurs mobiles | expérimental                                                  |
@@ -104,7 +109,7 @@ et l'[issue #31](https://github.com/pinfada/railsbox-vault/issues/31) suit l'ava
 
 - Node 22.13 ou plus récent, jusqu'à Node 24 (champ `engines`) ;
 - Docker, pour fabriquer l'image de l'application ;
-- Chrome ou Edge récents.
+- un navigateur récent fondé sur Chromium, comme Chrome ou Edge ; seul Chromium est mesuré.
 
 Sous Firefox, l'étape 4 du parcours guidé n'aboutit pas dans cette version : la machine virtuelle y
 tourne environ six fois plus lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ;
