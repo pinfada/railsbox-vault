@@ -56,8 +56,9 @@ body {
   -webkit-font-smoothing: antialiased;
   background: radial-gradient(1100px 760px at 78% 30%, #17414c 0%, #0b2229 48%, #071519 100%) fixed;
 }
-/* Le CADRAN du coffre, derrière la plaque : une couronne de crans qui tourne très lentement, et un
-   anneau de laiton. Décoratif : hors du flux, sans contenu, jamais devant un geste. */
+/* Le CADRAN du coffre, derrière la plaque : une couronne de crans et un anneau de laiton. Décoratif :
+   hors du flux, sans contenu, jamais devant un geste. Il est IMMOBILE : sa rotation continue coûtait
+   des à-coups d'affichage sous WebKit (ADR 0051, décision 5). Seul le cadran du démarrage tourne. */
 body::before,
 body::after {
   content: "";
@@ -75,14 +76,13 @@ body::before {
   -webkit-mask: radial-gradient(closest-side, transparent 93%, #000 93.4% 97%, transparent 97.4%);
   mask: radial-gradient(closest-side, transparent 93%, #000 93.4% 97%, transparent 97.4%);
   opacity: 0.55;
-  animation: cadran 240s linear infinite;
 }
 body::after {
   background: repeating-conic-gradient(var(--laiton) 0deg 1.2deg, transparent 1.2deg 40deg);
   -webkit-mask: radial-gradient(closest-side, transparent 80%, #000 80.4% 84%, transparent 84.4%);
   mask: radial-gradient(closest-side, transparent 80%, #000 80.4% 84%, transparent 84.4%);
   opacity: 0.7;
-  animation: cadran 360s linear infinite reverse;
+  transform: rotate(-14deg);
 }
 @keyframes cadran {
   to {
@@ -945,7 +945,6 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
       transparent 97.3%
     );
     opacity: 0.5;
-    animation: cadran 300s linear infinite;
   }
   /* La plaque des gestes : un fond posé dans la colonne de droite, sous tout ce qu'elle porte. */
   html:not([data-travail-pret="true"]) main::before {

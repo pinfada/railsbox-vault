@@ -36,10 +36,11 @@ Constats de l'essai du même jour, sur `main` (`2fb373b`) :
 4. **Neuf crans.** Sous la ligne « Étape x sur 9 », neuf segments disent l'avancement. La page pose
    le rang sur le document (`data-rang`) à l'instant où elle écrit la ligne ; la feuille de style en
    tire les crans. Ils sont décoratifs : le rang reste dit par le texte.
-5. **Le cadran.** Derrière la plaque, deux couronnes dessinées en CSS évoquent le cadran d'un coffre
-   et tournent très lentement. Elles sont hors du flux, ne portent aucun contenu, et disparaissent
-   quand l'application occupe l'écran, à l'impression et sous `forced-colors`.
-   `prefers-reduced-motion` les immobilise, par la règle générale déjà en place.
+5. **Le cadran.** Derrière la plaque, deux couronnes dessinées en CSS évoquent le cadran d'un
+   coffre. Elles sont immobiles : leur rotation lente, essayée d'abord, coûtait des à-coups
+   d'affichage sous WebKit (jusqu'à 405 ms à l'épreuve de calibrage du rendeur, pour 13 ms sans
+   elle). Elles sont hors du flux, ne portent aucun contenu, et disparaissent quand l'application
+   occupe l'écran, à l'impression et sous `forced-colors`.
 6. **La scène occupe la fenêtre.** À partir de 1024 px, hors de l'application, la page n'est plus
    une carte au milieu du vide. À gauche, ce que l'écran dit : le titre en très grand, l'explication
    et ce qui est attendu. À droite, la plaque et ses gestes. À l'entrée, la promesse, les garanties
@@ -92,7 +93,7 @@ demande sa propre tranche, avec ses épreuves :
   `forced-colors` reste pris en charge, et l'impression est claire.
 - Les mesures de contraste de `docs/direction-visuelle.md` sont à refaire sur la nouvelle palette.
   Les quatre premières le sont à chaque exécution de `npm run test:apparence`.
-- Les animations du cadran tournent pendant le démarrage de la machine virtuelle. Leur coût sur le
-  temps de démarrage n'est pas mesuré : il doit l'être avant la fusion.
+- Le cadran du démarrage (décision 11) tourne pendant le démarrage de la machine virtuelle. Son coût
+  sur le temps de démarrage n'est pas mesuré : il doit l'être avant la fusion.
 - Les captures de référence des deux thèmes deviennent identiques ; les épreuves restent jouées dans
   les deux, parce que le moteur continue d'annoncer la préférence du système.
