@@ -14,6 +14,7 @@ import {
   causeDeLaRevocation,
   etatDeFraicheur,
 } from "../../src/coquille/reserve-fraicheur.mjs";
+import { CODES_REFUS_COQUILLE, messageDeRefus } from "../../src/coquille/refus-de-coquille.mjs";
 
 const COURANTE = 5;
 const base = { maj: "ok", attente: null, sequenceCourante: COURANTE };
@@ -159,4 +160,49 @@ test("PRIORITÉ : le fait connu avant l'incertitude — une révocation l'emport
 test("seul l'état 1 refuse ; les autres autorisent ou attendent", () => {
   const refus = Object.values(E).filter((etat) => etat.effet === "refuse");
   assert.deepEqual(refus, [E.REVOCATION_CONNUE]);
+});
+
+// --- #347 : les états qui viennent du Service Worker EN ATTENTE ---------------------------------------
+//
+// Séquence, plancher et retrait sont ceux que le Worker en attente DÉCLARE. Ce Worker est servi par
+// l'hébergeur, et rien ne l'authentifie (ADR 0048, `SECURITY.md`). Le bandeau ne doit donc ni pousser à
+// l'adopter (« Fermez toutes les fenêtres… »), ni l'attribuer à l'éditeur. Il dit qu'il existe, qu'il
+// n'est pas vérifié, et quand il s'appliquera.
+
+const VIENNENT_DE_L_ATTENTE = [
+  ["REVOCATION_CONNUE", () => etatDeFraicheur({ ...base, attente: attente({ plancher: 9 }) })],
+  [
+    "REVOCATION_CONNUE (retrait)",
+    () => etatDeFraicheur({ ...base, attente: attente({ retrait: true, sequence: 0 }) }),
+  ],
+  ["ATTENTE_MUETTE", () => etatDeFraicheur({ ...base, attente: { muet: true } })],
+  ["MISE_A_JOUR_PRETE", () => etatDeFraicheur({ ...base, attente: attente({ sequence: 6 }) })],
+  ["VERSION_DIFFERENTE", () => etatDeFraicheur({ ...base, attente: attente({ sequence: 4 }) })],
+];
+
+test("#347 · un état qui vient du Worker en attente n'invite pas à l'adopter, et dit qu'il n'est pas vérifié", () => {
+  for (const [nom, observer] of VIENNENT_DE_L_ATTENTE) {
+    const { texte } = observer();
+    assert.doesNotMatch(texte, /fermez|rouvrez-le|prête à s'ouvrir/i, `${nom} : invitation`);
+    assert.doesNotMatch(texte, /l'éditeur annonce|par son éditeur/i, `${nom} : attribution`);
+    assert.match(texte, /n'est pas vérifiée/, `${nom} : « non vérifiée »`);
+    assert.match(
+      texte,
+      /s'appliquera à la prochaine ouverture du coffre, une fois toutes ses fenêtres fermées/,
+      `${nom} : quand elle s'appliquera`,
+    );
+  }
+});
+
+test("#347 · « mise à jour prête » dit qu'une nouvelle version est disponible, sans la dire sûre", () => {
+  const { texte } = etatDeFraicheur({ ...base, attente: attente({ sequence: 6 }) });
+  assert.match(texte, /Une nouvelle version de la coquille est disponible/);
+  assert.match(texte, /rien ne prouve qu'elle vient de l'éditeur/);
+});
+
+test("#347 · le refus « périmée » n'invite pas à adopter la version en attente, et dit l'annonce non vérifiée", () => {
+  const texte = messageDeRefus(CODES_REFUS_COQUILLE.reservePerimee);
+  assert.doesNotMatch(texte, /fermez|rouvrez-le|se remplace|par son éditeur/i);
+  assert.match(texte, /annoncée comme retirée/);
+  assert.match(texte, /n'est pas vérifiée/);
 });
