@@ -1,6 +1,6 @@
 # ADR 0052 — Le cadre ne peut rien envoyer hors de son origine : une CSP injectée, sans liste blanche
 
-- Statut : proposé (relecture du mainteneur demandée)
+- Statut : accepté (mainteneur, 27/11/2026)
 - Date : 2026-11-27
 - Issue : [#341](https://github.com/pinfada/railsbox-vault/issues/341) · lot
   `lot:applications-tierces` · Invariant : `SEC-ORIGIN-001`
