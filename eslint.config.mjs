@@ -106,6 +106,10 @@ export default [
       // contexte d'exécution — un module de page copié sous `artifacts/` n'y est plus reconnu comme
       // tel — et ferait dépendre le lint de la présence d'une construction locale.
       "artifacts/**",
+      // Application GÉNÉRÉE par `rails new -d postgresql` (#343, ADR 0056) : ses scripts sont ceux
+      // du générateur, et l'épreuve exige qu'elle reste non modifiée. Les juger ici obligerait à les
+      // réécrire.
+      "apps/rails-new-postgresql/**",
     ],
   },
   eslint.configs.recommended,
