@@ -400,6 +400,14 @@ export function emplacementRendu(emplacement, baseDuGuest) {
   } catch {
     return null;
   }
+  // `config.assume_ssl = true`, que `rails new` écrit en production depuis Rails 7.1 : Rails se croit
+  // derrière un proxy TLS et rend `https://<hôte du guest>/…` (#343, mesuré sur
+  // `apps/rails-new-postgresql`). C'est le MÊME guest sous l'autre schéma ; sans cette lecture, la
+  // redirection qui suit chaque formulaire d'une application conventionnelle était jetée, et le
+  // cadre restait blanc. Une autre machine, ou un autre port, reste refusée plus bas.
+  if (url.protocol === "https:" && new URL(baseDuGuest).protocol === "http:") {
+    url = new URL(`http://${url.host}${url.pathname}${url.search}${url.hash}`);
+  }
   if (url.origin !== new URL(baseDuGuest).origin) return null;
   // Le chemin NORMALISÉ est rejugé : `/..//evil.test/` est de la bonne origine et se normalise en
   // `//evil.test/`, que le cadre lirait comme une autre origine (revue de sécurité #203, constat 4).

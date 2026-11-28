@@ -274,6 +274,16 @@ test("une `Location` absolue vers le guest rend un CHEMIN, jamais une adresse", 
   assert.equal(emplacementRendu("/notes/42", ORIGINE), "/notes/42");
 });
 
+test("une `Location` en https vers le guest (config.assume_ssl de Rails) rend son chemin", () => {
+  // `rails new` écrit `config.assume_ssl = true` en production : la redirection qui suit un
+  // formulaire vise `https://<hôte du guest>/…`. C'est le guest ; une autre machine ne l'est pas.
+  assert.equal(emplacementRendu("https://127.0.0.1/notes/42", ORIGINE), "/notes/42");
+  assert.equal(emplacementRendu("https://127.0.0.1/notes?x=1#y", ORIGINE), "/notes?x=1#y");
+  assert.equal(emplacementRendu("https://exemple.test/notes/42", ORIGINE), null);
+  assert.equal(emplacementRendu("https://127.0.0.1:9999/notes/42", ORIGINE), null);
+  assert.equal(emplacementRendu("https://127.0.0.1/..//evil.test/", ORIGINE), null);
+});
+
 test("une redirection HORS du guest n'est pas rendue : le cadre ne navigue pas sur son ordre", () => {
   assert.equal(emplacementRendu("https://exemple.test/", ORIGINE), null);
   assert.equal(emplacementRendu("http://127.0.0.1:9999/ailleurs", ORIGINE), null);
