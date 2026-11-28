@@ -1649,6 +1649,34 @@ vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabil
 - **Un paquet n'isole pas l'application du volume.** Le code du paquet s'exécute avec un accès plein
   aux données montées sur `/app/var` : le paquet décide ce que le coffre contient.
 
+### Le `secret_key_base` fourni par le coffre (#351, ADR 0055)
+
+Une application Rails conventionnelle lit son `secret_key_base` dans `SECRET_KEY_BASE` ou dans ses
+credentials. Le paquet n'apporte jamais la clé maîtresse, et un `credentials.yml.enc` sans elle est
+**exclu** du paquet : rien ne l'ouvrirait. Le **coffre** fournit donc la valeur, sans rien changer à
+l'application.
+
+- **Comment.** Au premier démarrage du coffre, `secret-du-coffre.sh` tire 64 octets de
+  `/dev/urandom` dans le guest, les écrit en mode `600` dans `/app/var/.vault-secret-key-base`, et
+  `guest-init.sh` les exporte dans `SECRET_KEY_BASE` avant la migration et Puma. La même valeur est
+  relue à chaque boot suivant. La construction, elle, emploie `SECRET_KEY_BASE_DUMMY` de Rails : une
+  valeur jetable, retirée de l'image avant sa publication.
+- **Ce qu'il protège.** Les cookies signés et chiffrés, la session, les identifiants signés et les
+  URL signées d'Active Storage **contre qui ne détient pas le coffre ouvert**. La valeur n'est pas
+  dans l'image publique : connaître le paquet ne permet pas de forger une session. Elle est propre à
+  chaque coffre, et chiffrée au repos avec le volume de données.
+- **Ce qu'il ne protège pas.** Il ne protège rien contre qui a **ouvert** le coffre : la valeur est
+  dans le volume de données, avec les données qu'elle signe, et dans la mémoire du guest. Elle
+  voyage avec une **sauvegarde** du coffre, comme ces données. Si le disque de données refuse
+  l'écriture (`errors=remount-ro`), une valeur ÉPHÉMÈRE est employée et le journal de l'application
+  le dit : les sessions ne survivent alors pas au boot suivant. Il ne remplace pas les autres clés
+  qu'une application peut exiger : `active_record_encryption` et les credentials **métier** restent
+  absents, et une application qui en dépend ne démarre pas, ou démarre sans eux.
+- **Une application qui fixe sa propre valeur** (`config.secret_key_base = …`, sans lire
+  `SECRET_KEY_BASE`) la garde : le coffre ne l'écrase pas. L'application de référence dérive sa
+  valeur de `ENV.fetch("SECRET_KEY_BASE")` : elle prend donc désormais celle du coffre, et sa chaîne
+  publique ne sert plus que de repli hors du guest.
+
 ## La MISE À JOUR d'une application : ce qui est décidé avant le boot (#236 T2, ADR 0042)
 
 **Ce qui est garanti**
