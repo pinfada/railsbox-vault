@@ -96,6 +96,20 @@ schéma `0`, celui qu'ActiveRecord donne à une base dont `schema_migrations` es
 migration d'une version suivante le fait avancer par le chemin de l'ADR 0042. À l'installation, le
 déphasage porte aussi l'identité servie (`servie.id`).
 
+### 8. Les données d'une application ordinaire vivent sur le disque de données, et durablement
+
+`storage` devient, dans le PAQUET, un lien vers `var/storage`, posé avant `db:migrate` : les bases
+de `config/database.yml` (production, `cache`, `queue`, `cable`) et ActiveStorage `Disk` naissent
+dans la graine. Un lien de RÉPERTOIRE, et non une `DATABASE_URL` : RailsBox pose
+`DATABASE_URL=sqlite3:storage/production.sqlite3`, qui ne couvre que la base primaire et laisse les
+journaux là où le lien ne les suit pas. Un lien par base ferait naître le journal de SQLite à côté
+du lien, donc dans `/app`.
+
+`durabilite-rails.rb`, chargé par `RUBYOPT`, pose `synchronous = EXTRA` sur chaque connexion SQLite
+et synchronise ActiveStorage `Disk` après chaque téléversement — ce que la référence fait par son
+`database.yml` et son `DurableDiskService`. `verifier-durabilite.rb` le CONSTATE à la fabrication et
+la refuse sinon. Les limites de ce mécanisme sont dans `SECURITY.md`.
+
 ## Ce qui est écarté
 
 - **Une route de santé injectée dans l'application** (middleware, initialiseur) : c'est ajouter du
@@ -108,11 +122,12 @@ déphasage porte aussi l'identité servie (`servie.id`).
 ## Limites, mesurées ou non
 
 - Prouvé par `tests/e2e/application-exterieure.spec.mjs` (lot 6 de `reprise.yml`) sur une
-  application `rails new` : la fabrication, le démarrage sous Chromium, une réponse de Rails.
-- **Non traité, et à ouvrir à part** : la base de production d'une application `rails new` est
-  `storage/production.sqlite3`, donc sous `/app` — ÉPHÉMÈRE (ADR 0041 § 2). Elle démarre et répond,
-  mais ce qu'elle écrit est perdu au boot à froid. L'exigence « écrire sous `/app/var` » (#210)
-  demande encore à l'application de s'adapter.
+  application `rails new` augmentée d'un scaffold : la fabrication, le démarrage sous Chromium, une
+  réponse de Rails, une note écrite par le formulaire et relue après verrouillage, instantané écarté
+  et boot à froid.
+- Les bases `cache`, `queue` et `cable` de Rails 8 naissent vides : la fabrication joue
+  `db:migrate`, et non `db:prepare`, qui chargerait leurs `*_schema.rb`. Une application qui s'en
+  sert au premier rendu échouerait ; le scaffold n'en dépend pas.
 - Les groupes `development` et `test` du Gemfile sont installés : `BUNDLE_WITHOUT` n'est pas posé,
   il changerait aussi le bundle de la référence.
 - `active_record_encryption` et les credentials métier restent absents.

@@ -117,11 +117,14 @@ COPY tools/build-reference-image/guest/start-app.sh /opt/vault/start-app.sh
 COPY tools/build-reference-image/guest/schema-du-volume.sh /opt/vault/schema-du-volume.sh
 COPY tools/build-reference-image/guest/serial-bridge.py /opt/vault/serial-bridge.py
 COPY tools/build-reference-image/guest/secret-du-coffre.sh /opt/vault/secret-du-coffre.sh
+COPY tools/build-reference-image/guest/durabilite-rails.rb /opt/vault/durabilite-rails.rb
 
 # Environnement du guest. Aucune clé, aucun jeton, aucun mot de passe : l'image
-# est publique. `SECRET_KEY_BASE` n'est PAS posée ici : `start-app.sh` la
+# est publique. `SECRET_KEY_BASE` n'est PAS posée ici : `guest-init.sh` la
 # fournit au démarrage, tirée par `secret-du-coffre.sh` au premier boot du coffre
-# et gardée sur son disque de données (#351, ADR 0055).
+# et gardée sur son disque de données (#351, ADR 0055). `RUBYOPT` charge
+# `durabilite-rails.rb` dans tout processus Ruby : `synchronous = EXTRA` et
+# ActiveStorage `Disk` synchronisé, sans toucher à l'application.
 RUN set -eu; \
     chmod +x /opt/vault/guest-init.sh /opt/vault/start-app.sh /opt/vault/schema-du-volume.sh \
       /opt/vault/secret-du-coffre.sh; \
@@ -140,6 +143,7 @@ RUN set -eu; \
       echo 'export TZ=UTC'; \
       echo 'export WEB_CONCURRENCY=0'; \
       echo 'export RAILS_MAX_THREADS=2'; \
+      echo 'export RUBYOPT=-r/opt/vault/durabilite-rails.rb'; \
     } > /opt/vault/env.sh
 
 ########################################################################
@@ -245,9 +249,27 @@ RUN set -eu; \
 # `tmp/local_secret.txt`, retirée à la fin de l'étage Bootsnap. RailsBox pose de même une valeur
 # jetable à la construction (`app.Dockerfile`). Une application qui fixe sa propre valeur n'en est
 # pas affectée : la référence la garde.
+#
+# `storage/` DEVIENT LE DISQUE DE DONNÉES (#351, ADR 0055). Une application Rails conventionnelle y
+# range TOUT ce qu'elle doit garder : ses bases SQLite (`storage/production.sqlite3`, et les bases
+# `cache`, `queue` et `cable` de Rails 8) et les fichiers d'ActiveStorage `Disk`. Sous `/app`, c'était
+# ÉPHÉMÈRE : perdu au boot à froid, sans erreur. `storage` est donc, dans le PAQUET, un lien vers
+# `var/storage` — le disque de données, monté sur `/app/var` dans le guest —, et ce que la source y
+# portait (`.keep`) y est déplacé. Un lien de RÉPERTOIRE, et non un lien par base ni une
+# `DATABASE_URL` : le journal et le `-wal` de SQLite naissent à côté de la base, donc sur le même
+# disque, et une `DATABASE_URL` ne couvre que la base primaire. La référence range déjà tout sous
+# `var/` : le lien ne lui change rien.
+#
+# `durabilite-rails.rb` (chargé par `RUBYOPT`) pose `synchronous = EXTRA` et synchronise ActiveStorage
+# `Disk` ; `verifier-durabilite.rb` CONSTATE, base par base, que tout vit sous `/app/var` avec
+# `synchronous = 3`, et refuse la fabrication sinon.
+COPY tools/build-reference-image/guest/durabilite-rails.rb tools/build-reference-image/guest/verifier-durabilite.rb /opt/vault/
 RUN set -eu; \
     export SECRET_KEY_BASE_DUMMY=1; \
+    export RUBYOPT=-r/opt/vault/durabilite-rails.rb; \
     mkdir -p var/db var/storage tmp/pids log; \
+    if [ -d storage ] && [ ! -L storage ]; then cp -a storage/. var/storage/; rm -rf storage; fi; \
+    ln -sfn var/storage storage; \
     linux32 ruby bin/rails db:migrate; \
     if [ -f bin/vault-fixture ]; then \
       linux32 ruby bin/vault-fixture create; \
@@ -256,6 +278,7 @@ RUN set -eu; \
     else \
       echo "[disque-app] pas de bin/vault-fixture : application extérieure, aucun invariant"; \
     fi; \
+    linux32 ruby bin/rails runner /opt/vault/verifier-durabilite.rb; \
     rm -rf log/*.log
 
 # Pré-chauffage du cache Bootsnap (`config/boot.rb`). Les étapes ci-dessus l'ont

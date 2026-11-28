@@ -1649,6 +1649,38 @@ vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabil
 - **Un paquet n'isole pas l'application du volume.** Le code du paquet s'exécute avec un accès plein
   aux données montées sur `/app/var` : le paquet décide ce que le coffre contient.
 
+### Les données d'une application ordinaire, durables sans la modifier (#351, ADR 0055)
+
+Une application Rails conventionnelle range ses bases SQLite (`storage/production.sqlite3`, et les
+bases `cache`, `queue` et `cable` de Rails 8) et les fichiers d'ActiveStorage `Disk` sous
+`storage/`. Sous `/app`, ils étaient perdus au boot à froid, sans erreur.
+
+**Ce qui est garanti, et par quoi**
+
+- **L'emplacement.** Dans le paquet, `storage` est un lien vers `var/storage` : le disque de
+  DONNÉES, chiffré, monté sur `/app/var`. Les bases naissent dans la graine, et leurs journaux et
+  fichiers `-wal` naissent à côté d'elles, donc sur le même disque.
+- **La barrière.** `durabilite-rails.rb`, chargé par `RUBYOPT` dans tout processus Ruby du guest,
+  pose `PRAGMA synchronous = EXTRA` sur chaque connexion SQLite, après les pragmas de Rails, et
+  synchronise ce qu'ActiveStorage `Disk` téléverse (fichier et répertoires créés). C'est la garantie
+  que la référence pose elle-même (ADR 0004, note du 13/09/2026, #209). L'application n'est pas
+  touchée : le module complète deux classes de Rails à leur ouverture.
+- **Le constat.** `verifier-durabilite.rb` est joué à la fabrication : chaque base SQLite de
+  l'environnement doit vivre sous `/app/var` avec `synchronous = 3`, et le service `Disk` aussi. Un
+  écart REFUSE la fabrication.
+
+**Ce qui n'est PAS garanti**
+
+- Une écriture hors des bases SQLite et du service `Disk` — un fichier écrit à la main sous
+  `public/`, `tmp/` ou ailleurs dans `/app` — reste ÉPHÉMÈRE. Rien ne l'empêche ni ne le signale.
+- Un autre adaptateur de base (PostgreSQL, #343) ou un autre service de stockage n'est pas couvert
+  par `durabilite-rails.rb`.
+- La garantie repose sur deux points internes de Rails (`SQLite3Adapter#configure_connection` et
+  `DiskService#upload`). Une version de Rails qui les renommerait la ferait tomber : le constat de
+  la fabrication le verrait pour la barrière SQLite, pas pour `Disk`.
+- Le contrat de l'ADR 0004 (journal `delete`) n'est pas imposé : Rails pose `journal_mode = WAL`, et
+  `synchronous = EXTRA` y vaut `FULL` — chaque commit est synchronisé avant d'être acquitté.
+
 ### Le `secret_key_base` fourni par le coffre (#351, ADR 0055)
 
 Une application Rails conventionnelle lit son `secret_key_base` dans `SECRET_KEY_BASE` ou dans ses

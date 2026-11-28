@@ -323,6 +323,22 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_EXTERIEURE],
   },
   {
+    nom: "`storage/` du paquet est un lien vers le disque de données",
+    garde: "guest.Dockerfile — `ln -sfn var/storage storage` avant `db:migrate`",
+    fichier: DOCKERFILE,
+    avant: "    ln -sfn var/storage storage; \\\n",
+    apres: "",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "la durabilité SQLite est chargée dans tout processus Ruby du guest",
+    garde: "guest.Dockerfile — `RUBYOPT` dans `env.sh`",
+    fichier: DOCKERFILE,
+    avant: "      echo 'export RUBYOPT=-r/opt/vault/durabilite-rails.rb'; \\\n",
+    apres: "",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
     nom: "toute réponse de Rails vaut « prêt », pas seulement un 200",
     garde: "attendreQueRailsReponde — la réponse, quel que soit son statut",
     fichier: SONDE,
