@@ -23,3 +23,19 @@
 # `apps/reference/vault-invariant.json`, qui publie la règle de dérivation de
 # l'empreinte de la pièce jointe.
 tools/build-reference-image/manifest.json
+
+# Application TÉMOIN de #343 (ADR 0056), produite par `rails _8.1.4.1_ new -d postgresql` puis
+# `bin/rails generate scaffold Note libelle:string`, et gardée NON MODIFIÉE : c'est la condition de
+# l'épreuve (#272, une application conventionnelle entre dans un coffre sans s'adapter). Ces quatre
+# fichiers sont ceux du générateur, mot pour mot. GuardRails y relève :
+#  - « Mass Assignment » sur les deux modèles : la règle vise `attr_accessible` (Rails 3). Le
+#    contrôleur généré filtre par `params.expect(note: [ :libelle ])` ;
+#  - « Potential XSS (link_to) » sur deux vues : `link_to "…", @note` construit un chemin de route
+#    depuis un modèle, sans aucune entrée de l'utilisateur dans l'URL.
+# L'application ne tourne que dans un coffre de test, sans réseau. Ces fichiers ne portent aucune
+# valeur, et aucun n'est exclu pour une règle de secret. La détection de secrets reste
+# active sur le reste de l'application ; une entrée par fichier, aucun répertoire.
+apps/rails-new-postgresql/app/models/application_record.rb
+apps/rails-new-postgresql/app/models/note.rb
+apps/rails-new-postgresql/app/views/notes/edit.html.erb
+apps/rails-new-postgresql/app/views/notes/show.html.erb
