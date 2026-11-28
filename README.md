@@ -314,6 +314,7 @@ Chaque décision structurante est écrite, datée et numérotée.
 - [ADR 0050 — l'image dans l'arbre publié et l'envoi inerte](docs/decisions/0050-l-image-dans-l-arbre-publie-et-l-envoi-inerte.md)
 - [ADR 0051 — la scène : une direction sombre, pétrole et laiton, et le thème clair retiré](docs/decisions/0051-la-scene-sombre-petrole-et-laiton.md)
 - [ADR 0052 — le cadre ne peut rien envoyer hors de son origine : une CSP injectée par le Service Worker du cadre, une autre portée par le courtier, sans liste blanche](docs/decisions/0052-le-cadre-ne-peut-rien-envoyer-hors-de-son-origine.md)
+- [ADR 0053 — le téléchargement anticipé du premier démarrage : les étapes 1 à 3 remplissent le magasin, un verrou évite le travail double](docs/decisions/0053-le-telechargement-anticipe-du-premier-demarrage.md)
 
 </details>
 

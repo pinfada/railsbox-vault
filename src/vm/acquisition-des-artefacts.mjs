@@ -15,6 +15,14 @@ import { bindNavigatorStorage, createStorageBudget } from "./storage-budget.mjs"
 import { verifierEmpreintesV86, verifierLeModuleV86 } from "./empreintes-du-runtime-v86.mjs";
 import { empreinteDeLImage } from "./instantane-du-boot.mjs";
 import { exigerContexteExecutable } from "./runtime-environment.mjs";
+import { PHASES_DU_BOOT, poserLaPhase } from "./phase-du-boot.mjs";
+import { sousLeVerrouDesArtefacts } from "./verrou-des-artefacts.mjs";
+
+/**
+ * Le boot va chercher des octets sur le RÉSEAU : la phase le dit (#348). Servi par le magasin, il ne
+ * télécharge rien, et la phase reste celle de la préparation.
+ */
+export const direQueLeBootTelecharge = () => poserLaPhase(PHASES_DU_BOOT.telechargement);
 
 /**
  * MARQUE un échec d'ACQUISITION, et laisse passer tout le reste.
@@ -97,7 +105,12 @@ function exigerLesEpingles(pins, horsConnexion) {
   }
 }
 
-async function acquerirUnPetit({ nom, url, pin, magasin, recuperer, horsConnexion }) {
+/**
+ * ACQUIERT un petit artefact : servi par le magasin s'il y est et vérifié, sinon téléchargé, confronté
+ * à son épingle, puis rangé. Exporté pour le téléchargement anticipé (#348), qui le joue artefact par
+ * artefact.
+ */
+export async function acquerirUnPetit({ nom, url, pin, magasin, recuperer, horsConnexion }) {
   if (magasin) {
     const cible = new Uint8Array(pin.octets);
     const servi = await magasin
@@ -106,6 +119,7 @@ async function acquerirUnPetit({ nom, url, pin, magasin, recuperer, horsConnexio
     if (servi) return { octets: cible, transfere: 0, magasin: "servi" };
   }
   if (horsConnexion) throw artefactAbsentHorsConnexion(nom, "manque à la réserve");
+  direQueLeBootTelecharge();
   const octets = await fetchBytes(url, recuperer);
   await verifierContreLEpingle(nom, octets, pin);
   if (!magasin) return { octets, transfere: octets.byteLength, magasin: "absent" };
@@ -194,6 +208,23 @@ async function retenirLaReserve({ magasin, runtime, pins }) {
 }
 
 /**
+ * Les cinq petits artefacts, le disque système et la rétention, sous le VERROU des artefacts (#348) :
+ * un téléchargement anticipé encore en cours — ici ou dans un autre onglet — finit de ranger ce qu'il
+ * télécharge, puis le boot le SERT au lieu de le redemander. L'attente se dit comme un téléchargement.
+ */
+function acquerirSousLeVerrou({ runtime, pins, magasin, horsConnexion, acquerirLeDisque }) {
+  return sousLeVerrouDesArtefacts(
+    async () => {
+      const petits = await acquerirLesPetitsArtefacts({ runtime, pins, magasin, horsConnexion });
+      const disque = await acquerirLeDisque({ ...runtime.disqueSysteme, magasin, horsConnexion });
+      await retenirLaReserve({ magasin, runtime, pins });
+      return { petits, disqueSysteme: disque };
+    },
+    { quandIlFautAttendre: direQueLeBootTelecharge },
+  );
+}
+
+/**
  * Charge les tampons du runtime. Les DONNÉES n'en font PAS partie : elles vivent dans OPFS.
  *
  * Le disque système (`hda`) n'est plus un artefact mais une COMPOSITION : le rootfs et le paquet
@@ -215,14 +246,14 @@ export async function loadRuntime(
   const horsConnexion = runtime.horsConnexion === true;
   const manifeste = runtime.manifesteV86 ?? (await chargerAdressesV86()).manifeste;
   const pins = epinglesDuRuntime(runtime, manifeste);
-  const petits = await acquerirLesPetitsArtefacts({ runtime, pins, magasin, horsConnexion });
-  const { wasm, bios, vgaBios, kernel, initrd } = petits.octets;
-  const disqueSysteme = await acquerirLeDisque({
-    ...runtime.disqueSysteme,
+  const { petits, disqueSysteme } = await acquerirSousLeVerrou({
+    runtime,
+    pins,
     magasin,
     horsConnexion,
+    acquerirLeDisque,
   });
-  await retenirLaReserve({ magasin, runtime, pins });
+  const { wasm, bios, vgaBios, kernel, initrd } = petits.octets;
   const artifacts = {
     wasm,
     bios,

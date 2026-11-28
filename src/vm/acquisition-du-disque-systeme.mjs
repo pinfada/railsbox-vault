@@ -27,6 +27,7 @@ import {
 } from "./disque-compose.mjs";
 import { ouvrirLeFluxDArtefact } from "./flux-d-artefact.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
+import { PHASES_DU_BOOT, poserLaPhase } from "./phase-du-boot.mjs";
 
 /**
  * TÉLÉCHARGE un morceau directement dans le tampon, à son décalage, en le hachant au passage.
@@ -77,8 +78,10 @@ async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
  *
  * Un `servir` en échec ou abandonné à l'échéance a pu copier des tranches dans la plage : le
  * téléchargement la réécrit ENTIÈRE, et le magasin ne la touche plus (jeton annulé, #247).
+ *
+ * Exporté pour le téléchargement anticipé (#348), qui range chaque morceau dans un tampon à sa taille.
  */
-async function servirOuTelecharger({
+export async function servirOuTelecharger({
   tampon,
   debut,
   morceau,
@@ -96,6 +99,8 @@ async function servirOuTelecharger({
   if (horsConnexion) {
     throw artefactAbsentHorsConnexion(`le ${nom}`, "manque à la réserve");
   }
+  // Le morceau vient du RÉSEAU : la phase le dit, et seulement dans ce cas (#348).
+  poserLaPhase(PHASES_DU_BOOT.telechargement);
   const transfere = await verserLeMorceau({ tampon, debut, morceau, nom, recuperer });
   if (!magasin) return { transfere, magasin: "absent" };
   try {

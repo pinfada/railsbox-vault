@@ -140,6 +140,14 @@ export function creerMagasinDArtefacts({
      */
     servir: (morceau, cible, jeton) => servir(contexte, morceau, cible, jeton),
     /**
+     * Le magasin tient-il un artefact COMPLET sous ce nom et à cette taille ? Une présence, jamais un
+     * verdict : rien n'est lu ni vérifié, et seul `servir` peut rendre des octets (#348).
+     *
+     * @param {{ sha256: string, octets: number }} morceau
+     */
+    contient: async ({ sha256, octets }) =>
+      EMPREINTE.test(sha256) && (await primitives.taille(sha256)) === octets,
+    /**
      * ADMET un artefact DÉJÀ vérifié contre le descripteur (`octets` est une vue sur le tampon : aucune
      * copie). Le budget est consulté AVANT la première écriture ; un refus est typé (`AdmissionRefusee`).
      * Avec la `racine` du descripteur, des tranches qui ne la donnent pas ne sont PAS rangées

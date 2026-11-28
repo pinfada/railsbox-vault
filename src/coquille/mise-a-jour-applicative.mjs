@@ -150,7 +150,8 @@ export async function constaterLeDephasage({ lu, nom, lireManifeste = lireLeMani
  *           lireManifeste?: Function }} entrees
  */
 export async function preparerLeDemarrage({ lu, nom, miseAJour = false, delaiMs, lireManifeste }) {
-  poserLaPhase(PHASES_DU_BOOT.telechargement);
+  // La PRÉPARATION, et non le téléchargement : l'acquisition dit elle-même quand elle télécharge (#348).
+  poserLaPhase(PHASES_DU_BOOT.preparation);
   const { manifeste, decision } = await constaterLeDephasage({ lu, nom, lireManifeste });
   if (decision.issue === ISSUES_DU_DEPHASAGE.installer && !lu.present) {
     return { sansApplication: true, motif: lu.motif };

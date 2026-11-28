@@ -60,6 +60,7 @@ import { creerCycle } from "./coquille/cycle-de-la-page.mjs";
 import { creerParcoursDeLaPage } from "./coquille/parcours-de-la-page.mjs";
 import { creerLaReserve } from "./coquille/reserve-de-la-page.mjs";
 import { creerLaRevocationDeLaPage } from "./coquille/revocation-de-la-page.mjs";
+import { creerLeTelechargementAnticipe } from "./coquille/telechargement-anticipe-de-la-page.mjs";
 
 const parametres = new URL(location.href).searchParams;
 const noeudEtat = document.querySelector("#coquille-etat");
@@ -242,6 +243,14 @@ if (pont.canal !== null) {
     history,
     navigateur: navigator,
     revocation: pont.revocation,
+    // Le TÉLÉCHARGEMENT ANTICIPÉ (#348) : la progression lue, les artefacts du premier démarrage sont
+    // rangés au magasin pendant les étapes 1 à 3, derrière le portail de la réserve comme le reste.
+    surLaProgression: creerLeTelechargementAnticipe({
+      rapport,
+      publier,
+      navigateur: navigator,
+      vueComplete: parametres.get("vue") === "complete",
+    }),
   });
 
   pont.cycle.demarrer();

@@ -656,9 +656,13 @@ export function annonceDeLaSaisie({ symbolesLus, envoyable, code }) {
  */
 const SYMBOLES_DE_LA_FEUILLE = GROUPES * 4;
 
-/** Ce que la page dit des deux phases d'un démarrage ORDINAIRE ; « données » ne s'y produit pas. */
+/**
+ * Ce que la page dit des trois phases d'un démarrage ORDINAIRE ; « données » ne s'y produit pas. Le
+ * téléchargement n'est dit que lorsque des octets viennent réellement du réseau (#348).
+ */
 const PHASES_D_UN_DEMARRAGE = Object.freeze({
-  telechargement: MESSAGES.phasePreparation,
+  preparation: MESSAGES.phasePreparation,
+  telechargement: MESSAGES.phaseTelechargement,
   demarrage: MESSAGES.phaseDemarrage,
 });
 

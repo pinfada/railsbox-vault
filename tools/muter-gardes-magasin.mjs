@@ -30,6 +30,13 @@ const EPREUVE_MAGASIN = "tests/unit/vm-magasin-d-artefacts.test.mjs";
 const EPREUVE_OPFS = "tests/unit/vm-magasin-opfs.test.mjs";
 const EPREUVE_ANNULATION = "tests/unit/vm-magasin-annulation-a-chaque-attente.test.mjs";
 
+// Le téléchargement anticipé (#348) remplit CE magasin : ses gardes sont jouées avec les siennes.
+const PRECHARGEMENT = "src/vm/prechargement-des-artefacts.mjs";
+const VERROU = "src/vm/verrou-des-artefacts.mjs";
+const DECISION = "src/coquille/telechargement-anticipe.mjs";
+const EPREUVE_PRECHARGEMENT = "tests/unit/vm-prechargement-des-artefacts.test.mjs";
+const EPREUVE_DECISION = "tests/unit/coquille-telechargement-anticipe.test.mjs";
+
 /** `avant` doit apparaître EXACTEMENT UNE FOIS dans son fichier. */
 export const MUTATIONS = Object.freeze([
   {
@@ -312,6 +319,113 @@ export const MUTATIONS = Object.freeze([
     avant: "        (jeton) => magasin.oublierLeDescripteurScelle(jeton),\n",
     apres: "        () => magasin.oublierLeDescripteurScelle(),\n",
     epreuves: [EPREUVE_OPFS],
+  },
+  // --- Le TÉLÉCHARGEMENT ANTICIPÉ et le VERROU des artefacts (#348) ----------------------------
+  {
+    nom: "le magasin ne CONTIENT un artefact qu'à sa taille exacte",
+    garde: "contient — la taille rangée confrontée à celle du descripteur",
+    fichier: MAGASIN,
+    avant: "      EMPREINTE.test(sha256) && (await primitives.taille(sha256)) === octets,\n",
+    apres: "      EMPREINTE.test(sha256) && (await primitives.taille(sha256)) !== null,\n",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "le téléchargement anticipé ne demande que les artefacts ABSENTS",
+    garde: "manquants — contient consulté pour chaque artefact",
+    fichier: PRECHARGEMENT,
+    avant: "    if (!(await magasin.contient(artefact))) absents.push(artefact);\n",
+    apres: "    absents.push(artefact);\n",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "tout est déjà au magasin : rien n'est demandé au réseau",
+    garde: "prechargerSousLeVerrou — l'issue deja-present",
+    fichier: PRECHARGEMENT,
+    avant: "  if (absents.length === 0) return { issue: ISSUES_DU_PRECHARGEMENT.dejaPresent };\n",
+    apres: "",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "sans place pour TOUT ranger, rien n'est demandé au réseau",
+    garde: "prechargerSousLeVerrou — peutAdmettre(total) avant le premier octet",
+    fichier: PRECHARGEMENT,
+    avant: "  if (!(await peutAdmettre(total).catch(() => false))) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "un stockage qui ne répond pas : rien n'est demandé au réseau",
+    garde: "prechargerSousLeVerrou — l'échec de contient arrête tout",
+    fichier: PRECHARGEMENT,
+    avant: "    return { issue: ISSUES_DU_PRECHARGEMENT.stockageIndisponible };\n",
+    apres: "    absents = artefactsAPrecharger(runtime, pins);\n",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "le verrou tenu ailleurs fait RENONCER le téléchargement anticipé",
+    garde: "siLeVerrouEstLibre — verrou null, geste non exécuté",
+    fichier: VERROU,
+    avant: "    verrou === null ? null : geste(),\n",
+    apres: "    geste(),\n",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "le boot ATTEND le verrou tenu ailleurs, au lieu d'acquérir en même temps",
+    garde: "sousLeVerrouDesArtefacts — l'essai immédiat ne passe pas outre",
+    fichier: VERROU,
+    avant: "    (verrou) => (verrou === null ? OCCUPE : geste()),\n",
+    apres: "    () => geste(),\n",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "une erreur du geste accordé n'est pas rejouée sans le verrou",
+    garde: "sousLeVerrouDesArtefacts — accorde",
+    fichier: VERROU,
+    avant: "    if (accorde) throw erreur;\n",
+    apres: "",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "la phase dit le téléchargement d'un petit artefact venu du réseau",
+    garde: "acquerirUnPetit — direQueLeBootTelecharge avant fetchBytes",
+    fichier: "src/vm/acquisition-des-artefacts.mjs",
+    avant: "  direQueLeBootTelecharge();\n  const octets = await fetchBytes(url, recuperer);\n",
+    apres: "  const octets = await fetchBytes(url, recuperer);\n",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "la phase dit le téléchargement d'un morceau du disque venu du réseau",
+    garde: "servirOuTelecharger — la phase avant verserLeMorceau",
+    fichier: "src/vm/acquisition-du-disque-systeme.mjs",
+    avant: "  poserLaPhase(PHASES_DU_BOOT.telechargement);\n",
+    apres: "",
+    epreuves: [EPREUVE_PRECHARGEMENT],
+  },
+  {
+    nom: "jamais de téléchargement anticipé sous Firefox, où l'application ne démarre pas",
+    garde: "telechargementAnticipeVoulu — le moteur",
+    fichier: DECISION,
+    avant: '  if (moteur === "firefox") return ecarte("firefox");\n',
+    apres: "",
+    epreuves: [EPREUVE_DECISION],
+  },
+  {
+    nom: "jamais de téléchargement anticipé après l'étape 3 de la visite",
+    garde: "telechargementAnticipeVoulu — l'étape atteinte",
+    fichier: DECISION,
+    avant:
+      '  if (!(etapeAtteinte < ETAPE_DU_PREMIER_DEMARRAGE)) return ecarte("visite-avancee");\n',
+    apres: "",
+    epreuves: [EPREUVE_DECISION],
+  },
+  {
+    nom: "le bilan publié ne recopie que des artefacts connus",
+    garde: "bilanPublie — NOMS",
+    fichier: DECISION,
+    avant:
+      '        ([nom, statut]) => NOMS.has(nom) && typeof statut === "string" && MOT.test(statut),\n',
+    apres: '        ([, statut]) => typeof statut === "string" && MOT.test(statut),\n',
+    epreuves: [EPREUVE_DECISION],
   },
 ]);
 

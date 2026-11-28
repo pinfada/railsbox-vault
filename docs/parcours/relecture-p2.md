@@ -353,7 +353,9 @@ Messages qui peuvent s'afficher sur cet écran :
 - Votre application démarre sur cet appareil. Rien n'est envoyé sur Internet.
 - Démarrage en cours depuis NaN minutes, sur environ deux minutes. Le démarrage avance : le coffre a
   répondu N fois. (la phrase dit en plus l'étape en cours : « Étape en cours : préparation de
-  l'application. » ou « Étape en cours : démarrage de l'application. »)
+  l'application. », « Étape en cours : téléchargement de l'application. » ou « Étape en cours :
+  démarrage de l'application. Cela prend du temps, car un ordinateur complet démarre dans votre
+  navigateur. »)
 - Le démarrage avance : le coffre a répondu N fois.
 - Le démarrage commence : le coffre n'a pas encore répondu.
 - L'application est démarrée.
@@ -385,12 +387,15 @@ Messages qui peuvent s'afficher sur cet écran :
 - Mettre à jour l'application
 - Reprendre la mise à jour
 - Mise à jour en cours depuis N seconde(s), sur environ trois à quatre minutes. Étape en cours :
-  démarrage de l'application.
+  démarrage de l'application. Cela prend du temps, car un ordinateur complet démarre dans votre
+  navigateur.
 - Démarrage de votre version actuelle depuis N seconde(s) ; comptez jusqu'à environ trois minutes.
-  Étape en cours : démarrage de l'application.
+  Étape en cours : démarrage de l'application. Cela prend du temps, car un ordinateur complet
+  démarre dans votre navigateur.
 - Étape en cours : téléchargement de l'application.
 - Étape en cours : préparation de l'application.
-- Étape en cours : démarrage de l'application.
+- Étape en cours : démarrage de l'application. Cela prend du temps, car un ordinateur complet
+  démarre dans votre navigateur.
 - Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.
 - Version de l'application : V.
 - L'application ne peut pas démarrer à cette adresse : lisez le message affiché sur cette page.
@@ -447,7 +452,9 @@ Messages qui peuvent s'afficher sur cet écran :
   Démarrer l'application ».
 - Démarrage en cours depuis NaN minutes, sur environ deux minutes. Le démarrage avance : le coffre a
   répondu N fois. (la phrase dit en plus l'étape en cours : « Étape en cours : préparation de
-  l'application. » ou « Étape en cours : démarrage de l'application. »)
+  l'application. », « Étape en cours : téléchargement de l'application. » ou « Étape en cours :
+  démarrage de l'application. Cela prend du temps, car un ordinateur complet démarre dans votre
+  navigateur. »)
 - L'application est démarrée.
 - Hors connexion, version du 7 novembre 2026.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
@@ -475,12 +482,15 @@ Messages qui peuvent s'afficher sur cet écran :
 - Mettre à jour l'application
 - Reprendre la mise à jour
 - Mise à jour en cours depuis N seconde(s), sur environ trois à quatre minutes. Étape en cours :
-  démarrage de l'application.
+  démarrage de l'application. Cela prend du temps, car un ordinateur complet démarre dans votre
+  navigateur.
 - Démarrage de votre version actuelle depuis N seconde(s) ; comptez jusqu'à environ trois minutes.
-  Étape en cours : démarrage de l'application.
+  Étape en cours : démarrage de l'application. Cela prend du temps, car un ordinateur complet
+  démarre dans votre navigateur.
 - Étape en cours : téléchargement de l'application.
 - Étape en cours : préparation de l'application.
-- Étape en cours : démarrage de l'application.
+- Étape en cours : démarrage de l'application. Cela prend du temps, car un ordinateur complet
+  démarre dans votre navigateur.
 - Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.
 - Version de l'application : V.
 - L'application ne peut pas démarrer à cette adresse : lisez le message affiché sur cette page.
