@@ -79,6 +79,8 @@ test("un fichier déjà en LF, ou un CR isolé, ne change pas", () => {
   assert.equal(finsDeLigneNormalisees(Buffer.from("a\nb\n")).normalise, false);
   const isole = Buffer.from("a\rb\n");
   assert.deepEqual(finsDeLigneNormalisees(isole).octets, isole);
+  // Dans un fichier qui porte AUSSI des CRLF, le CR isolé reste.
+  assert.equal(finsDeLigneNormalisees(Buffer.from("a\rb\r\n")).octets.toString(), "a\rb\n");
 });
 
 // --- Les plateformes du verrou ---------------------------------------------------------------------

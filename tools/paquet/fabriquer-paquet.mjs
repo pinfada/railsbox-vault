@@ -14,12 +14,15 @@
 //
 // ## Ce que la fabrication REFUSE
 //
-//  - un secret Rails dans la source (`config/master.key`, `config/credentials.yml.enc`, …) : le
-//    `secret_key_base` d'un paquet se dérive d'une chaîne publique, comme celui de la référence ;
+//  - un secret Rails dans la source (`config/master.key`, une paire chiffrée AVEC sa clé, …) : le
+//    `secret_key_base` d'un paquet est fourni par le coffre, au premier démarrage (#351) ;
 //  - une identité absente ou mal formée : sans `id` et `version`, rien ne nomme le paquet ;
-//  - une application sans migration : sa graine serait une base dont rien ne dit ce qu'elle porte ;
 //  - un lien symbolique, un secret écrit dans le CONTENU d'un fichier, ou une directive `ruby` du
 //    Gemfile que le Ruby du guest ne satisfait pas (#342, `gardes-de-la-source.mjs`).
+//
+// Ce qu'elle EXCLUT en le disant (#351) : `config/credentials.yml.enc` sans `config/master.key`, un
+// chiffré que rien n'ouvre. Ce qu'elle NORMALISE, dans la copie seulement : les fins de ligne CRLF
+// des fichiers texte. Les binaires ne sont pas touchés.
 //
 // Elle dépose dans `artifacts/reference-image/` : les deux images, nommées par leur empreinte, et
 // `paquet.json`, le contrat que le manifeste d'image relit ensuite.
@@ -36,7 +39,6 @@ import {
   statSync,
   writeFileSync,
   rmSync,
-  copyFileSync,
   mkdtempSync,
 } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -52,6 +54,8 @@ import {
 } from "./identite-de-l-application.mjs";
 import { cheminExclu, fichiersRetenus } from "./exclusions-de-la-source.mjs";
 import { schemaDeLApplication } from "./schema-de-l-application.mjs";
+import { finsDeLigneNormalisees } from "./fins-de-ligne.mjs";
+import { identifiantsChiffresSansCle } from "./identifiants-chiffres.mjs";
 import { gardesDeLaSource } from "./gardes-de-la-source.mjs";
 import { erreurDeRefus } from "./rapport-de-refus.mjs";
 import {
@@ -179,20 +183,30 @@ function fichiersSelonGit(source) {
 }
 
 /**
- * RECOPIE la source filtrée dans un arbre de travail, et rend son chemin.
+ * RECOPIE la source filtrée dans un arbre de travail, et rend son chemin avec la liste des fichiers
+ * dont les fins de ligne ont été NORMALISÉES (#351).
  *
  * C'est CET arbre que Docker reçoit comme contexte de construction nommé, et lui seul : le
  * `.dockerignore` du dépôt ne peut rien pour un contexte extérieur, et un contexte qu'on ne
  * contrôle pas est un contexte dont on ne sait pas ce qu'il porte.
+ *
+ * Les fichiers texte y passent de CRLF à LF (`fins-de-ligne.mjs`) ; les binaires sont recopiés à
+ * l'octet. La source n'est jamais écrite.
+ *
+ * @param {string} source @param {readonly string[]} fichiers
+ * @returns {{ arbre: string, normalises: string[] }}
  */
-function preparerLArbreDuPaquet(source, fichiers) {
+export function preparerLArbreDuPaquet(source, fichiers) {
   const arbre = mkdtempSync(join(tmpdir(), "vault-paquet-"));
+  const normalises = [];
   for (const relatif of fichiers) {
     const destination = join(arbre, relatif);
     mkdirSync(dirname(destination), { recursive: true });
-    copyFileSync(join(source, relatif), destination);
+    const { octets, normalise } = finsDeLigneNormalisees(readFileSync(join(source, relatif)));
+    writeFileSync(destination, octets);
+    if (normalise) normalises.push(relatif);
   }
-  return arbre;
+  return { arbre, normalises };
 }
 
 /** LIT ce que la source déclare d'elle-même : `vault-app.json`, puis `vault-invariant.json`. */
@@ -212,12 +226,15 @@ export function examinerLaSource(source, options) {
     );
   }
   // Le balayage porte sur CE QUI ENTRERA, et sur rien d'autre : c'est la correction du constat 1.
-  const fichiers = fichiersDeLaSource(source);
+  // Un chiffré Rails SANS sa clé n'entre pas, et c'est dit (#351) ; AVEC sa clé, il reste refusé.
+  const retenus = fichiersDeLaSource(source);
+  const exclus = identifiantsChiffresSansCle(retenus);
+  const fichiers = retenus.filter((relatif) => !exclus.includes(relatif));
   const secrets = secretsPresents(fichiers);
   if (secrets.length > 0) {
     throw new Error(
       `Source refusée : elle porte ${secrets.join(", ")}. Un paquet ne contient AUCUN secret — ` +
-        `ni ${SECRETS_REFUSES_LIBELLES.join(", ni ")} ; le secret_key_base se dérive d'une chaîne publique.`,
+        `ni ${SECRETS_REFUSES_LIBELLES.join(", ni ")} ; le secret_key_base est fourni par le coffre.`,
     );
   }
   const { vaultApp, invariant } = declarationsDeLaSource(source);
@@ -238,7 +255,7 @@ export function examinerLaSource(source, options) {
     schemaRb: existsSync(cheminSchema) ? readFileSync(cheminSchema, "utf8") : null,
     migrations,
   });
-  return { ...identite, schema, fichiers };
+  return { ...identite, schema, fichiers, exclus };
 }
 
 /** @param {string} etape @param {string[]} arguments_ */
@@ -408,8 +425,17 @@ export async function fabriquerLePaquet(arguments_) {
 
   // L'arbre FILTRÉ, et lui seul, devient le contexte de construction : ce que Docker copie est
   // exactement ce que le balayage de secrets a examiné (revue #237, constat 1).
-  const arbreDuPaquet = preparerLArbreDuPaquet(options.source, identite.fichiers);
+  const { arbre: arbreDuPaquet, normalises } = preparerLArbreDuPaquet(
+    options.source,
+    identite.fichiers,
+  );
   console.log(`→ contexte : ${identite.fichiers.length} fichiers retenus (arbre filtré)`);
+  for (const exclu of identite.exclus) {
+    console.log(`→ exclu : ${exclu} (identifiants chiffrés sans leur clé : rien ne les ouvre)`);
+  }
+  if (normalises.length > 0) {
+    console.log(`→ fins de ligne : ${normalises.length} fichiers texte passés de CRLF à LF`);
+  }
   try {
     return await fabriquerDepuisLArbre({ options, identite, arbreDuPaquet, retention });
   } finally {

@@ -116,13 +116,15 @@ COPY tools/build-reference-image/guest/guest-init.sh /opt/vault/guest-init.sh
 COPY tools/build-reference-image/guest/start-app.sh /opt/vault/start-app.sh
 COPY tools/build-reference-image/guest/schema-du-volume.sh /opt/vault/schema-du-volume.sh
 COPY tools/build-reference-image/guest/serial-bridge.py /opt/vault/serial-bridge.py
+COPY tools/build-reference-image/guest/secret-du-coffre.sh /opt/vault/secret-du-coffre.sh
 
-# Environnement du guest. Aucune clé, aucun jeton, aucun mot de passe : la
-# clé de signature de Rails est dérivée d'une chaîne publique documentée
-# (config/application.rb), et `SECRET_KEY_BASE` n'est PAS posée ici pour que la
-# valeur synthétique reste la valeur effective et reste traçable.
+# Environnement du guest. Aucune clé, aucun jeton, aucun mot de passe : l'image
+# est publique. `SECRET_KEY_BASE` n'est PAS posée ici : `start-app.sh` la
+# fournit au démarrage, tirée par `secret-du-coffre.sh` au premier boot du coffre
+# et gardée sur son disque de données (#351, ADR 0055).
 RUN set -eu; \
-    chmod +x /opt/vault/guest-init.sh /opt/vault/start-app.sh /opt/vault/schema-du-volume.sh; \
+    chmod +x /opt/vault/guest-init.sh /opt/vault/start-app.sh /opt/vault/schema-du-volume.sh \
+      /opt/vault/secret-du-coffre.sh; \
     mkdir -p /app /var/log; \
     { \
       echo 'export RAILS_ENV=production'; \
@@ -174,9 +176,22 @@ WORKDIR /app
 # que si le verrou change, ce qui économise la compilation de nokogiri et de
 # sqlite3 à chaque itération sur le code Rails.
 COPY --from=application Gemfile Gemfile.lock ./
-RUN linux32 bundle install && linux32 bundle clean --force
+# Le verrou d'une application conventionnelle ne connaît souvent que `x86_64-linux` : Bundler refuse
+# alors d'installer pour le guest i386 (#351). La plateforme `ruby` y est AJOUTÉE, dans la copie
+# seulement — le geste de RailsBox (`tools/build-v86-image/base/app.Dockerfile`, MIT), qui ajoute
+# `x86-linux ruby`. `ruby` suffit ici : `BUNDLE_FORCE_RUBY_PLATFORM` compile chaque gemme depuis ses
+# sources, c'est la seule plateforme que Bundler consulte, et la référence tourne sous ce verrou-là.
+# Un verrou qui la porte déjà n'est pas réécrit. Le verrou augmenté est GARDÉ : `COPY . ./` remettra
+# celui de l'application, et le guest exige (`BUNDLE_FROZEN`) celui qui a servi à l'installation.
+RUN set -eu; \
+    BUNDLE_FROZEN=false linux32 bundle lock --add-platform ruby; \
+    mkdir -p /opt/vault-verrou; \
+    cp Gemfile.lock /opt/vault-verrou/Gemfile.lock; \
+    linux32 bundle install; \
+    linux32 bundle clean --force
 
 COPY --from=application . ./
+RUN cp /opt/vault-verrou/Gemfile.lock Gemfile.lock && rm -rf /opt/vault-verrou
 
 # Un SECRET dans la source arrête la construction ICI aussi, et pas seulement dans
 # `verify-pinning.mjs` : une application extérieure n'est pas dans l'arbre du dépôt, et son
@@ -188,9 +203,15 @@ COPY --from=application . ./
 # les trois chemins énumérés. C'est la SECONDE barrière — `tools/paquet/fabriquer-paquet.mjs` refuse
 # déjà avant le premier `docker build`, sur la liste des fichiers qui entrent réellement —, et deux
 # barrières valent mieux qu'une pour ce qui ne se rattrape pas une fois publié.
+#
+# `vendor/bundle` est ÉCARTÉ de la recherche (#351) : il ne vient pas de la source — `vendor` n'entre
+# jamais dans l'arbre filtré (`exclusions-de-la-source.mjs`) —, il est écrit par `bundle install`
+# depuis rubygems.org. Les gemmes publiques y portent leurs certificats publics et leurs clés de test
+# (`net-ssh-public_cert.pem`, `capybara/spec/fixtures/key.pem`) : la garde refusait toute application
+# qui dépend de Kamal ou de Capybara, c'est-à-dire toute application `rails new`.
 RUN set -eu; \
     trouves="$( \
-      find /app -type f \( \
+      find /app -path /app/vendor/bundle -prune -o -type f \( \
         -path '/app/config/master.key' \
         -o -path '/app/config/credentials.yml.enc' \
         -o -path '/app/config/credentials/*.key' \
@@ -214,7 +235,18 @@ RUN set -eu; \
 # 100644, il est invoqué par `ruby bin/vault-fixture`, et un `-x` était vrai sous Docker Desktop
 # (Windows) et faux sur un exécutant Linux — l'invariant n'y était alors pas créé, et le boot de la
 # recette rendait 404 sur /vault/invariant. Constat de la CI de la PR #237.
+#
+# La construction charge Rails en production, et Rails exige alors un `secret_key_base` dès son
+# initialisation (ActiveStorage y construit son vérificateur de messages) : `ArgumentError: Missing
+# secret_key_base` arrêtait ici toute application qui ne le dérive pas elle-même (#351). Celui du
+# coffre n'existe pas encore — il naît au premier boot (`secret-du-coffre.sh`). La construction prend
+# donc le geste que Rails prévoit pour elle, et que son propre `Dockerfile` emploie pour
+# `assets:precompile` : `SECRET_KEY_BASE_DUMMY`, une valeur JETABLE écrite dans
+# `tmp/local_secret.txt`, retirée à la fin de l'étage Bootsnap. RailsBox pose de même une valeur
+# jetable à la construction (`app.Dockerfile`). Une application qui fixe sa propre valeur n'en est
+# pas affectée : la référence la garde.
 RUN set -eu; \
+    export SECRET_KEY_BASE_DUMMY=1; \
     mkdir -p var/db var/storage tmp/pids log; \
     linux32 ruby bin/rails db:migrate; \
     if [ -f bin/vault-fixture ]; then \
@@ -242,7 +274,8 @@ RUN set -eu; \
 # #66 l'a construit et mesuré, sans pouvoir établir de gain (voir
 # `docs/quality-attributes.md`, § « Accélération du boot Rails »).
 RUN set -eu; \
-    linux32 ruby -e 'require "./config/environment"'; \
+    SECRET_KEY_BASE_DUMMY=1 linux32 ruby -e 'require "./config/environment"'; \
+    rm -f tmp/local_secret.txt; \
     test -d tmp/cache/bootsnap; \
     echo "cache Bootsnap : $(du -sh tmp/cache | cut -f1), $(find tmp/cache -type f | wc -l) fichiers"
 
