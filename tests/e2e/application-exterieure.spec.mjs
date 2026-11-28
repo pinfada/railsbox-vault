@@ -125,11 +125,18 @@ function pageServie(page) {
   return page.frameLocator("#document-applicatif").frameLocator("#application-servie");
 }
 
-/** Fait naviguer le cadre servi vers un chemin de l'application, comme un lien le ferait. */
+/**
+ * Fait naviguer le cadre servi vers un chemin de l'application, comme un lien le ferait. La
+ * navigation part APRÈS le retour de l'évaluation : partie pendant, elle détruit le contexte que
+ * Playwright attend encore (« Execution context was destroyed »).
+ */
 async function allerA(page, chemin) {
   await pageServie(page)
     .locator("body")
-    .evaluate((corps, vers) => corps.ownerDocument.defaultView.location.assign(vers), chemin);
+    .evaluate((corps, vers) => {
+      const fenetre = corps.ownerDocument.defaultView;
+      fenetre.setTimeout(() => fenetre.location.assign(vers), 0);
+    }, chemin);
 }
 
 /** RETIRE les instantanés de l'OPFS : la reprise suivante est un boot à FROID, par construction. */
