@@ -31,6 +31,19 @@
     "sha256": "b06d63beae271933033e27f0a389bc582a009e7845357d44365c39de525a051b",
     "license": "Ruby / BSD-2-Clause"
   },
+  "postgresql": {
+    "version": "15",
+    "packages": {
+      "outils": ["libpq-dev", "postgresql-15"],
+      "rootfs": ["postgresql-15", "postgresql-client-15"]
+    },
+    "utilisateur": {
+      "uid": 990,
+      "gid": 990
+    },
+    "license": "PostgreSQL License",
+    "note": "PostgreSQL dans le guest (#343, ADR 0056). La version MAJEURE est epinglee ici et verifiee par verify-pinning.mjs (Dockerfile et guest/postgresql.sh) ; le paquet suit le miroir Debian bookworm dans cette majeure, comme les autres paquets (voir debian.note). L utilisateur postgres a un uid et un gid FIXES dans les deux etages : le datadir est cree a la fabrication (etage outils) et ouvert dans le guest (etage rootfs)."
+  },
   "firmware": {
     "origin": "https://github.com/copy/v86",
     "commit": "847e34d5499b17b90d2783d5342ddd243c753497",

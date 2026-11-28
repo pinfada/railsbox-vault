@@ -94,7 +94,28 @@ touch /var/log/puma.log /var/log/bridge-err.log
 # récentes que le code ou ne disent pas ce que le manifeste attend. Synchrone, et dit sur la série :
 # le Worker de confiance relève ces lignes. Le pont démarre dans tous les cas — un guest qui refuse
 # reste joignable, et son refus se lit au lieu de se deviner.
-if sh /opt/vault/schema-du-volume.sh; then
+#
+# POSTGRESQL (#343, ADR 0056), pour un paquet qui le déclare : démarré ICI, après le montage du
+# disque de données qui porte son cluster et AVANT le schéma, dont les migrations passent par lui.
+# Ses réglages sont relus par SHOW sur la connexion que Rails recevra ; un réglage affaibli, un
+# cluster absent ou un serveur qui ne démarre pas empêchent Rails de partir, et la cause est dite
+# sur la série (`[postgresql] REFUS …`). Un paquet sans marqueur est un paquet SQLite.
+#
+# Le relevé de mémoire des mesures E6 (#343) ne part que sous `vault.mesure-memoire=1`, que seul un
+# harnais de mesure pose ; il lit /proc et écrit dans le journal que le pont relaie.
+if tr ' ' '\n' < /proc/cmdline | grep -qx 'vault\.mesure-memoire=1'; then
+  sh /opt/vault/mesure-memoire.sh &
+fi
+postgresql_refuse=non
+if [ "$(cat /app/db/.vault-base-de-donnees 2>/dev/null || true)" = postgresql ]; then
+  if ! sh /opt/vault/postgresql.sh demarrer || ! sh /opt/vault/postgresql.sh verifier; then
+    postgresql_refuse=oui
+  fi
+fi
+
+if [ "$postgresql_refuse" = oui ]; then
+  echo "[init] application NON lancee : PostgreSQL n'a pas demarre avec des reglages durables"
+elif sh /opt/vault/schema-du-volume.sh; then
   echo "[init] lancement de l'application"
   sh /opt/vault/start-app.sh >> /var/log/puma.log 2>&1 &
 else

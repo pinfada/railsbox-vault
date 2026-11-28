@@ -538,6 +538,22 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_RELAIS],
   },
   {
+    nom: "une `Location` en https vers le guest (config.assume_ssl) rend son chemin",
+    garde: "emplacementRendu — le guest sous l'autre schéma (#343)",
+    fichier: RELAIS,
+    avant: '  if (url.protocol === "https:" && new URL(baseDuGuest).protocol === "http:") {\n',
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "le guest sous l'autre schéma garde son HÔTE : une autre machine reste refusée",
+    garde: "emplacementRendu — la réécriture ne change que le schéma (#343)",
+    fichier: RELAIS,
+    avant: "    url = new URL(`http://${url.host}${url.pathname}${url.search}${url.hash}`);\n",
+    apres: "    url = new URL(`${baseDuGuest}${url.pathname}${url.search}${url.hash}`);\n",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
     nom: "seules TROIS méthodes sont relayées",
     garde: "METHODES_RELAYEES — la liste close",
     fichier: RELAIS,

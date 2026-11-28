@@ -45,6 +45,8 @@ const RECOPIES = [
   // L'application de référence (≈ 200 Kio) : `fabriquer-paquet.mjs` lit son identité au chargement,
   // et l'épreuve des gardes de la source la prend pour témoin (#342).
   "apps/reference",
+  // Le seul fichier de l'application témoin PostgreSQL que lit une épreuve de garde (#343).
+  "apps/rails-new-postgresql/config/database.yml",
 ];
 
 /** Recopie le dépôt utile dans un répertoire temporaire, et rend son chemin. */

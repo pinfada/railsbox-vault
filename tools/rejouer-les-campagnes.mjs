@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// LE LANCEUR des dix-sept campagnes de mutation (#196) : il les rejoue en SÉQUENCE, s'arrête au premier
+// LE LANCEUR des dix-huit campagnes de mutation (#196) : il les rejoue en SÉQUENCE, s'arrête au premier
 // code de sortie non nul, et publie une table (campagne, mutants, tués, survivants, durée).
 //
 //     npm run check:mutations                          # TOUT, en séquence (poste de développement)
@@ -43,7 +43,7 @@ import { fileURLToPath } from "node:url";
 const RACINE = fileURLToPath(new URL("..", import.meta.url));
 
 /**
- * Les dix-sept campagnes, dans l'ordre où elles sont jouées. Ajouter une campagne, c'est ajouter
+ * Les dix-huit campagnes, dans l'ordre où elles sont jouées. Ajouter une campagne, c'est ajouter
  * une ligne ici ET la placer dans un lot de `LOTS` — le lanceur ne connaît rien d'autre du contrat que le nom du script et `--json`.
  */
 export const CAMPAGNES = Object.freeze([
@@ -60,6 +60,7 @@ export const CAMPAGNES = Object.freeze([
   { nom: "outillage-ci", script: "tools/muter-gardes-outillage-ci.mjs" },
   { nom: "paquet-applicatif", script: "tools/muter-gardes-paquet-applicatif.mjs" },
   { nom: "persistance", script: "tools/muter-gardes-persistance.mjs" },
+  { nom: "postgresql", script: "tools/muter-gardes-postgresql.mjs" },
   { nom: "recuperation", script: "tools/muter-gardes-recuperation.mjs" },
   { nom: "reserve", script: "tools/muter-gardes-reserve.mjs" },
   { nom: "revocation-urgence", script: "tools/muter-gardes-revocation-urgence.mjs" },
@@ -93,6 +94,7 @@ export const LOTS = Object.freeze([
     "outillage-ci",
     "paquet-applicatif",
     "persistance",
+    "postgresql",
     "revocation-urgence",
     "verrouillage",
   ]),

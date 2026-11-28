@@ -170,20 +170,30 @@ export async function demarrerVm({
   let compteur = 0;
 
   /**
+   * `entetes` s'AJOUTENT aux trois en-têtes du harnais (un `Accept` fourni remplace le sien), et
+   * `corps` part en tranches acquittées : c'est ce qu'il faut pour SOUMETTRE un formulaire Rails
+   * (jeton CSRF, cookie de session), comme le fait l'épreuve de coupure de PostgreSQL (#343).
+   *
    * @param {string} methode
    * @param {string} chemin_
-   * @param {{ delaiMs?: number }} [reglages]
+   * @param {{ delaiMs?: number, entetes?: [string, string][], corps?: Uint8Array }} [reglages]
    */
   async function requete(methode, chemin_, reglages = {}) {
     const identifiant = `r${(compteur += 1)}`;
+    const entetesEnPlus = reglages.entetes ?? [];
+    const remplaces = new Set(entetesEnPlus.map(([nom]) => nom.toLowerCase()));
     const trames = construireTramesRequete(identifiant, {
       method: methode,
       path: chemin_,
       headers: [
-        ["Host", "127.0.0.1"],
-        ["Accept", "application/json"],
-        ["User-Agent", "railsbox-vault-vm-harness"],
+        ...[
+          ["Host", "127.0.0.1"],
+          ["Accept", "application/json"],
+          ["User-Agent", "railsbox-vault-vm-harness"],
+        ].filter(([nom]) => !remplaces.has(nom.toLowerCase())),
+        ...entetesEnPlus,
       ],
+      body: reglages.corps,
     });
 
     const promesse = new Promise((resoudre, rejeter) => {
