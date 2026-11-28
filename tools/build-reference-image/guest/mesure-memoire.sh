@@ -13,10 +13,16 @@
 # part réelle. `guest_utilise` est MemTotal - MemAvailable, tout le guest compris (cache exclu).
 set -u
 
-# $1 : motif du nom de commande ; $2 : champ de smaps_rollup (Rss ou Pss).
+# Un processus est reconnu par sa LIGNE DE COMMANDE (`ps -o args`), précédée d'une espace : Puma
+# renomme la sienne (« puma 8.1.3 (tcp://…) »), et les processus du serveur s'appellent
+# « postgres: checkpointer », « postgres: walwriter »…
+POSTGRES='^ (postgres|/usr/lib/postgresql/)'
+RAILS='^ (puma|ruby|bundle)'
+
+# $1 : motif de la ligne de commande ; $2 : champ de smaps_rollup (Rss ou Pss).
 somme() {
   total=0
-  for pid in $(ps -eo pid=,comm= | awk -v motif="$1" '$2 ~ motif { print $1 }'); do
+  for pid in $(ps -eo pid=,args= | awk -v motif="$1" '{ pid = $1; $1 = ""; if ($0 ~ motif) print pid }'); do
     valeur=$(awk -v champ="$2:" '$1 == champ { print $2 }' "/proc/$pid/smaps_rollup" 2> /dev/null)
     total=$((total + ${valeur:-0}))
   done
@@ -27,7 +33,7 @@ while true; do
   total=$(awk '$1 == "MemTotal:" { print $2 }' /proc/meminfo)
   disponible=$(awk '$1 == "MemAvailable:" { print $2 }' /proc/meminfo)
   echo "[mesure] memoire t=$(cut -d ' ' -f 1 /proc/uptime) guest_utilise=$((total - disponible))" \
-    "postgres_rss=$(somme '^postgres' Rss) postgres_pss=$(somme '^postgres' Pss)" \
-    "rails_pss=$(somme '^(ruby|puma)' Pss)" >> /var/log/puma.log
+    "postgres_rss=$(somme "$POSTGRES" Rss) postgres_pss=$(somme "$POSTGRES" Pss)" \
+    "rails_pss=$(somme "$RAILS" Pss)" >> /var/log/puma.log
   sleep 5
 done
