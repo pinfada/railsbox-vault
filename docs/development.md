@@ -525,8 +525,9 @@ l'application, puis — pour la référence seule — de `vault-invariant.json` 
 
 **Ce que l'application doit respecter** pour être empaquetable :
 
-- **Ruby 3.3.12** et le `Gemfile.lock` résolu pour la plateforme `ruby` : le bundle est compilé en
-  i386 par le Ruby de l'image, et `BUNDLE_FORCE_RUBY_PLATFORM` est posé. Si le Gemfile porte une
+- **Ruby 3.3.12**. Le bundle est compilé en i386 par le Ruby de l'image, sous
+  `BUNDLE_FORCE_RUBY_PLATFORM` ; un `Gemfile.lock` qui ne connaît que `x86_64-linux` reçoit la
+  plateforme `ruby` dans la COPIE, à la construction (#351, ADR 0055). Si le Gemfile porte une
   directive `ruby`, elle doit accepter ce Ruby, lu dans `tools/build-reference-image/sources.json`
   (#342, `tools/paquet/ruby-demande.mjs`, sémantique de `Gem::Requirement` reprise de RailsBox) :
   `ruby "~> 3.3.10"`, `ruby "~> 3.3"` ou `ruby ">= 3.1", "< 3.5"` passent, `ruby "3.3.10"` est
@@ -540,14 +541,16 @@ l'application, puis — pour la référence seule — de `vault-invariant.json` 
   erreur** : c'est une exigence de compatibilité, pas un défaut (#210, `SECURITY.md`) ;
 - **aucun secret** : la fabrication refuse tout fichier que désigne un motif de `SECRETS_REFUSES`
   (`tools/paquet/identite-de-l-application.mjs`), c'est-à-dire la clé maîtresse
-  (`config/master.key`), les identifiants chiffrés (`config/credentials.yml.enc`), les clés et
-  identifiants d'environnement (`config/credentials/*.key`, `config/credentials/*.yml.enc`), les
-  fichiers d'environnement (`.env`, `.env.*`, à toute profondeur), les certificats et magasins
-  (`*.pem`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`), les clés SSH privées (`id_rsa`, `id_dsa`,
-  `id_ecdsa`, `id_ed25519`) et, sous `config/`, tout fichier dont le nom annonce un secret
-  (`secret`, `key`). Le `secret_key_base` se dérive d'une chaîne publique. La fabrication refuse
-  avant le premier `docker build`, et le Dockerfile refuse à nouveau les secrets de Rails (clé
-  maîtresse, identifiants chiffrés, clés et identifiants d'environnement) ;
+  (`config/master.key`), les identifiants chiffrés accompagnés de leur clé, les clés et identifiants
+  d'environnement (`config/credentials/*.key`, `config/credentials/*.yml.enc`), les fichiers
+  d'environnement (`.env`, `.env.*`, à toute profondeur), les certificats et magasins (`*.pem`,
+  `*.p12`, `*.pfx`, `*.jks`, `*.keystore`), les clés SSH privées (`id_rsa`, `id_dsa`, `id_ecdsa`,
+  `id_ed25519`) et, sous `config/`, tout fichier dont le nom annonce un secret (`secret`, `key`). Un
+  `credentials.yml.enc` SANS sa clé — le cas de tout dépôt `rails new` — est EXCLU du paquet, et la
+  fabrication le dit (#351). Le `secret_key_base` est fourni par le coffre (`SECRET_KEY_BASE`, tiré
+  au premier démarrage, `SECURITY.md`). La fabrication refuse avant le premier `docker build`, et le
+  Dockerfile refuse à nouveau les secrets de Rails (clé maîtresse, identifiants chiffrés, clés et
+  identifiants d'environnement) ;
 - **aucun secret dans le CONTENU des fichiers** non plus (#342,
   `tools/paquet/secrets-du-contenu.mjs`, signaux repris de `tools/detect/env-secrets.mjs` de
   RailsBox). Une valeur à forme de jeton connu (`ghp_…`, `sk_live_…`, `AKIA…`, clé privée PEM…) est

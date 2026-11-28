@@ -87,7 +87,9 @@ test("#351 : une application `rails new` non modifiée, en CRLF, démarre dans u
   test.setTimeout(1_200_000);
 
   // --- 0. La source est bien celle qu'on dit : CRLF, verrou x86_64-linux seul, aucune clé ----------
-  expect(readFileSync(join(FIXTURE, "bin", "rails"), "utf8")).toMatch(/^#!\/usr\/bin\/env ruby\r\n/);
+  expect(readFileSync(join(FIXTURE, "bin", "rails"), "utf8")).toMatch(
+    /^#!\/usr\/bin\/env ruby\r\n/,
+  );
   expect(readFileSync(join(FIXTURE, "Gemfile.lock"), "utf8")).toMatch(
     /\r\nPLATFORMS\r\n {2}x86_64-linux\r\n\r\n/,
   );

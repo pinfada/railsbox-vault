@@ -314,6 +314,7 @@ Chaque décision structurante est écrite, datée et numérotée.
 - [ADR 0050 — l'image dans l'arbre publié et l'envoi inerte](docs/decisions/0050-l-image-dans-l-arbre-publie-et-l-envoi-inerte.md)
 - [ADR 0051 — la scène : une direction sombre, pétrole et laiton, et le thème clair retiré](docs/decisions/0051-la-scene-sombre-petrole-et-laiton.md)
 - [ADR 0052 — le cadre ne peut rien envoyer hors de son origine : une CSP injectée par le Service Worker du cadre, une autre portée par le courtier, sans liste blanche](docs/decisions/0052-le-cadre-ne-peut-rien-envoyer-hors-de-son-origine.md)
+- [ADR 0055 — une application Rails extérieure démarre sans s'adapter à l'outil : prêt = Rails répond, `secret_key_base` fourni par le coffre, verrou, fins de ligne et credentials pris en charge à la construction](docs/decisions/0055-une-application-rails-exterieure-demarre-sans-s-adapter.md)
 
 </details>
 
