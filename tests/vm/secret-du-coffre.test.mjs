@@ -7,7 +7,8 @@
 // `schema-du-volume.test.mjs`.
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,42 +48,56 @@ jouer lecture-seule /ro
 jouer lecture-seule-bis /ro
 `;
 
-function dockerDisponible() {
-  const sonde = spawnSync("docker", ["version", "--format", "{{.Server.Version}}"], {
-    encoding: "utf8",
-  });
-  return sonde.status === 0;
+/**
+ * Docker, joué de façon ASYNCHRONE. Playwright charge aussi ce fichier (`testDir: tests/vm`), et ses
+ * épreuves tournent alors dans le processus qui pilote le navigateur : un `spawnSync` y bloquait la
+ * boucle d'événements pendant la première épreuve navigateur (`boot-trois-moteurs`, expirée à 300 s
+ * au premier essai des deux runs de la branche de #351, jamais sur main).
+ */
+const executer = promisify(execFile);
+
+async function docker(argumentsDocker) {
+  try {
+    const { stdout, stderr } = await executer("docker", argumentsDocker, {
+      encoding: "utf8",
+      maxBuffer: 1 << 24,
+    });
+    return { status: 0, stdout, stderr };
+  } catch (erreur) {
+    return {
+      status: typeof erreur.code === "number" ? erreur.code : 1,
+      stdout: erreur.stdout ?? "",
+      stderr: erreur.stderr ?? String(erreur),
+    };
+  }
 }
 
 test(
   "secret-du-coffre.sh sous dash : tiré une fois, stable, remplacé s'il est mal formé, éphémère en lecture seule",
-  {
-    skip: dockerDisponible() ? false : "Docker indisponible : l'épreuve joue le vrai dash du guest",
-    timeout: 600_000,
-  },
-  () => {
+  { timeout: 600_000 },
+  async (t) => {
+    if ((await docker(["version", "--format", "{{.Server.Version}}"])).status !== 0) {
+      t.skip("Docker indisponible : l'épreuve joue le vrai dash du guest");
+      return;
+    }
     const dossier = mkdtempSync(join(tmpdir(), "vault-secret-"));
     const lectureSeule = mkdtempSync(join(tmpdir(), "vault-secret-ro-"));
     try {
       writeFileSync(join(dossier, "conduite.sh"), CONDUITE);
       writeFileSync(join(dossier, "secret-du-coffre.sh"), readFileSync(SCRIPT));
-      const jeu = spawnSync(
-        "docker",
-        [
-          "run",
-          "--rm",
-          "--platform",
-          "linux/386",
-          "-v",
-          `${dossier}:/script:ro`,
-          "-v",
-          `${lectureSeule}:/ro:ro`,
-          IMAGE,
-          "dash",
-          "/script/conduite.sh",
-        ],
-        { encoding: "utf8" },
-      );
+      const jeu = await docker([
+        "run",
+        "--rm",
+        "--platform",
+        "linux/386",
+        "-v",
+        `${dossier}:/script:ro`,
+        "-v",
+        `${lectureSeule}:/ro:ro`,
+        IMAGE,
+        "dash",
+        "/script/conduite.sh",
+      ]);
       assert.equal(jeu.status, 0, jeu.stderr);
       const cas = new Map(
         jeu.stdout
