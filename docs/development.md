@@ -533,8 +533,16 @@ l'application, puis — pour la référence seule — de `vault-invariant.json` 
   refusé. `ruby file: ".ruby-version"` est une égalité stricte, et ce fichier doit entrer dans le
   paquet, car Bundler le relit au démarrage. Un `.ruby-version` seul, sans directive, n'engage pas
   Bundler et ne refuse rien ;
-- **SQLite**, sous `/app/var/db` (`VAULT_DATABASE_PATH`), et ActiveStorage sous `/app/var/storage`
-  (`VAULT_STORAGE_ROOT`). PostgreSQL reste hors périmètre (ADR 0004) ;
+- **SQLite ou PostgreSQL**, selon l'adaptateur que la section `production` de `config/database.yml`
+  déclare (#343, `tools/paquet/base-de-donnees.mjs`, ADR 0056). SQLite vit sous `/app/var/db`
+  (`VAULT_DATABASE_PATH`). Pour `adapter: postgresql`, la fabrication prépare un cluster PostgreSQL
+  15 dans la graine (`/app/var/pg`, `initdb --data-checksums`, migrations, arrêt propre), et le
+  guest le démarre après le montage du disque de données puis fournit `DATABASE_URL` à Rails :
+  l'application n'a rien à changer. La configuration du serveur est celle de l'outil (`fsync`,
+  `synchronous_commit` et `full_page_writes` à `on`, refusée sinon par `verify-pinning.mjs`, relue
+  par `SHOW` à chaque boot). Une base nommée (`primary:`, `cache:`…) n'a aujourd'hui que `primary`
+  de raccordé ; MySQL et un mélange de moteurs sont refusés en clair. ActiveStorage vit sous
+  `/app/var/storage` (`VAULT_STORAGE_ROOT`) ;
 - **toute écriture durable sous `/app/var`, et nulle part ailleurs.** Ce qui est écrit dans `/app`
   (y compris `tmp/` et le cache) vit en RAM pour la session et disparaît au boot à froid, **sans
   erreur** : c'est une exigence de compatibilité, pas un défaut (#210, `SECURITY.md`) ;

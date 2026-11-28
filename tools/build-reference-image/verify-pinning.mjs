@@ -6,14 +6,23 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 import { analyserDockerfile, analyserSources, digestsDeclares } from "./pinning-contract.mjs";
+import {
+  analyserConfigurationPostgresql,
+  analyserLanceurPostgresql,
+  analyserVersionPostgresql,
+} from "./postgresql-durable.mjs";
 
 const dossier = dirname(fileURLToPath(import.meta.url));
 const racineDepot = resolve(dossier, "..", "..");
 
 /**
+ * `configurationPostgresql` remplace le fichier du guest : c'est ce qui permet à une épreuve de
+ * présenter une configuration affaiblie sans toucher au dépôt (#343).
+ *
+ * @param {{ configurationPostgresql?: string }} [options]
  * @returns {{ anomalies: import("./pinning-contract.mjs").Anomalie[], fichiers: string[] }}
  */
-export function verifierEpinglage() {
+export function verifierEpinglage(options = {}) {
   const sources = JSON.parse(readFileSync(join(dossier, "sources.json"), "utf8"));
   const digestsConnus = digestsDeclares(sources);
 
@@ -41,6 +50,8 @@ export function verifierEpinglage() {
     }
   }
 
+  anomalies.push(...anomaliesDePostgresql(sources, options));
+
   // Un secret peut aussi entrer par l'arbre de l'application plutôt que par le
   // Dockerfile ; la fixture doit rester sans clé maîtresse.
   for (const relatif of [
@@ -60,6 +71,28 @@ export function verifierEpinglage() {
   }
 
   return { anomalies, fichiers };
+}
+
+/**
+ * PostgreSQL dans le guest (#343, ADR 0056) : sa configuration ne peut pas affaiblir la durabilité,
+ * son lanceur pose les sommes de contrôle, et sa version majeure est celle de `sources.json`.
+ */
+function anomaliesDePostgresql(sources, options) {
+  const lire = (nom) => readFileSync(join(dossier, "guest", nom), "utf8");
+  const configuration = options.configurationPostgresql ?? lire("postgresql-vault.conf");
+  const lanceur = lire("postgresql.sh");
+  const dockerfile = readFileSync(join(dossier, "guest.Dockerfile"), "utf8");
+  return [
+    ...analyserConfigurationPostgresql(configuration).map((anomalie) => ({
+      ...anomalie,
+      message: `guest/postgresql-vault.conf:${anomalie.ligne} : ${anomalie.message}`,
+    })),
+    ...analyserLanceurPostgresql(lanceur).map((anomalie) => ({
+      ...anomalie,
+      message: `guest/postgresql.sh:${anomalie.ligne} : ${anomalie.message}`,
+    })),
+    ...analyserVersionPostgresql({ sources, dockerfile, lanceur }),
+  ];
 }
 
 const executeDirectement =

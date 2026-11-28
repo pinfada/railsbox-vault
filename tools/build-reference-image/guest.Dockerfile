@@ -71,6 +71,30 @@ RUN set -eu; \
 # embarqué échoue sous i386 (constat de RailsBox Live, même commit).
 ENV NOKOGIRI_USE_SYSTEM_LIBRARIES=true
 
+# PostgreSQL (#343, ADR 0056) : `libpq-dev` pour compiler la gemme `pg` en i386, et le serveur pour
+# préparer, à la fabrication du paquet, le cluster d'une application qui déclare
+# `adapter: postgresql`. Une instruction À PART, après Ruby : l'ajouter à la liste du haut
+# recompilerait Ruby à chaque construction sans cache.
+#
+# L'utilisateur `postgres` est créé AVANT le paquet, avec un uid et un gid FIXES
+# (`sources.json`, `postgresql.utilisateur`) : le datadir naît ici et s'ouvre dans l'étage `rootfs`,
+# et un uid attribué par ordre d'installation pourrait différer d'un étage à l'autre — le serveur
+# refuserait alors un datadir qui ne lui appartient pas.
+#
+# Le postinst de postgresql-common crée d'office un cluster `main` dans /var/lib/postgresql : il est
+# retiré, comme dans RailsBox (tools/build-v86-image/base/Dockerfile). Le cluster d'un coffre vit
+# sur son disque de données, nulle part ailleurs.
+RUN set -eu; \
+    groupadd --system --gid 990 postgres; \
+    useradd --system --uid 990 --gid 990 --home-dir /var/lib/postgresql --shell /bin/sh postgres; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends libpq-dev postgresql-15; \
+    rm -rf /var/lib/apt/lists/*; \
+    pg_dropcluster --stop 15 main 2>/dev/null || true; \
+    rm -rf /var/lib/postgresql/15/main /etc/postgresql/15/main; \
+    test "$(id -u postgres)" = 990; \
+    /usr/lib/postgresql/15/bin/postgres --version | grep -q '(PostgreSQL) 15\.'
+
 ########################################################################
 # Étage `rootfs` : le disque hda, sans chaîne de compilation.
 ########################################################################
@@ -108,6 +132,32 @@ RUN set -eu; \
     test -s /boot/initrd.img-*; \
     rm -rf /usr/lib/modules /lib/modules
 
+# PostgreSQL 15 (#343, ADR 0056) : le serveur et `psql`, pour les applications qui déclarent
+# `adapter: postgresql`. Le cluster n'est PAS ici : il vit sur le disque de données, et le guest ne
+# le démarre qu'après l'avoir monté. Même uid et même gid que dans l'étage `outils`, où le datadir
+# naît ; même retrait du cluster `main` que crée le postinst.
+#
+# Le JIT de PostgreSQL ne sert pas (`jit = off`, guest/postgresql-vault.conf) : son module et son
+# bitcode sont retirés. libLLVM, dont le paquet dépend pour ce seul module, est retirée aussi —
+# elle pèse plus que le serveur, dans un rootfs que chaque visiteur télécharge et garde en mémoire.
+# `postgres` ne la charge jamais : seul `llvmjit.so` la lie, et il n'est plus là.
+RUN set -eu; \
+    groupadd --system --gid 990 postgres; \
+    useradd --system --uid 990 --gid 990 --home-dir /var/lib/postgresql --shell /bin/sh postgres; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends postgresql-15 postgresql-client-15; \
+    rm -rf /var/lib/apt/lists/*; \
+    pg_dropcluster --stop 15 main 2>/dev/null || true; \
+    rm -rf /var/lib/postgresql/15/main /etc/postgresql/15/main; \
+    rm -rf /usr/lib/postgresql/15/lib/llvmjit.so /usr/lib/postgresql/15/lib/llvmjit_types.bc \
+      /usr/lib/postgresql/15/lib/bitcode; \
+    for llvm in $(dpkg-query -W -f '${Package}\n' 'libllvm*' 2>/dev/null); do \
+      dpkg --purge --force-depends "$llvm"; \
+    done; \
+    test "$(id -u postgres)" = 990; \
+    ! ldd /usr/lib/postgresql/15/bin/postgres | grep -q 'not found'; \
+    /usr/lib/postgresql/15/bin/postgres --version | grep -q '(PostgreSQL) 15\.'
+
 # Ruby et Bundler, repris de l'étage de compilation.
 COPY --from=outils /usr/local /usr/local
 RUN ldconfig && test "$(ruby -e 'print RUBY_VERSION')" = "3.3.12"
@@ -116,6 +166,10 @@ COPY tools/build-reference-image/guest/guest-init.sh /opt/vault/guest-init.sh
 COPY tools/build-reference-image/guest/start-app.sh /opt/vault/start-app.sh
 COPY tools/build-reference-image/guest/schema-du-volume.sh /opt/vault/schema-du-volume.sh
 COPY tools/build-reference-image/guest/serial-bridge.py /opt/vault/serial-bridge.py
+COPY tools/build-reference-image/guest/mesure-memoire.sh /opt/vault/mesure-memoire.sh
+COPY tools/build-reference-image/guest/postgresql.sh /opt/vault/postgresql.sh
+COPY tools/build-reference-image/guest/postgresql-vault.conf /opt/vault/postgresql.conf
+COPY tools/build-reference-image/guest/postgresql-hba.conf /opt/vault/postgresql-hba.conf
 
 # Environnement du guest. Aucune clé, aucun jeton, aucun mot de passe : la
 # clé de signature de Rails est dérivée d'une chaîne publique documentée
@@ -138,6 +192,10 @@ RUN set -eu; \
       echo 'export TZ=UTC'; \
       echo 'export WEB_CONCURRENCY=0'; \
       echo 'export RAILS_MAX_THREADS=2'; \
+      echo '# PostgreSQL (#343, ADR 0056) : le paquet dit sa base ; Rails reçoit la connexion de l outil.'; \
+      echo 'if [ "$(cat /app/db/.vault-base-de-donnees 2>/dev/null)" = postgresql ]; then'; \
+      echo '  export DATABASE_URL="$(sh /opt/vault/postgresql.sh url)"'; \
+      echo 'fi'; \
     } > /opt/vault/env.sh
 
 ########################################################################
@@ -188,9 +246,14 @@ COPY --from=application . ./
 # les trois chemins énumérés. C'est la SECONDE barrière — `tools/paquet/fabriquer-paquet.mjs` refuse
 # déjà avant le premier `docker build`, sur la liste des fichiers qui entrent réellement —, et deux
 # barrières valent mieux qu'une pour ce qui ne se rattrape pas une fois publié.
+#
+# `/app/vendor/bundle` est ÉLAGUÉ (#343) : il ne vient pas de la source — `vendor/` en est exclu par
+# `exclusions-de-la-source.mjs` — mais de `bundle install`, depuis le verrou. La gemme `pg` y dépose
+# les certificats PUBLICS de signature de ses auteurs (`certs/*.pem`), que le motif prenait pour
+# des secrets : toute application PostgreSQL était refusée.
 RUN set -eu; \
     trouves="$( \
-      find /app -type f \( \
+      find /app -path /app/vendor/bundle -prune -o -type f \( \
         -path '/app/config/master.key' \
         -o -path '/app/config/credentials.yml.enc' \
         -o -path '/app/config/credentials/*.key' \
@@ -214,8 +277,29 @@ RUN set -eu; \
 # 100644, il est invoqué par `ruby bin/vault-fixture`, et un `-x` était vrai sous Docker Desktop
 # (Windows) et faux sur un exécutant Linux — l'invariant n'y était alors pas créé, et le boot de la
 # recette rendait 404 sur /vault/invariant. Constat de la CI de la PR #237.
+#
+# La BASE vient de ce que l'application déclare (#343, ADR 0056) : `tools/paquet/base-de-donnees.mjs`
+# lit `adapter:` dans la production de `config/database.yml` et la passe ici. Pour `postgresql`, le
+# cluster naît dans /app/var/pg — donc dans la graine — par le MÊME script que le guest utilise au
+# boot : initdb avec sommes de contrôle, réglages relus par SHOW, migrations par le DATABASE_URL de
+# l'outil, puis arrêt `fast` (checkpoint écrit : la graine porte un cluster cohérent, sans reprise
+# à jouer au premier boot). Repris de RailsBox (base/app.Dockerfile), durci par ADR 0056.
+ARG BASE_DE_DONNEES=sqlite3
+COPY tools/build-reference-image/guest/postgresql.sh /opt/vault/postgresql.sh
+COPY tools/build-reference-image/guest/postgresql-vault.conf /opt/vault/postgresql.conf
+COPY tools/build-reference-image/guest/postgresql-hba.conf /opt/vault/postgresql-hba.conf
 RUN set -eu; \
+    case "$BASE_DE_DONNEES" in \
+      sqlite3 | postgresql) ;; \
+      *) echo "REFUS : base de données inconnue : $BASE_DE_DONNEES" >&2; exit 1 ;; \
+    esac; \
     mkdir -p var/db var/storage tmp/pids log; \
+    if [ "$BASE_DE_DONNEES" = postgresql ]; then \
+      sh /opt/vault/postgresql.sh preparer; \
+      DATABASE_URL="$(sh /opt/vault/postgresql.sh url)"; \
+      export DATABASE_URL; \
+      sh /opt/vault/postgresql.sh verifier; \
+    fi; \
     linux32 ruby bin/rails db:migrate; \
     if [ -f bin/vault-fixture ]; then \
       linux32 ruby bin/vault-fixture create; \
@@ -223,6 +307,10 @@ RUN set -eu; \
       linux32 ruby bin/vault-fixture verify --json > /app/var/invariant-a-la-construction.json; \
     else \
       echo "[disque-app] pas de bin/vault-fixture : application extérieure, aucun invariant"; \
+    fi; \
+    if [ "$BASE_DE_DONNEES" = postgresql ]; then \
+      sh /opt/vault/postgresql.sh arreter; \
+      echo "[disque-app] cluster PostgreSQL : $(du -sh var/pg | cut -f1)"; \
     fi; \
     rm -rf log/*.log
 
@@ -266,4 +354,5 @@ RUN set -eu; \
     printf '%s\n' "$SCHEMA_DE_L_APPLICATION" > /graine/.vault-schema; \
     mkdir -p /app/db; \
     printf '%s\n' "$SCHEMA_DE_L_APPLICATION" > /app/db/.vault-schema; \
+    printf '%s\n' "$BASE_DE_DONNEES" > /app/db/.vault-base-de-donnees; \
     echo "[disque-app] paquet $(du -sh /app | cut -f1), graine $(du -sh /graine | cut -f1), schéma $SCHEMA_DE_L_APPLICATION"

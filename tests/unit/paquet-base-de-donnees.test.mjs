@@ -146,6 +146,8 @@ test("une production qui ne dit pas son moteur est refusée, pas devinée", () =
     'production:\n  url: <%= ENV["DATABASE_URL"] %>\n',
     'production:\n  adapter: <%= ENV["DB_ADAPTER"] %>\n',
     "development:\n  adapter: sqlite3\n",
+    // Une base nommée lisible ne couvre pas sa voisine illisible.
+    'production:\n  primary:\n    adapter: postgresql\n  cache:\n    adapter: <%= ENV["X"] %>\n',
   ]) {
     assert.deepEqual(
       codes(baseDeDonneesDeLApplication({ databaseYml: yml })),

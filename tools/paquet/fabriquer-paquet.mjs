@@ -53,6 +53,7 @@ import {
 import { cheminExclu, fichiersRetenus } from "./exclusions-de-la-source.mjs";
 import { schemaDeLApplication } from "./schema-de-l-application.mjs";
 import { gardesDeLaSource } from "./gardes-de-la-source.mjs";
+import { baseDeDonneesDeLApplication } from "./base-de-donnees.mjs";
 import { erreurDeRefus } from "./rapport-de-refus.mjs";
 import {
   confronterALaRetention,
@@ -228,6 +229,12 @@ export function examinerLaSource(source, options) {
     vaultApp,
     rubyDuGuest: SOURCES.ruby.version,
   });
+  // La base que la PRODUCTION déclare (#343, ADR 0056) : refusée avec les autres gardes, d'un coup.
+  const cheminDatabaseYml = join(source, "config", "database.yml");
+  const { base, anomalies: anomaliesDeLaBase } = baseDeDonneesDeLApplication({
+    databaseYml: existsSync(cheminDatabaseYml) ? readFileSync(cheminDatabaseYml, "utf8") : null,
+  });
+  anomalies.push(...anomaliesDeLaBase);
   if (anomalies.length > 0) throw erreurDeRefus(source, anomalies);
   const identite = identiteDeLApplication({ options, vaultApp, invariant });
   const cheminSchema = join(source, "db", "schema.rb");
@@ -238,7 +245,7 @@ export function examinerLaSource(source, options) {
     schemaRb: existsSync(cheminSchema) ? readFileSync(cheminSchema, "utf8") : null,
     migrations,
   });
-  return { ...identite, schema, fichiers };
+  return { ...identite, schema, fichiers, base };
 }
 
 /** @param {string} etape @param {string[]} arguments_ */
@@ -402,7 +409,7 @@ export async function fabriquerLePaquet(arguments_) {
     version: identite.version,
   });
   console.log(
-    `→ source : ${options.source}\n→ identité : ${identite.id} ${identite.version}, schéma ${identite.schema}`,
+    `→ source : ${options.source}\n→ identité : ${identite.id} ${identite.version}, schéma ${identite.schema}, base ${identite.base}`,
   );
   mkdirSync(DOSSIER_ARTEFACTS, { recursive: true });
 
@@ -443,6 +450,8 @@ async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet, retenti
     `application=${arbreDuPaquet}`,
     "--build-arg",
     `SCHEMA_DE_L_APPLICATION=${identite.schema}`,
+    "--build-arg",
+    `BASE_DE_DONNEES=${identite.base}`,
     "-t",
     ETIQUETTE_PAQUET,
     ".",

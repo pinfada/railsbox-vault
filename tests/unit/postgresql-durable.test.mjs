@@ -24,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import {
   analyserConfigurationPostgresql,
   analyserLanceurPostgresql,
+  analyserVersionPostgresql,
   lireLesReglages,
   REGLAGES_EXIGES,
 } from "../../tools/build-reference-image/postgresql-durable.mjs";
@@ -193,4 +194,34 @@ test("verify-pinning refuse une configuration affaiblie du guest", () => {
     anomalies.map((anomalie) => anomalie.message).join("\n"),
   );
   assert.deepEqual(verifierEpinglage().anomalies, []);
+});
+
+test("la version MAJEURE de PostgreSQL est celle de sources.json, partout", () => {
+  const sources = { postgresql: { version: "15" } };
+  const dockerfile = "RUN apt-get install -y postgresql-15 postgresql-client-15\n";
+  const lanceur = "PG_VERSION=15\n";
+  assert.deepEqual(analyserVersionPostgresql({ sources, dockerfile, lanceur }), []);
+  // Une autre majeure installée, un lanceur qui en nomme une autre, aucun paquet, aucune version.
+  for (const cas of [
+    { sources, dockerfile: `${dockerfile}RUN apt-get install postgresql-16\n`, lanceur },
+    { sources, dockerfile, lanceur: "PG_VERSION=16\n" },
+    { sources, dockerfile, lanceur: "" },
+    { sources, dockerfile: "RUN true\n", lanceur },
+    { sources: {}, dockerfile, lanceur },
+    { sources: { postgresql: { version: "15.4" } }, dockerfile, lanceur },
+  ]) {
+    assert.deepEqual(
+      [...new Set(codes(analyserVersionPostgresql(cas)))],
+      ["pg-version-non-epinglee"],
+      JSON.stringify(cas),
+    );
+  }
+});
+
+test("la chaîne réelle épingle la même majeure dans le Dockerfile, le lanceur et sources.json", () => {
+  const dossier = join(RACINE, "tools", "build-reference-image");
+  const sources = JSON.parse(readFileSync(join(dossier, "sources.json"), "utf8"));
+  const dockerfile = readFileSync(join(dossier, "guest.Dockerfile"), "utf8");
+  assert.deepEqual(analyserVersionPostgresql({ sources, dockerfile, lanceur: LANCEUR_REEL }), []);
+  assert.equal(sources.postgresql.version, LANCEUR_REEL.match(/^PG_VERSION=(\d+)$/m)[1]);
 });
