@@ -74,6 +74,7 @@ import {
 } from "./mise-a-jour-applicative.mjs";
 import { VOLUME_ALGORITHM, createManifest } from "../vm/volume-manifest.mjs";
 import {
+  applicationEnEchec,
   echecDInstallationReconnu,
   echecDUnArtefactDuDemarrage,
   echecDuPremierBoot,
@@ -665,15 +666,24 @@ async function booterLePaquet({
       }),
     });
   } catch (erreur) {
-    const code = codeDuRefusDuGuest(erreur) ?? refusDeLArtefactAbsent(erreur);
-    if (code !== null) return refusDeDemarrage(code, prepare);
-    // Un artefact du boot non acquis sur un volume jamais démarré : installation INACHEVÉE (#250).
-    const inachevee = await echecDuPremierBoot(erreur, { nom: NOM_DU_VOLUME_APPLICATIF });
-    if (inachevee !== null) return inachevee;
-    // Le même échec sur un volume QUI A SERVI : c'est l'adresse qui n'a pas fourni l'application,
-    // et il n'y a rien à reprendre — les données sont là, et rien ne les a touchées (#255).
-    const refuse = await echecDUnArtefactDuDemarrage(erreur, { nom: NOM_DU_VOLUME_APPLICATIF });
-    if (refuse !== null) return refuse;
-    throw erreur;
+    return traduireLEchecDuBoot(erreur, prepare);
   }
+}
+
+/** Ce qu'un boot ÉCHOUÉ devient : une réponse typée, ou l'erreur d'origine, relevée telle quelle. */
+async function traduireLEchecDuBoot(erreur, prepare) {
+  const code = codeDuRefusDuGuest(erreur) ?? refusDeLArtefactAbsent(erreur);
+  if (code !== null) return refusDeDemarrage(code, prepare);
+  // La machine a démarré, l'APPLICATION n'a pas répondu : sa cause en clair est dite (#351), et ce
+  // n'est pas une installation inachevée — le versement a abouti, le guest a battu.
+  const enEchec = applicationEnEchec(erreur);
+  if (enEchec !== null) return enEchec;
+  // Un artefact du boot non acquis sur un volume jamais démarré : installation INACHEVÉE (#250).
+  const inachevee = await echecDuPremierBoot(erreur, { nom: NOM_DU_VOLUME_APPLICATIF });
+  if (inachevee !== null) return inachevee;
+  // Le même échec sur un volume QUI A SERVI : c'est l'adresse qui n'a pas fourni l'application,
+  // et il n'y a rien à reprendre — les données sont là, et rien ne les a touchées (#255).
+  const refuse = await echecDUnArtefactDuDemarrage(erreur, { nom: NOM_DU_VOLUME_APPLICATIF });
+  if (refuse !== null) return refuse;
+  throw erreur;
 }

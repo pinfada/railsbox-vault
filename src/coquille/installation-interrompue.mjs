@@ -364,3 +364,16 @@ export async function echecDuPremierBoot(
     installee: true,
   };
 }
+
+/**
+ * Ce que devient un boot dont l'APPLICATION n'a jamais répondu (#351) : la réponse typée qui porte
+ * la cause en clair, ou `null` si l'erreur n'en porte pas. Seule la sonde de démarrage pose
+ * `causeEnClair` (`src/vm/sonde-de-demarrage.mjs`), et seulement quand le guest a battu.
+ *
+ * @param {unknown} erreur
+ */
+export function applicationEnEchec(erreur) {
+  const cause = erreur?.causeEnClair;
+  if (typeof cause !== "string" || cause === "") return null;
+  return { demarree: false, code: CODES_REFUS_COQUILLE.applicationEnEchec, motif: cause };
+}

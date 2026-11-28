@@ -399,10 +399,10 @@ function decomposition({ timeline, mesures, health }) {
 
 function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline }) {
   const { invariant, health } = deroule;
-  const observed = invariant.verdict.observed ?? {};
+  const observed = invariant.verdict?.observed ?? {};
   const conforming =
     invariant.statut === 200 &&
-    invariant.verdict.status === "conforming" &&
+    invariant.verdict?.status === "conforming" &&
     observed.record?.id === identite.expected.recordId &&
     observed.attachment?.sha256 === identite.expected.attachmentSha256;
 
@@ -424,7 +424,7 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     capture: deroule.capture,
     online: mesures.online,
     sante: health.sante,
-    invariantStatus: invariant.verdict.status,
+    invariantStatus: invariant.verdict?.status ?? null,
     invariantHttpStatus: invariant.statut,
     // Le VERDICT ENTIER, et pas seulement son statut : c'est l'objet que deux chemins de boot
     // doivent rendre IDENTIQUE pour que « équivalence » veuille dire quelque chose (#65, ADR 0024).
@@ -456,10 +456,24 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
  */
 async function lireInvariant(session) {
   const reponse = await session.request("GET", "/vault/invariant");
-  return {
-    statut: reponse.statut,
-    verdict: JSON.parse(new TextDecoder().decode(reponse.corps)),
-  };
+  return { statut: reponse.statut, verdict: verdictLu(reponse) };
+}
+
+/**
+ * Le verdict d'invariant, ou `null` quand la réponse n'en porte pas (#351).
+ *
+ * L'invariant est un contrat de l'application de RÉFÉRENCE, que la référence garde à part. Une
+ * application extérieure ne porte pas `/vault/invariant` : Rails y rend sa page 404, en HTML, et un
+ * `JSON.parse` de cette page faisait échouer un démarrage pourtant réussi. Le statut est publié tel
+ * que Rails l'a rendu ; c'est lui qu'une épreuve lit.
+ */
+function verdictLu(reponse) {
+  try {
+    const verdict = JSON.parse(new TextDecoder().decode(reponse.corps));
+    return verdict !== null && typeof verdict === "object" ? verdict : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

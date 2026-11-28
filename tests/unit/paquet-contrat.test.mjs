@@ -229,7 +229,13 @@ test("le schéma vient du dump quand il existe, de la dernière migration sinon"
   );
 });
 
-test("une application sans migration n'est pas empaquetable", () => {
-  assert.throws(() => schemaDeLApplication({ migrations: [] }), /schéma/i);
-  assert.throws(() => schemaDeLApplication({ schemaRb: "# rien ici", migrations: [] }), /schéma/i);
+test("un schéma hors de la forme que le guest compare est refusé", () => {
+  // Une application SANS migration a désormais le schéma 0 (#351) : voir
+  // `paquet-application-exterieure.test.mjs`. Ce qui reste refusé, c'est un nombre que `dash` ne
+  // comparerait plus.
+  assert.throws(
+    () => schemaDeLApplication({ schemaRb: "define(version: 123456789012345)", migrations: [] }),
+    /schéma/i,
+  );
+  assert.throws(() => schemaDeLApplication({ migrations: ["0042_x.rb"] }), /schéma/i);
 });

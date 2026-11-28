@@ -33,6 +33,14 @@ export function conduitesDeLInstallation(K) {
         "Réessayez plus tard ; si cela recommence, c'est cette adresse qui ne sert pas " +
         "correctement l'application.",
     ],
+    // L'application a été installée, la machine a démarré, et l'APPLICATION n'a pas répondu (#351).
+    // La cause, en clair, est ajoutée par la page après cette phrase (`conduiteDuDemarrageEchoue`).
+    [C.applicationEnEchec]: [
+      K.recommencer,
+      "L'application n'a pas démarré. Vos données sont intactes dans votre coffre. Vous pouvez " +
+        "cliquer de nouveau sur « Démarrer l'application » ; si cela recommence, la cause ci-dessous " +
+        "vient de l'application, et c'est à son éditeur de la corriger.",
+    ],
     // L'état AMBIGU : un disque anonyme que rien ne prouve être une installation interrompue.
     [C.volumeApplicatifSansManifeste]: [
       K.autre,

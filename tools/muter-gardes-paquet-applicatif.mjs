@@ -56,6 +56,20 @@ const EPREUVE_GARDES = "tests/unit/paquet-gardes-de-la-source.test.mjs";
 const EPREUVE_RUBY = "tests/unit/paquet-ruby-demande.test.mjs";
 const EPREUVE_CONTENU = "tests/unit/paquet-secrets-du-contenu.test.mjs";
 
+// Les gardes d'une application EXTÉRIEURE (#351, ADR 0055).
+const IDENTIFIANTS_CHIFFRES = "tools/paquet/identifiants-chiffres.mjs";
+const FINS_DE_LIGNE = "tools/paquet/fins-de-ligne.mjs";
+const SCHEMA = "tools/paquet/schema-de-l-application.mjs";
+const DOCKERFILE = "tools/build-reference-image/guest.Dockerfile";
+const SONDE = "src/vm/sonde-de-demarrage.mjs";
+const APPLICATION = "src/coquille/installation-interrompue.mjs";
+const DEPHASAGE = "src/coquille/dephasage.mjs";
+
+const EPREUVE_EXTERIEURE = "tests/unit/paquet-application-exterieure.test.mjs";
+const EPREUVE_SONDE = "tests/unit/vm-sonde-de-demarrage.test.mjs";
+const EPREUVE_EN_ECHEC = "tests/unit/coquille-application-en-echec.test.mjs";
+const EPREUVE_DEPHASAGE = "tests/unit/coquille-dephasage.test.mjs";
+
 /**
  * Les gardes de #236, et la façon exacte de les retirer.
  *
@@ -249,6 +263,117 @@ export const MUTATIONS = Object.freeze([
     avant: "    (entree) => entree?.fichier === fichier && entree?.cle === cle,\n",
     apres: "    (entree) => entree?.cle === cle,\n",
     epreuves: [EPREUVE_CONTENU],
+  },
+  // --- #351 : une application extérieure, non modifiée, se fabrique et démarre -----------------
+  {
+    nom: "un chiffré Rails AVEC sa clé n'est pas exclu : la paire reste refusée",
+    garde: "identifiantsChiffresSansCle — la présence de la clé",
+    fichier: IDENTIFIANTS_CHIFFRES,
+    avant: "    return cle !== null && !presents.has(cle);\n",
+    apres: "    return cle !== null;\n",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "un chiffré Rails sans sa clé n'entre pas dans le paquet",
+    garde: "examinerLaSource — le retrait des identifiants exclus",
+    fichier: FABRIQUE,
+    avant: "  const fichiers = retenus.filter((relatif) => !exclus.includes(relatif));\n",
+    apres: "  const fichiers = retenus;\n",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "un fichier binaire n'est jamais normalisé",
+    garde: "finsDeLigneNormalisees — le critère du texte",
+    fichier: FINS_DE_LIGNE,
+    avant:
+      "  if (!estDuTexte(octets) || !octets.includes(CRLF)) return { octets, normalise: false };\n",
+    apres: "  if (!octets.includes(CRLF)) return { octets, normalise: false };\n",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "un CR isolé n'est pas une fin de ligne",
+    garde: "finsDeLigneNormalisees — seul le CR suivi d'un LF est retiré",
+    fichier: FINS_DE_LIGNE,
+    avant: "    if (octets[rang] === CR && octets[rang + 1] === LF) continue;\n",
+    apres: "    if (octets[rang] === CR) continue;\n",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "un schema.rb à soulignés est lu en entier",
+    garde: "schemaLu — le retrait des soulignés",
+    fichier: SCHEMA,
+    avant: '  if (dump !== null) return dump[1].replaceAll("_", "");\n',
+    apres: "  if (dump !== null) return dump[1];\n",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "une application sans migration a le schéma 0",
+    garde: "schemaLu — le schéma d'une base sans migration",
+    fichier: SCHEMA,
+    avant: "  if (versions.length === 0) return SCHEMA_SANS_MIGRATION;\n",
+    apres: "",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "le verrou gagne la plateforme `ruby` avant `bundle install`",
+    garde: "guest.Dockerfile — `bundle lock --add-platform ruby`",
+    fichier: DOCKERFILE,
+    avant: "    BUNDLE_FROZEN=false linux32 bundle lock --add-platform ruby; \\\n",
+    apres: "",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "`storage/` du paquet est un lien vers le disque de données",
+    garde: "guest.Dockerfile — `ln -sfn var/storage storage` avant `db:migrate`",
+    fichier: DOCKERFILE,
+    avant: "    ln -sfn var/storage storage; \\\n",
+    apres: "",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "la durabilité SQLite est chargée dans tout processus Ruby du guest",
+    garde: "guest.Dockerfile — `RUBYOPT` dans `env.sh`",
+    fichier: DOCKERFILE,
+    avant: "      echo 'export RUBYOPT=-r/opt/vault/durabilite-rails.rb'; \\\n",
+    apres: "",
+    epreuves: [EPREUVE_EXTERIEURE],
+  },
+  {
+    nom: "toute réponse de Rails vaut « prêt », pas seulement un 200",
+    garde: "attendreQueRailsReponde — la réponse, quel que soit son statut",
+    fichier: SONDE,
+    avant:
+      "      return { durationMs: maintenant() - debut, sante: santeDe(reponse), statut: reponse.statut };\n",
+    apres:
+      "      if (reponse.statut === 200) {\n" +
+      "        return { durationMs: maintenant() - debut, sante: santeDe(reponse), statut: 200 };\n" +
+      "      }\n",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "une application arrêtée fait échouer tout de suite",
+    garde: "attendreQueRailsReponde — la marque d'arrêt du guest",
+    fichier: SONDE,
+    avant: "    if (estArretee()) {\n",
+    apres: "    if (false) {\n",
+    epreuves: [EPREUVE_SONDE],
+  },
+  {
+    nom: "une cause en clair devient un démarrage refusé typé",
+    garde: "applicationEnEchec — la réponse typée de la coquille",
+    fichier: APPLICATION,
+    avant: '  if (typeof cause !== "string" || cause === "") return null;\n',
+    apres: "  return null;\n",
+    epreuves: [EPREUVE_EN_ECHEC],
+  },
+  {
+    nom: "l'installation dit aussi l'identité servie",
+    garde: "deciderLeDephasage — `servie.id` à l'installation",
+    fichier: DEPHASAGE,
+    avant:
+      "        : { id: descripteur.application.id, ...versionEtSchema(descripteur.application) };\n",
+    apres: "        : versionEtSchema(descripteur.application);\n",
+    epreuves: [EPREUVE_DEPHASAGE],
   },
 ]);
 

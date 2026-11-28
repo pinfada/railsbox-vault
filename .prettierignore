@@ -6,3 +6,4 @@ reports/
 vendor/v86/artefacts/
 vendor/v86/patches/
 .kilo/
+tests/fixtures/application-rails-new/

@@ -75,8 +75,9 @@ const HORS_PERIMETRE = [];
 const SOUS_SURVEILLANCE = [
   {
     fichier: "src/coquille/conduites-du-parcours.mjs",
-    lignes: 731,
+    lignes: 732,
     motif:
+      "#351 (28/11/2026) y ajoute une ligne : le code `VAULT_COQUILLE_APPLICATION_EN_ECHEC` dans la liste du geste « démarrer » ; la conduite de sa cause vit à part (`cause-du-demarrage.mjs`). " +
       "#299 (18/11/2026) y inscrit cinq codes de la réserve (+5 lignes), refusés AVANT le parcours : ils sont hors du chemin, avec leur motif. #239 et #240 (18/09/2026) le font passer de 700 à 716 lignes : la conduite de la phrase trop " +
       "courte, et celle de l'enveloppe pleine, qui dit désormais sa sortie. #231 (18/11/2026) le fait " +
       "passer à 726 : la conduite du stockage INDÉTERMINÉ (`VAULT_STORAGE_INDETERMINE`), nouveau code " +

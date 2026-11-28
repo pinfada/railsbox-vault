@@ -14,9 +14,10 @@
 // `verify-pinning.mjs` refuse déjà un secret dans l'arbre du dépôt. Une application EXTÉRIEURE
 // n'est pas dans l'arbre du dépôt : elle arrive par un contexte de construction nommé, et sa
 // `config/master.key` entrerait dans une image publiée sous une adresse immuable, que tout visiteur
-// télécharge. Le `secret_key_base` d'un paquet se DÉRIVE d'une chaîne publique, comme celui de la
-// référence — c'est la règle, et c'est elle que ce module fait respecter avant le premier
-// `docker build`.
+// télécharge. Le `secret_key_base` d'un paquet est FOURNI par le coffre au premier démarrage (#351,
+// ADR 0055) — aucune clé n'a donc à voyager dans le paquet, et ce module le fait respecter avant le
+// premier `docker build`. Un `credentials.yml.enc` SANS sa clé est exclu, pas refusé
+// (`identifiants-chiffres.mjs`).
 
 /**
  * MOTIFS de fichiers qu'un paquet ne peut pas contenir (#236, revue de sécurité, constat 2).
@@ -57,9 +58,14 @@ const IDENTIFIANT = /^[a-z0-9][a-z0-9-]{1,63}$/;
 /** Version : trois nombres, éventuellement suivis d'un qualificatif. Elle entre aussi dans un nom. */
 const VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
-/** Ce dont la référence dérive son `secret_key_base`, et ce qu'un paquet muet hérite par défaut. */
+/**
+ * D'où vient le `secret_key_base` d'un paquet qui n'en déclare pas : du COFFRE (#351, ADR 0055).
+ * `secret-du-coffre.sh` le tire au premier démarrage et le garde sur le disque de données ; le guest
+ * le pose dans `SECRET_KEY_BASE`. Une application qui le dérive elle-même le déclare dans
+ * `vault-app.json` (`secretKeyBase.derivation`), comme la référence dans `vault-invariant.json`.
+ */
 export const DERIVATION_PAR_DEFAUT =
-  "dérivé d'une chaîne publique documentée par l'application (jamais de master.key ni de credentials.yml.enc)";
+  "fourni par le coffre : SECRET_KEY_BASE tiré au premier démarrage, gardé sur le disque de données (jamais de master.key)";
 
 /**
  * Chemins de secret PRÉSENTS dans une liste de fichiers de la source.

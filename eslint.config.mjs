@@ -106,6 +106,9 @@ export default [
       // contexte d'exécution — un module de page copié sous `artifacts/` n'y est plus reconnu comme
       // tel — et ferait dépendre le lint de la présence d'une construction locale.
       "artifacts/**",
+      // L'application `rails new` de l'épreuve #351 : un code TIERS, gardé tel que `rails new` l'a
+      // écrit. Le relire ici le jugerait selon nos règles, et le corriger le rendrait « modifié ».
+      "tests/fixtures/application-rails-new/**",
     ],
   },
   eslint.configs.recommended,
