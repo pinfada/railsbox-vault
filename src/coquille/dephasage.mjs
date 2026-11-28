@@ -160,7 +160,11 @@ function refus(code, contexte) {
 export function deciderLeDephasage({ manifeste, descripteur }) {
   if (manifeste === null) {
     // La version SERVIE est dite dès l'installation : l'accueil l'affiche (recette QA de #249, Q3).
-    const servie = descripteur === null ? null : versionEtSchema(descripteur.application);
+    // Son IDENTITÉ aussi : le relevé montrait `servie.id: null` à l'installation (#351).
+    const servie =
+      descripteur === null
+        ? null
+        : { id: descripteur.application.id, ...versionEtSchema(descripteur.application) };
     return Object.freeze({ issue: ISSUES_DU_DEPHASAGE.installer, servie });
   }
   const app = manifeste.app;

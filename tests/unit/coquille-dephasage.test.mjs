@@ -71,7 +71,7 @@ test("aucun volume : la voie d'installation de T1, inchangée", () => {
   assert.deepEqual(decision.servie, { id: "ref", version: "1.1.0", schema: N });
   assert.deepEqual(paquetADemarrer(decision), {
     paquet: PAQUETS_SERVIS.courant,
-    application: { version: "1.1.0", schema: N },
+    application: { id: "ref", version: "1.1.0", schema: N },
     miseAJour: false,
   });
 });

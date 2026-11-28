@@ -181,6 +181,16 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * tout ce qui s'est passé. Le boot acquiert AVANT d'ouvrir le volume : rien n'a été démarré ni modifié.
    */
   artefactDuDemarrageRefuse: "VAULT_COQUILLE_ARTEFACT_DU_DEMARRAGE_REFUSE",
+  /**
+   * La machine a démarré, mais l'APPLICATION n'a jamais répondu : elle s'est arrêtée pendant son
+   * démarrage, ou elle n'a rien rendu dans le délai (#351).
+   *
+   * Il porte sa CAUSE en clair (`motif`) : la dernière erreur de la sonde et ce que l'application a
+   * imprimé en dernier (`src/vm/sonde-de-demarrage.mjs`). C'était « sans cause identifiée » après
+   * cinq minutes, ou une installation déclarée inachevée alors qu'elle avait abouti. Le volume est
+   * installé et ses données intactes : « Démarrer l'application » reste possible.
+   */
+  applicationEnEchec: "VAULT_COQUILLE_APPLICATION_EN_ECHEC",
 
   // --- Le RELAIS HTTP vers l'application du guest (#192, ADR 0038) -----------------------------
   /**
@@ -423,6 +433,8 @@ const MESSAGES = Object.freeze({
     "Le premier démarrage n'a pas pu acquérir les artefacts du boot, et le volume n'a jamais démarré : l'installation est inachevée.",
   [CODES_REFUS_COQUILLE.artefactDuDemarrageRefuse]:
     "Un artefact du démarrage n'a pas pu être acquis depuis cette origine, sur un volume qui a déjà démarré : rien n'a été ouvert ni modifié.",
+  [CODES_REFUS_COQUILLE.applicationEnEchec]:
+    "La machine a démarré, mais l'application n'a jamais répondu : elle s'est arrêtée ou n'a rien rendu dans le délai.",
   [CODES_REFUS_COQUILLE.applicationNonDemarree]:
     "L'application n'est pas démarrée : il n'y a rien à servir tant que le coffre n'a pas été ouvert et l'application lancée.",
   [CODES_REFUS_COQUILLE.requeteHttpRefusee]:

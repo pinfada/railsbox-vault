@@ -12,6 +12,7 @@ import {
   conduiteDUnRefusSansCodeConnu,
   conduiteHumaine,
 } from "/src/coquille/conduites-du-parcours.mjs";
+import { conduiteDuDemarrageEchoue } from "/src/coquille/cause-du-demarrage.mjs";
 import {
   COFFRE,
   ECRANS_DE_L_APPLICATION,
@@ -112,7 +113,13 @@ export function brancherLesObservateurs({
     if (DEMARRAGES_REFUSES.includes(ligne.evenement)) {
       dire("parcours-attente", "");
       const application = lireJson("coquille-rapport").application;
-      return refuser(accueil.codeDuDemarrageRefuse(application, ligne.code ?? null));
+      const code = accueil.codeDuDemarrageRefuse(application, ligne.code ?? null);
+      refuser(code);
+      // Une application qui n'a pas répondu dit sa CAUSE, en clair, après la conduite (#351).
+      if (code === CODES_REFUS_COQUILLE.applicationEnEchec) {
+        dire("parcours-refus", conduiteDuDemarrageEchoue(application?.motif));
+      }
+      return undefined;
     }
     if (ligne.evenement === "verrouillage-en-cours") {
       return dire("parcours-attente", MESSAGES.verrouillageEnCours);

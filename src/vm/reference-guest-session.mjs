@@ -15,10 +15,14 @@ import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
 import { creerTamponRootfs } from "./instantane/tampon-rootfs.mjs";
 import { cadencer } from "./scheduling-loop.mjs";
 import { createSerialHttpClient } from "./serial-http-client.mjs";
+import { DemarrageSansReponse, attendreQueRailsReponde } from "./sonde-de-demarrage.mjs";
 import { BRIDGE_MODES, installDurabilityBridge } from "./v86-flush-bridge.mjs";
 
 const POLL_INTERVAL_MS = 20;
 const DEFAULT_IDE_TIMEOUT_MS = 60_000;
+
+/** Les lignes du journal applicatif gardées pour dire la cause d'un échec de démarrage (#351). */
+const LIGNES_RECENTES_GARDEES = 40;
 
 /**
  * Ce qu'une série de guest jointe à un délai de boot a le droit de peser, en caractères.
@@ -237,10 +241,15 @@ export function createReferenceGuestSession({
    */
   let disqueSysteme = null;
   let transcript = "";
+  /** Les DERNIÈRES lignes du journal de l'application, dont la cause d'un échec se lit (#351). */
+  let lignesRecentes = [];
   const decoder = new TextDecoder("utf-8", { fatal: false });
   const client = createSerialHttpClient({
     send: (ligne) => emulator.serial0_send(ligne),
-    onLog: (texte) => onJournal(texte),
+    onLog: (texte) => {
+      lignesRecentes = [...lignesRecentes.slice(1 - LIGNES_RECENTES_GARDEES), texte];
+      onJournal(texte);
+    },
   });
 
   const wait = creerAttenteCadencee({ cadence, lireTranscript: () => transcript });
@@ -329,39 +338,36 @@ export function createReferenceGuestSession({
     },
 
     /**
-     * Attend que Rails réponde à `/vault/health`. La VM est « prête » quand l'application répond,
-     * pas quand le noyau a démarré. Rend la durée mesurée jusqu'à la première réponse 200.
+     * Attend que Rails RÉPONDE, quelle que soit sa réponse (#351, `sonde-de-demarrage.mjs`). La VM
+     * est « prête » quand l'application répond, pas quand le noyau a démarré. Rend la durée mesurée
+     * jusqu'à la première réponse, et la santé de `/vault/health` si l'application en publie une
+     * (`null` sinon). Un échec porte `causeEnClair`, que la coquille montre.
      *
      * @param {{ totalTimeoutMs: number, probeTimeoutMs?: number, intervalMs?: number }} reglages
-     * @returns {Promise<{ durationMs: number, sante: Record<string, any> }>}
+     * @returns {Promise<{ durationMs: number, sante: Record<string, any> | null }>}
      */
     async awaitHealth({ totalTimeoutMs, probeTimeoutMs = 5_000, intervalMs = 2_000 }) {
-      const started = Date.now();
-      let derniereErreur = null;
-      while (Date.now() - started < totalTimeoutMs) {
-        try {
-          const reponse = await client.request("GET", "/vault/health", {
-            timeoutMs: probeTimeoutMs,
-          });
-          if (reponse.statut === 200) {
-            const durationMs = Date.now() - started;
-            journal.record(JOURNAL_OPERATIONS.mark, {
-              label: "health-ready",
-              milliseconds: durationMs,
-            });
-            return { durationMs, sante: JSON.parse(new TextDecoder().decode(reponse.corps)) };
-          }
-          derniereErreur = new Error(`/vault/health a répondu ${reponse.statut}`);
-        } catch (erreur) {
-          derniereErreur = erreur instanceof Error ? erreur : new Error(String(erreur));
-        }
-        await pause(intervalMs);
+      try {
+        const pret = await attendreQueRailsReponde({
+          requete: (methode, chemin, reglages) => client.request(methode, chemin, reglages),
+          lignes: () => lignesRecentes,
+          totalTimeoutMs,
+          probeTimeoutMs,
+          intervalMs,
+          pause,
+        });
+        journal.record(JOURNAL_OPERATIONS.mark, {
+          label: "health-ready",
+          milliseconds: pret.durationMs,
+        });
+        return { durationMs: pret.durationMs, sante: pret.sante };
+      } catch (erreur) {
+        if (!(erreur instanceof DemarrageSansReponse)) throw erreur;
+        const delai = new BootTimeout(erreur.message, serieDeDiagnostic(transcript));
+        // La cause EN CLAIR voyage avec le délai : la coquille la montre à la personne (#351).
+        delai.causeEnClair = erreur.causeEnClair;
+        throw delai;
       }
-      throw new BootTimeout(
-        `Rails n'a pas répondu à /vault/health en ${Math.round(totalTimeoutMs / 1000)} s ; ` +
-          `dernière erreur : ${derniereErreur?.message ?? "aucune"}`,
-        serieDeDiagnostic(transcript),
-      );
     },
 
     /** Émet une requête HTTP vers Rails par le pont série. */

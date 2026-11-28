@@ -1071,6 +1071,9 @@ faire.
   contient encore aucune donnée de l'application. Cliquez sur « Reprendre l'installation ». Si cela
   recommence, cette adresse ne sert pas correctement l'application : vous pouvez alors verrouiller
   votre coffre, et réessayer plus tard.
+- L'application n'a pas démarré. Vos données sont intactes dans votre coffre. Vous pouvez cliquer de
+  nouveau sur « Démarrer l'application » ; si cela recommence, la cause ci-dessous vient de
+  l'application, et c'est à son éditeur de la corriger.
 - L'application s'est arrêtée. Cliquez de nouveau sur « Démarrer l'application ».
 - L'application a demandé quelque chose que le coffre ne transmet pas. Revenez à la page précédente
   de l'application et réessayez.

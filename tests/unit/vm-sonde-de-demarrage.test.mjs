@@ -39,7 +39,7 @@ test("une réponse 404 de Rails vaut « prêt » : la sonde ne dépend d'aucune 
   ]);
   const rendu = await attendreQueRailsReponde({
     requete,
-    totalTimeoutMs: 60_000,
+    totalTimeoutMs: 2_000,
     pause: sansPause,
     lignes: () => [],
   });
@@ -74,30 +74,39 @@ test("un 200 qui n'est pas du JSON est une réponse, sans santé", async () => {
   assert.equal(rendu.sante, null);
 });
 
-test("une application ARRÊTÉE fait échouer tout de suite, avec sa cause en clair", async () => {
-  const lignes = [
-    "bin/rails:4: ArgumentError: Missing `secret_key_base` for 'production' environment",
-    `${MARQUE_D_ARRET} (code 1)`,
-  ];
-  const { requete } = requeteSimulee([
-    new Error("le pont a refusé la requête : application-injoignable (code 7)"),
-  ]);
-  const debut = Date.now();
-  await assert.rejects(
-    attendreQueRailsReponde({
-      requete,
-      totalTimeoutMs: 300_000,
-      pause: sansPause,
-      lignes: () => lignes,
-    }),
-    (erreur) => {
-      assert.match(erreur.causeEnClair, /s'est arrêtée pendant son démarrage/);
-      assert.match(erreur.causeEnClair, /secret_key_base/);
-      return true;
-    },
-  );
-  assert.ok(Date.now() - debut < 5_000, "sans attendre le délai entier");
-});
+test(
+  "une application ARRÊTÉE fait échouer tout de suite, avec sa cause en clair",
+  { timeout: 10_000 },
+  async () => {
+    const lignes = [
+      "bin/rails:4: ArgumentError: Missing `secret_key_base` for 'production' environment",
+      `${MARQUE_D_ARRET} (code 1)`,
+    ];
+    const { requete } = requeteSimulee([
+      new Error("le pont a refusé la requête : application-injoignable (code 7)"),
+    ]);
+    // Une horloge SIMULÉE : chaque pause avance le temps de l'intervalle, sans rien attendre.
+    let instant = 0;
+    await assert.rejects(
+      attendreQueRailsReponde({
+        requete,
+        totalTimeoutMs: 300_000,
+        intervalMs: 2_000,
+        pause: async (ms) => {
+          instant += ms;
+        },
+        maintenant: () => instant,
+        lignes: () => lignes,
+      }),
+      (erreur) => {
+        assert.match(erreur.causeEnClair, /s'est arrêtée pendant son démarrage/);
+        assert.match(erreur.causeEnClair, /secret_key_base/);
+        return true;
+      },
+    );
+    assert.equal(instant, 0, "sans attendre le délai : aucune pause après l'arrêt");
+  },
+);
 
 test("le délai dépassé dit la dernière erreur de la sonde et la dernière ligne du guest", async () => {
   const { requete } = requeteSimulee([
