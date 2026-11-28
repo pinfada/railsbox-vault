@@ -9,6 +9,7 @@ import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.
 import {
   Origine,
   attendreLaCoquille,
+  attendreLeTelechargementAnticipe,
   fabriquerGeneration,
   jusqua,
   lireLeReleve,
@@ -55,11 +56,7 @@ async function installer(nomDuMoteur, options) {
   // Le TÉLÉCHARGEMENT ANTICIPÉ de cette visite réussie (#348) lit le descripteur : ses requêtes
   // appartiennent à l'installation, pas au refus que l'épreuve mesure ensuite. Il est attendu jusqu'à
   // son bilan, puis le journal de l'origine repart de zéro.
-  await expect
-    .poll(async () => (await lireLeReleve(page)).rapport?.telechargementAnticipe?.issue ?? null, {
-      timeout: 30_000,
-    })
-    .toMatch(/^(?!en-cours$)/);
+  await attendreLeTelechargementAnticipe(page);
   origine.vider();
   return page;
 }

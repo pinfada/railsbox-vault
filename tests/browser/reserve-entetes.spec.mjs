@@ -6,6 +6,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   Origine,
+  attendreLeTelechargementAnticipe,
   entetesDeProduction,
   fabriquerGeneration,
   ouvrirUnNavigateur,
@@ -83,6 +84,10 @@ test("CSP EFFECTIVE sous le SW : un script inline est REFUSÉ et la violation es
   navigateur = await ouvrirUnNavigateur(browserName);
   const page = await navigateur.page();
   await visiter(page, origine);
+  // La VISITE réussie lance le téléchargement anticipé (#348), qui lit le descripteur public — exclu
+  // de la réserve par l'ADR 0048 (ADR 0053, Conséquences). Ce qui est mesuré ici est ce que la
+  // VIOLATION fait partir : la visite finit d'abord, puis le journal repart de zéro.
+  await attendreLeTelechargementAnticipe(page);
   origine.vider();
   const issue = await page.evaluate(
     () =>

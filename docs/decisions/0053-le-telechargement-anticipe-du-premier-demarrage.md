@@ -78,6 +78,17 @@ son code : ce temps était perdu.
   4 s'il a fini.
 - La page publie `telechargementAnticipe` dans son relevé : une issue et des statuts du magasin,
   jamais un octet ni une adresse.
+- **Une coquille ouverte avec succès lit désormais le descripteur dès la visite**, avant tout geste
+  (`GET /artifacts/application.json`, puis le manifeste v86 et les artefacts absents). C'est
+  légitime, et ce n'est pas une brèche de la réserve : le descripteur en est EXCLU par l'ADR 0048
+  (c'est la sonde « origine injoignable » de l'ADR 0046 § 3), il est public, et le Worker de
+  confiance le lit déjà à l'ouverture du coffre pour le constat du déphasage. Les garanties « zéro
+  requête » de la réserve portent sur ce qu'un REFUS du portail ou une anomalie font partir : un
+  refus ne crée aucun Worker, donc aucun téléchargement anticipé (il part derrière le portail). Les
+  épreuves qui comptent les requêtes APRÈS une visite réussie (`reserve-refus`, critère 3 ;
+  `reserve-entetes`, critère 9) attendent donc le bilan du téléchargement anticipé
+  (`attendreLeTelechargementAnticipe`) avant de vider le journal : elles mesurent toujours la même
+  chose — ce que le refus ou la violation de CSP déclenchent —, sans l'attribuer à la visite.
 
 ## Limites écrites
 

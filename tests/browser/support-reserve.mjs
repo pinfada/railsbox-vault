@@ -260,6 +260,21 @@ export async function lireLeReleve(page) {
   });
 }
 
+/**
+ * Attend le BILAN du téléchargement anticipé d'une coquille ouverte (#348) : il lit le descripteur de
+ * l'origine, et une épreuve qui compte ensuite les requêtes de l'origine doit le laisser finir avant de
+ * vider son journal. Une issue autre que « en-cours » suffit (écarté, fait, sans descripteur…).
+ */
+export async function attendreLeTelechargementAnticipe(page, delaiMs = 30_000) {
+  const limite = Date.now() + delaiMs;
+  for (;;) {
+    const issue = (await lireLeReleve(page)).rapport?.telechargementAnticipe?.issue ?? null;
+    if (issue !== null && issue !== "en-cours") return issue;
+    if (Date.now() > limite) throw new Error(`téléchargement anticipé sans bilan : ${issue}`);
+    await page.waitForTimeout(100);
+  }
+}
+
 /** Compte les `new Worker` de la page, dès le premier instant : « zéro Worker, zéro clé » se mesure. */
 export const SONDE_DES_WORKERS = () => {
   window.__workersCrees = 0;
