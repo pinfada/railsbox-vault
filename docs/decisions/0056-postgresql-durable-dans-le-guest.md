@@ -81,9 +81,74 @@ configuration, et ce qui est prouvé.
    (seul `llvmjit.so` liait libLLVM). L'utilisateur `postgres` a un uid et un gid fixes (990) dans
    les deux étages : le datadir naît dans l'un et s'ouvre dans l'autre.
 
-## Ce qui est prouvé, et ce qui ne l'est pas
+7. **Le relais suit une redirection en `https` vers le guest.** `rails new` écrit
+   `config.assume_ssl = true` en production : Rails rend `Location: https://127.0.0.1/notes/1`, et
+   `emplacementRendu` (`src/coquille/relais-http.mjs`) jetait cette redirection comme une autre
+   origine. Après chaque formulaire, le cadre restait blanc. Ce défaut n'est pas propre à PostgreSQL
+   : E2 l'a trouvé. Seul le schéma est réécrit ; l'hôte, le port et le chemin restent jugés.
 
-Voir la section « Mesures » plus bas, et la PR de la tranche.
+## Ce qui est prouvé (28/11/2026)
+
+- **E1, fichiers** : `tests/unit/postgresql-durable.test.mjs` refuse la configuration de RailsBox et
+  chaque affaiblissement, un par un ; campagne de mutation `postgresql`.
+- **E1, serveur réel** : `tests/vm/postgresql-verification.test.mjs` joue `postgresql.sh` dans le
+  rootfs réel (Docker). Un `ALTER ROLE … SET synchronous_commit = off` et un cluster sans sommes de
+  contrôle sont refusés. Un `ALTER SYSTEM SET fsync = off` est bien écrit dans le volume, et la
+  ligne de commande l'emporte. Un `postmaster.pid` qui désigne un PID vivant n'empêche pas le
+  démarrage.
+- **E1, dans le guest** : `tests/vm/postgresql-configuration.test.mjs` relit
+  `fsync=on synchronous_commit=on full_page_writes=on wal_sync_method=fdatasync data_checksums=on`
+  sur la connexion de l'application.
+- **E2, moitié guest** : `tests/vm/postgresql-coupure.test.mjs`. Trois notes sont acquittées, et
+  l'émulateur est arrêté net sur la première trame de chaque réponse. Après trois boots à froid avec
+  reprise sur crash, les trois notes sont relues, et chaque disque rouvert accepte l'écriture
+  suivante.
+- **E2, chaîne entière** : `tests/e2e/durabilite-postgresql.spec.mjs`, dans la coquille, sous
+  Chromium, sur l'application générée NON modifiée. La mesure a été faite sur une fusion locale avec
+  la branche de #351, sans laquelle l'application ne démarre pas. Six notes ont été verrouillées à 0
+  s (×3) et à 5 s (×3). Chaque instantané a été retiré, et chaque boot était à froid
+  (`instantaneUtilise: false`). Les six notes sont relues, et chacune est suivie d'une écriture.
+
+## Mesures E6 (28/11/2026, Windows 11, Docker Desktop, 28 fils, 32 Gio)
+
+Ce sont des MESURES, chacune sur un seul essai sauf mention contraire. Aucune n'est une estimation.
+
+| Grandeur                                                             |                     Valeur | Comment                                                     |
+| -------------------------------------------------------------------- | -------------------------: | ----------------------------------------------------------- |
+| PostgreSQL au repos, PSS (part réelle)                               |                   19,4 Mio | `guest/mesure-memoire.sh`, 30 s après la 1re réponse        |
+| PostgreSQL au repos, RSS additionnée                                 |                   62,5 Mio | compte `shared_buffers` une fois par processus              |
+| PostgreSQL sous les premières requêtes, PSS (pic)                    |                   20,4 Mio | 5 écritures et leurs relectures                             |
+| Rails (Puma), PSS au pic                                             |                   63,7 Mio | même relevé                                                 |
+| Mémoire utilisée du guest, pic                                       |           93,0 Mio sur 512 | `MemTotal - MemAvailable`                                   |
+| Serveur prêt (`pg_ctl start`, avec reprise sur crash)                |                2,1 à 3,2 s | 8 boots sous Node, ligne `[postgresql] pret`                |
+| Démarrage à froid dans la coquille, jusqu'à « application démarrée » |            106,7 à 115,6 s | 6 boots, `bootMs`                                           |
+| Démarrage à froid sous Node, jusqu'au premier 200                    |               127 et 153 s | 2 essais                                                    |
+| Démarrage à froid de la référence SQLite, même rootfs, sous Node     |                     90,7 s | `reference-boot.test.mjs`, 1 essai (*)                      |
+| Taille du datadir dans la graine                                     |                     46 Mio | `du -sh`, après l'arrêt `fast`                              |
+| Graine compressée (gzip)                                             |                    7,0 Mio | 0,5 Mio pour la graine SQLite de la référence               |
+| Rootfs                                                               | 510 Mio, 165 Mio compressé | 385 et 128 Mio avant PostgreSQL                             |
+| Barrières par écriture acquittée                                     |                      **1** | 5 écritures sur 5 ; FLUSH CACHE vers `hdb`, mode `identify` |
+| Pic mémoire de l'onglet                                              |                  2 448 Mio | voir la remarque ci-dessous                                 |
+
+Remarques :
+
+- (\*) **Avec et sans PostgreSQL.** Ce sont deux applications différentes : la référence a moins de
+  gemmes, et sa sonde est `/vault/health`, alors que celle du témoin est `/notes`, interrogée toutes
+  les 5 s. L'écart de 36 à 62 s n'est donc pas le coût de PostgreSQL. Ce coût direct se lit sur la
+  ligne « Serveur prêt » : 2,1 à 3,2 s, plus la relecture des réglages. Le témoin SQLite généré par
+  `rails new` n'a pas été mesuré.
+
+- **Barrières.** Le pont est posé en mode `identify` : le disque annonce un cache d'écriture, donc
+  le noyau émet ses FLUSH comme dans le navigateur, où chacun devient une génération OPFS validée.
+  Un COMMIT coûte UN `fdatasync` du WAL. Le segment de WAL est préalloué, donc aucune métadonnée
+  ext4 n'est à journaliser, et ce `fdatasync` coûte UN FLUSH CACHE.
+- **Onglet.** C'est le plus gros processus Chromium échantillonné (ensemble de travail, toutes les 5
+  s) pendant l'épreuve E2 dans la coquille. D'autres Chromium de Playwright pouvaient tourner sur le
+  poste au même moment, mais aucun ne porte un guest de cette taille. Aucune mesure SQLite n'a été
+  faite dans les mêmes conditions : ce chiffre ne sépare pas ce qui revient à PostgreSQL (rootfs
+  plus gros, graine plus grosse) de ce qui revient au reste.
+- **512 Mio suffisent** pour cette application : le guest utilise moins de 100 Mio au pic. Une
+  application plus lourde n'est pas mesurée.
 
 ## Ce qui reste hors de portée
 
