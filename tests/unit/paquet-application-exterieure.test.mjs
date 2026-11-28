@@ -104,9 +104,10 @@ test("la fixture est bien une application `rails new` en CRLF, verrou x86_64-lin
   assert.match(verrou, /\r\nPLATFORMS\r\n {2}x86_64-linux\r\n\r\n/);
 });
 
-test("une application `rails new` non modifiée passe l'examen de la source", () => {
+test("une application Rails ordinaire, non modifiée, passe l'examen de la source", () => {
   const examen = examinerLaSource(FIXTURE, { id: "rails-new", version: "1.0.0" });
-  assert.equal(examen.schema, "0");
+  // `db/schema.rb` écrit `define(version: 2026_11_28_085132)` : la version entière, sans soulignés.
+  assert.equal(examen.schema, "20261128085132");
   assert.deepEqual(examen.exclus, ["config/credentials.yml.enc"]);
   assert.ok(!examen.fichiers.includes("config/credentials.yml.enc"));
   assert.ok(!examen.fichiers.includes("config/master.key"));
@@ -132,4 +133,18 @@ test("l'arbre du paquet normalise les textes de la source sans toucher ses binai
   } finally {
     rmSync(arbre, { recursive: true, force: true });
   }
+});
+
+// --- La durabilité des données d'une application ordinaire -----------------------------------------
+
+test("`storage/` du paquet est un lien vers le disque de données, posé avant `db:migrate`", () => {
+  const lien = DOCKERFILE.indexOf("ln -sfn var/storage storage");
+  const migration = DOCKERFILE.indexOf("linux32 ruby bin/rails db:migrate");
+  assert.ok(lien > 0, "le lien est posé");
+  assert.ok(lien < migration, "avant que les bases naissent");
+});
+
+test("la durabilité est chargée dans le guest et constatée à la fabrication", () => {
+  assert.match(DOCKERFILE, /echo 'export RUBYOPT=-r\/opt\/vault\/durabilite-rails\.rb'/);
+  assert.match(DOCKERFILE, /bin\/rails runner \/opt\/vault\/verifier-durabilite\.rb/);
 });
