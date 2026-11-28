@@ -278,11 +278,18 @@ test("le boot ATTEND un téléchargement anticipé en cours, le DIT, puis sert c
 test("le boot n'attend pas sans fin : passé l'attente maximale, il acquiert sans le verrou", async () => {
   const verrous = verrousDEpreuve();
   verrous.tenus.add(NOM_DU_VERROU_DES_ARTEFACTS);
-  const rendu = await sousLeVerrouDesArtefacts(async () => "acquis sans verrou", {
-    verrous,
-    attenteMaxMs: 20,
-  });
-  assert.equal(rendu, "acquis sans verrou");
+  // Sous Node, la minuterie d'`AbortSignal.timeout` ne retient pas la boucle d'événements : sans
+  // cette garde, Node 22 conclut l'épreuve avant l'échéance (CI de la PR #352).
+  const garde = setTimeout(() => {}, 1_000);
+  try {
+    const rendu = await sousLeVerrouDesArtefacts(async () => "acquis sans verrou", {
+      verrous,
+      attenteMaxMs: 20,
+    });
+    assert.equal(rendu, "acquis sans verrou");
+  } finally {
+    clearTimeout(garde);
+  }
 });
 
 test("une erreur du geste, sous le verrou, remonte telle quelle et n'est jamais rejouée", async () => {
